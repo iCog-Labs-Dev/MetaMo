@@ -73,6 +73,15 @@
         (0.25 0.375 0.375 0.5 0.625 0.75))
 )
 
+;; Expected default blended next state from integrationState toward
+;; integrationExpectedLocalTarget. The fixture's blend factor is 0.1875.
+;; Example: (integrationExpectedBlendedLocalTarget)
+(= (integrationExpectedBlendedLocalTarget)
+    (motivation
+        (0.2734375 0.7734375 0.5 0.5 0.5 0.5 0.5 0.5)
+        (0.1484375 0.2734375 0.375 0.5 0.625 0.75))
+)
+
 ;; Expected merged target from consensus over the two fixture subsystem states.
 ;; Example: (integrationExpectedConsensusTarget)
 (= (integrationExpectedConsensusTarget)
@@ -205,6 +214,21 @@
          (0.5 0.75 0.0 0.0 0.0 0.0 0.0 0.0)
          0.25
          (-0.125 0.125 0.0 0.0 0.0 0.0 0.0 0.0))
+ )
+
+ !(test
+     (cycleNextStates
+         (runMetaMoCycleDefault
+             (eval (integrationBimonad))
+             (eval (integrationStates))
+             (eval (integrationStimulus))
+             (eval (integrationCandidates))
+             ()
+             ()))
+     (
+         (subsystemState curiosity (eval (integrationExpectedBlendedLocalTarget)))
+         (subsystemState ethics (eval (integrationExpectedBlendedLocalTarget)))
+     )
  )
 
  !(test

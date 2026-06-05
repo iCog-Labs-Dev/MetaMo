@@ -80,14 +80,13 @@
 
 ;; nextStateCalculator
 ;;
-;; Build an alpha-weighted next-state candidate from a motivational state.
-;; With the current formula, the state is split into (1 - alpha) and alpha
-;; portions and recombined, so the returned state has the same goals and
-;; modulators as $currState.
+;; Build an alpha-weighted next-state candidate from currentState toward
+;; targetState.
 ;;
 ;; Parameters:
-;;   $currState - motivation state to transform.
-;;   $alpha     - blend factor used to split and recombine the state.
+;;   $currentState - current motivation state.
+;;   $targetState  - desired target motivation state.
+;;   $alpha        - blend factor used to move toward the target.
 ;;
 ;; Returns:
 ;;   A motivation state.
@@ -95,21 +94,11 @@
 ;; Example:
 ;;   (nextStateCalculator
 ;;     (motivation (0.2 0.8) (0.1 0.2))
-;;     0.35)
-;;   => (motivation (0.2 0.8) (0.1 0.2))
-(= (nextStateCalculator $currState $alpha)
-    (let* (
-        ((motivation $goals $modulators) $currState)
-        ($nAlpha (- 1 $alpha))
-        ($nGoals (scaleArray $goals $nAlpha))
-        ($alphaGoals (scaleArray $goals $alpha))
-        ($nModulators (scaleArray $modulators $nAlpha))
-        ($alphaModulators (scaleArray $modulators $alpha))
-        ($newGoals (vectorAdd $nGoals $alphaGoals))
-        ($newModulators (vectorAdd $nModulators $alphaModulators))
-    )
-        (motivation $newGoals $newModulators)
-    )
+;;     (motivation (0.4 0.6) (0.2 0.3))
+;;     0.2)
+;;   => (motivation (0.24 0.76) (0.12 0.22))
+(= (nextStateCalculator $currentState $targetState $alpha)
+    (stateTowardTarget $currentState $targetState $alpha)
 )
 
 ;; stateTowardTarget
@@ -117,9 +106,12 @@
 ;; Build an alpha-weighted transition candidate from currentState toward
 ;; targetState.
 (= (stateTowardTarget $currentState $targetState $alpha)
-    (motivation
-        (blendArrays (motivationGoals $currentState) (motivationGoals $targetState) $alpha)
-        (blendArrays (motivationModulators $currentState) (motivationModulators $targetState) $alpha)
+    (if (== $currentState $targetState)
+        $currentState
+        (motivation
+            (blendArrays (motivationGoals $currentState) (motivationGoals $targetState) $alpha)
+            (blendArrays (motivationModulators $currentState) (motivationModulators $targetState) $alpha)
+        )
     )
 )
 
@@ -183,7 +175,8 @@
         ($baseAlpha (calculateBlendFactor $currentState))
         ($alpha $baseAlpha)
         ($minAlpha (* $minAlphaScale $baseAlpha))
+        ($nextState (stateTowardTarget $currentState $targetState $alpha))
     )
-        (blendStatesHelper $currentState $targetState $targetState $alpha $minAlpha $lipschitzConstant $maxAllowedDrift)
+        (blendStatesHelper $currentState $nextState $targetState $alpha $minAlpha $lipschitzConstant $maxAllowedDrift)
     )
 )
