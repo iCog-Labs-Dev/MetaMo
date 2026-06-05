@@ -74,3 +74,15 @@ def softmax(arr):
 
 def round_number(value, digits=0):
     return round(float(value), digits)
+
+def index(arr, i):
+    return float(np.asarray(arr)[int(i)])
+
+def clip(value, min_val, max_val):
+    return float(np.clip(value, min_val, max_val))
+
+def exp(value):
+    return float(np.exp(value))
+
+def abs(value):
+    return float(np.abs(value))
