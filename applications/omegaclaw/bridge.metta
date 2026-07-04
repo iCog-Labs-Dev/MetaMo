@@ -14,8 +14,6 @@
 !(bind! &cycle-count              (new-state 0))
 
 
-!(import! &self adapter)
-!(import! &self signals)
 
 
 (= (clamp $value)
@@ -293,6 +291,45 @@
          )))))
 ))
 
+(= (initOmegaClawMotivation)
+    (let* (
+        ($_ (clearSpace &goal-space))
+        ($_ (collapse
+                (let* (
+                    (($name $b) (match &self (GoalSpec $name $b) ($name $b)))
+                )
+                (add-atom &goal-space (goal $name $b)))))
+
+        ($_ (collapse
+                (let* (
+                    (($name $w) (match &self (AntiGoalSpec $name $w) ($name $w)))
+                )
+                (add-atom &goal-space (anti-goal $name $w)))))
+
+        ($_ (clearSpace &motivation-space))
+        ($_ (collapse
+                (let* (
+                    (($name $b) (match &self (ModulatorSpec $name $b) ($name $b)))
+                )
+                (add-atom &motivation-space (modulator $name $b)))))
+
+        ($_ (collapse
+                (let* (
+                    (($name $b) (match &self (MotiveSpec $name $b) ($name $b)))
+                )
+                (add-atom &motivation-space (motive $name $b)))))
+
+        ($_ (add-atom &motivation-space (mode orient)))
+        ($_ (clearSpace &self-model-space))
+        ($_ (collapse
+                (let* (
+                    (($name $b) (match &self (SelfModelSpec $name $b) ($name $b)))
+                )
+                (add-atom &self-model-space (self-metric $name $b)))))
+    )
+        (println! "OmegaClaw Motivation Initialized via MetaMo Adapter")
+    )
+)
 
 ;; initialize all MotivOS spaces from registry specs
 (= (motivatedOmegaclaw)
