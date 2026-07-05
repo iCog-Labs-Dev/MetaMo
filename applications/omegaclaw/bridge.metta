@@ -83,14 +83,15 @@
 ;; MotivOS-formatted decision result for injection into the LLM prompt.
 (= (motivationContextBlock)
     (let* (
-        ($signals (refreshSignals))
-        ($_ (clearSpace &appraisal-space))
-        ($_ (computeAllDimensions))
+        ($signals (eval (refreshSignals)))
+      ;   ($_ (println! ("Signals" $signals)))
+        ($_ (eval (clearSpace &appraisal-space)))
+        ($_ (eval (computeAllDimensions)))
          
          ($currentMetaMoState (eval (motivosToMetamoState)))
          ; ($_ (println! ("Current state" $currentMetaMoState)))
          ($stimulus (eval (appraisalToStimulus)))
-         ; ($_ (println! ("Stimulus" $stimulus)))
+         ; ($_ (println! ("Current Stimulus" $stimulus)))
          
          ($_ (generateCandidates))
          ($actions (eval (candidatesToActions)))
@@ -101,7 +102,7 @@
          ($bimonad     (omegaclawBimonad))
          ; ($_ (println! ("Bimonad" $bimonad)))
          ($cycleResult (runMetaMoCycleDefault $bimonad $sysStates $stimulus $actions () ()))
-         ($_ (println! ("cycle result" $cycleResult)))
+         ; ($_ (println! ("cycle result" $cycleResult)))
 
         ($finalAction   (cycleFinalAction  $cycleResult))
         ($nextSysStates (cycleNextStates   $cycleResult))
