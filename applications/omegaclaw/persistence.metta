@@ -31,7 +31,7 @@
       ($results (eval (query (persistenceKey))))
       ($raw     (eval (string-safe $results)))
    )
-   (if (hasContent $raw)
+   (if (hasTextContent $raw)
        (let* (
           ($parsed  (py-call (lib_llm_ext.parseMotivosState $raw)))
           ($_ (if (and (!= $parsed ()) (!= $parsed (Error)))

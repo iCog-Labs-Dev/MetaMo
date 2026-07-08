@@ -19,7 +19,7 @@
 !(import! &self (library MetaMo applications/omegaclaw/bridge))
 !(import! &self (library MetaMo applications/omegaclaw/adapter))
 !(import! &self (library MetaMo applications/omegaclaw/signals))
-
+!(import! &self (library MetaMo applications/omegaclaw/persistence))
 
 
 !(git-import! "https://github.com/asi-alliance/OmegaClaw-Core.git")
