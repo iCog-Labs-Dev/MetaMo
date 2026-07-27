@@ -47,6 +47,22 @@
     )
 )
 
+;; analyzeTurnFromText
+;; Makes one semantic-analysis request and returns both the stimulus and locally
+;; selected candidate actions.
+;; Returns: ((stimulus (...)) ((action ...) ...))
+(= (analyzeTurnFromText $text $arousal $caution)
+    (let* (
+        ($analysis (py-call (metta_bridge.analyze_turn_as_lists $text $arousal $caution)))
+        ($stimulusValues (index-atom $analysis 0))
+        ($actionsList (index-atom $analysis 1))
+        ($length (size-atom $actionsList))
+        ($candidates (unpackActionsTuple $actionsList 0 $length))
+    )
+        ((stimulus $stimulusValues) $candidates)
+    )
+)
+
 ;; llmGenerateFinalResponse
 ;; Calls the LLM conversation module to produce the final chat response.
 ;; Example: (llmGenerateFinalResponse "hello" "safe_answer" 0.5 0.5)

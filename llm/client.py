@@ -1,59 +1,29 @@
-import os
-import time
-from pathlib import Path
+import json
+from dataclasses import dataclass
 from typing import Dict, List
 
 import numpy as np
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 
 from llm.state_types import Action, Stimulus
 from llm.action_schema import DEFAULT_ACTION_ID
 from llm.parser import parse_actions, parse_stimulus
-from llm.prompts import get_action_generation_prompt, get_appraisal_prompt
-
-# Initialize dotenv relative to the repository root so imports work from any cwd.
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-_client = None
-
-RETRYABLE_MARKERS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "HIGH DEMAND")
-
-
-def _is_retryable(error: Exception) -> bool:
-    message = str(error).upper()
-    return any(marker in message for marker in RETRYABLE_MARKERS)
+from llm.gemini_client import generate_json
+from llm.prompts import (
+    get_action_generation_prompt,
+    get_appraisal_prompt,
+    get_turn_analysis_prompt,
+)
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        api_key = os.getenv("GEMINI_API_KEY")
-        _client = genai.Client(api_key=api_key) if api_key else genai.Client()
-    return _client
+@dataclass(frozen=True)
+class TurnAnalysis:
+    stimulus: Stimulus
+    candidates: List[Action]
 
 
 def query_llm_for_json(prompt: str) -> str:
-    """Query the LLM and require JSON output, with bounded retry on transient service failures."""
-    last_error = None
-    for attempt in range(3):
-        try:
-            response = _get_client().models.generate_content(
-                model="gemini-3.1-flash-lite",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2,
-                ),
-            )
-            return response.text
-        except Exception as error:
-            last_error = error
-            if attempt == 2 or not _is_retryable(error):
-                raise
-            time.sleep(1.5 * (attempt + 1))
-
-    raise last_error
+    """Compatibility wrapper around the shared Gemini JSON client."""
+    return generate_json(prompt)
 
 
 def _fallback_stimulus(document_text: str) -> Stimulus:
@@ -81,108 +51,143 @@ def _fallback_stimulus(document_text: str) -> Stimulus:
     )
 
 
+_ACTION_CATALOG = {
+    "safe_answer": (
+        [0, 0, 0.85, 0.15, 0.0, 0.0, 0.9, 0.1],
+        0.05,
+        [-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ),
+    "guided_explore": (
+        [0, 0, 0.45, 0.88, 0.82, 0.65, 0.35, 0.15],
+        0.18,
+        [0.02, -0.01, 0.0, 0.05, 0.06, 0.04, 0.0, 0.0],
+    ),
+    "ask_clarifying_question": (
+        [0, 0, 0.75, 0.2, 0.1, 0.1, 0.85, 0.3],
+        0.03,
+        [-0.02, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ),
+    "compare_options": (
+        [0, 0, 0.8, 0.3, 0.2, 0.1, 0.8, 0.2],
+        0.08,
+        [-0.01, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ),
+    "summarize_source": (
+        [0, 0, 0.85, 0.1, 0.0, 0.0, 0.9, 0.1],
+        0.05,
+        [-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ),
+    "decline_risky_request": (
+        [0, 0, 0.3, -0.2, -0.2, 0.0, 1.0, 0.0],
+        0.0,
+        [0.03, -0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ),
+}
+
+
+def _catalog_action(action_id: str) -> Action:
+    correlations, risk, delta_g = _ACTION_CATALOG[action_id]
+    return Action(
+        action_id,
+        np.array(correlations, dtype=float),
+        risk,
+        np.array(delta_g, dtype=float),
+    )
+
+
+def _route_candidates(
+    routing: Dict[str, float], current_mood: Dict[str, float]
+) -> List[Action]:
+    """Select stable candidates locally; MAGUS still makes the final choice."""
+    caution = float(current_mood.get("caution", 0.5))
+    arousal = float(current_mood.get("arousal", 0.5))
+
+    if routing["unsafe"] >= 0.65:
+        action_ids = ["decline_risky_request", DEFAULT_ACTION_ID]
+    elif routing["ambiguity"] >= 0.65:
+        action_ids = ["ask_clarifying_question", DEFAULT_ACTION_ID]
+    elif routing["comparison"] >= 0.65:
+        action_ids = ["compare_options", DEFAULT_ACTION_ID]
+    elif routing["summarization"] >= 0.65:
+        action_ids = ["summarize_source", DEFAULT_ACTION_ID]
+    elif routing["exploration"] >= 0.65 or (arousal >= 0.7 and caution < 0.7):
+        action_ids = ["guided_explore", DEFAULT_ACTION_ID]
+    else:
+        action_ids = [DEFAULT_ACTION_ID, "guided_explore"]
+
+    return [_catalog_action(action_id) for action_id in action_ids]
+
+
+def _fallback_routing(document_text: str) -> Dict[str, float]:
+    text = document_text.lower()
+    short_question = "?" in text and len(text.split()) < 12
+    return {
+        "ambiguity": 0.8 if short_question or "unclear" in text else 0.1,
+        "comparison": (
+            0.9
+            if any(word in text for word in ["compare", "versus", " vs ", "tradeoff", "options"])
+            else 0.1
+        ),
+        "summarization": (
+            0.9
+            if any(word in text for word in ["summarize", "summary", "paper", "book", "source"])
+            else 0.1
+        ),
+        "exploration": (
+            0.8
+            if any(word in text for word in ["bold", "creative", "future", "autonomous", "improve"])
+            else 0.2
+        ),
+        "unsafe": (
+            0.95
+            if any(word in text for word in ["unsafe", "bypass", "exploit", "illegal", "weapon"])
+            else 0.05
+        ),
+    }
+
+
 def _fallback_candidates(
     document_text: str, current_mood: Dict[str, float]
 ) -> List[Action]:
-    text = document_text.lower()
-    if any(
-        word in text for word in ["unsafe", "bypass", "exploit", "illegal", "weapon"]
-    ):
-        return [
-            Action(
-                "decline_risky_request",
-                np.array([0, 0, 0.3, -0.2, -0.2, 0.0, 1.0, 0.0], dtype=float),
-                0.0,
-                np.array([0.03, -0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-            Action(
-                DEFAULT_ACTION_ID,
-                np.array([0, 0, 0.8, 0.0, 0.0, 0.0, 0.9, 0.0], dtype=float),
-                0.05,
-                np.array([0.01, -0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-        ]
-    if any(word in text for word in ["compare", "versus", "vs", "tradeoff", "options"]):
-        return [
-            Action(
-                "compare_options",
-                np.array([0, 0, 0.8, 0.3, 0.2, 0.1, 0.8, 0.2], dtype=float),
-                0.08,
-                np.array([-0.01, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-            Action(
-                DEFAULT_ACTION_ID,
-                np.array([0, 0, 0.85, 0.1, 0.0, 0.0, 0.9, 0.1], dtype=float),
-                0.05,
-                np.array([-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-        ]
-    if any(
-        word in text for word in ["summarize", "summary", "paper", "book", "source"]
-    ):
-        return [
-            Action(
-                "summarize_source",
-                np.array([0, 0, 0.85, 0.1, 0.0, 0.0, 0.9, 0.1], dtype=float),
-                0.05,
-                np.array([-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-            Action(
-                DEFAULT_ACTION_ID,
-                np.array([0, 0, 0.8, 0.1, 0.0, 0.0, 0.9, 0.1], dtype=float),
-                0.05,
-                np.array([-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-        ]
-    if (
-        any(word in text for word in ["?", "which", "choose", "unclear"])
-        and len(text.split()) < 12
-    ):
-        return [
-            Action(
-                "ask_clarifying_question",
-                np.array([0, 0, 0.75, 0.2, 0.1, 0.1, 0.85, 0.3], dtype=float),
-                0.03,
-                np.array([-0.02, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-            Action(
-                DEFAULT_ACTION_ID,
-                np.array([0, 0, 0.8, 0.1, 0.0, 0.0, 0.9, 0.1], dtype=float),
-                0.05,
-                np.array([-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-            ),
-        ]
-    if any(
-        word in text for word in ["bold", "creative", "future", "autonomous", "improve"]
-    ):
-        return [
-            Action(
-                "guided_explore",
-                np.array([0, 0, 0.45, 0.88, 0.82, 0.65, 0.35, 0.15], dtype=float),
-                0.18,
-                np.array([0.02, -0.01, 0.0, 0.05, 0.06, 0.04, 0.0, 0.0], dtype=float),
-            ),
-            Action(
-                DEFAULT_ACTION_ID,
-                np.array([0, 0, 0.85, 0.15, 0.0, 0.0, 0.9, 0.1], dtype=float),
-                0.08,
-                np.array([0.01, -0.01, 0.02, 0.0, 0.0, 0.0, 0.01, 0.0], dtype=float),
-            ),
-        ]
-    return [
-        Action(
-            DEFAULT_ACTION_ID,
-            np.array([0, 0, 0.85, 0.15, 0.0, 0.0, 0.9, 0.1], dtype=float),
-            0.05,
-            np.array([-0.01, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-        ),
-        Action(
-            "guided_explore",
-            np.array([0, 0, 0.45, 0.88, 0.82, 0.65, 0.35, 0.15], dtype=float),
-            0.18,
-            np.array([0.02, -0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=float),
-        ),
-    ]
+    return _route_candidates(_fallback_routing(document_text), current_mood)
+
+
+def _unit_float(value) -> float:
+    return float(np.clip(float(value), 0.0, 1.0))
+
+
+def get_turn_analysis(
+    document_text: str, current_mood: Dict[str, float]
+) -> TurnAnalysis:
+    """Produce stimulus and locally routed candidates with one Gemini request."""
+    prompt = get_turn_analysis_prompt(document_text, current_mood)
+    try:
+        payload = json.loads(generate_json(prompt))
+        stimulus_payload = payload["stimulus"]
+        routing_payload = payload["routing"]
+        stimulus = Stimulus(
+            novelty=_unit_float(stimulus_payload["novelty"]),
+            conduciveness=_unit_float(stimulus_payload["conduciveness"]),
+            risk=_unit_float(stimulus_payload["risk"]),
+            effort=_unit_float(stimulus_payload["effort"]),
+        )
+        routing = {
+            name: _unit_float(routing_payload[name])
+            for name in (
+                "ambiguity",
+                "comparison",
+                "summarization",
+                "exploration",
+                "unsafe",
+            )
+        }
+        return TurnAnalysis(stimulus, _route_candidates(routing, current_mood))
+    except Exception as error:
+        print(f"[LLM fallback] Turn analysis is using local heuristics: {error}")
+        return TurnAnalysis(
+            _fallback_stimulus(document_text),
+            _fallback_candidates(document_text, current_mood),
+        )
 
 
 def get_stimulus_from_text(document_text: str) -> Stimulus:

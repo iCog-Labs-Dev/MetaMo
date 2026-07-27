@@ -1,6 +1,48 @@
 import json
 from llm.action_schema import planning_catalog_text
 
+def get_turn_analysis_prompt(document_text: str, current_mood: dict) -> str:
+    """Prompt for the single perception and action-routing request."""
+    return f"""
+You are the perception layer of an AI Research Assistant.
+Analyze the document/query using the current emotional modulators.
+
+Current Emotional Modulators: {json.dumps(current_mood)}
+Document: {json.dumps(document_text)}
+
+Rate every numeric field from 0.0 to 1.0.
+
+Stimulus fields:
+- novelty: how new, surprising, or unusual the input is
+- conduciveness: how helpful it is for achieving research goals
+- risk: likelihood of harm, error, or ethical breach
+- effort: cognitive effort required
+
+Routing fields:
+- ambiguity: how underspecified the request is
+- comparison: how strongly it requests comparison or tradeoff analysis
+- summarization: how strongly it requests a faithful summary
+- exploration: how strongly it requests creative or open-ended exploration
+- unsafe: how strongly it requests unsafe or disallowed assistance
+
+Respond ONLY with a valid JSON object matching this schema:
+{{
+  "stimulus": {{
+    "novelty": float,
+    "conduciveness": float,
+    "risk": float,
+    "effort": float
+  }},
+  "routing": {{
+    "ambiguity": float,
+    "comparison": float,
+    "summarization": float,
+    "exploration": float,
+    "unsafe": float
+  }}
+}}
+"""
+
 def get_appraisal_prompt(document_text: str) -> str:
     """Prompt to generate a Stimulus object from text."""
     return f"""

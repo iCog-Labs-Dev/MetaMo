@@ -1,7 +1,9 @@
-import time
-
-from google import genai
 from google.genai import types
+from llm.gemini_client import (
+    DEFAULT_MODEL,
+    get_gemini_client,
+    send_chat_message,
+)
 from llm.state_types import Action, MotivationalState
 from llm.action_schema import execution_instruction, normalize_action_id
 
@@ -11,10 +13,9 @@ class MetaMoChatAssistant:
     Keeps the internal MetaMo math completely separate from the user-facing chat.
     """
     def __init__(self):
-        # Initialize the Gemini client
-        self.client = genai.Client()
+        self.client = get_gemini_client()
         self.chat = self.client.chats.create(
-            model='gemini-3.1-flash-lite',
+            model=DEFAULT_MODEL,
             config=types.GenerateContentConfig(
                 temperature=0.7,
                 system_instruction=(
@@ -46,17 +47,10 @@ class MetaMoChatAssistant:
         Respond naturally to the USER MESSAGE, but follow the ACTION INSTRUCTION exactly.
         """
 
-        last_error = None
-        for attempt in range(3):
-            try:
-                response = self.chat.send_message(execution_prompt)
-                return response.text
-            except Exception as error:
-                last_error = error
-                message = str(error).upper()
-                if attempt == 2 or not any(marker in message for marker in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "HIGH DEMAND"]):
-                    break
-                time.sleep(1.5 * (attempt + 1))
+        try:
+            return send_chat_message(self.chat, execution_prompt)
+        except Exception:
+            pass
 
         if action_id == "ask_clarifying_question":
             return "I need one short clarification before I answer: what part do you want me to focus on?"

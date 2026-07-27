@@ -1,10 +1,8 @@
-import requests
 import json
 from typing import Any, Optional
-from dotenv import load_dotenv
 import re
-import os
-import time
+
+from llm.gemini_client import DEFAULT_MODEL, generate_json
 
 
 def _clamp01(x: float) -> float:
@@ -39,10 +37,6 @@ def _coerce_bool(value: Any) -> Optional[bool]:
 
 def _extract_json(text: str) -> dict:
     """Extract a JSON object from Gemini output that may include markdown fences."""
-
-    if not isinstance(text, str):
-        print(f"Warning: _extract_json received non-string: {type(text)}")
-        return {}
 
     text = text.strip()
 
@@ -92,23 +86,14 @@ def _calibrate_action_signals(
         _clamp01(needs_multi_source_integration),
     )
 
+
 def parse_with_gemini(
     query: str,
-    api_key: str,
-    model: str = "gemini-3.1-flash-lite",
-) -> dict[str, Any] | None:
+    api_key: Optional[str] = None,
+    model: str = DEFAULT_MODEL,
+):
     """Call the Gemini API and parse its JSON response into a normalized context dictionary."""
     try:
-
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={api_key}"
-        )
-
-        headers = {
-            "Content-Type": "application/json"
-        }
-
         system_prompt = (
             "Return JSON only (no markdown). "
             'Schema: {"urgent": number, "complexity": number, "ambiguity": number, "expertise": number, "threshold": number, "topic_familiarity": number, "failure_signal": number, "intent_type": string, "reflective_intent": number, "verify_request": boolean, "needs_external_evidence": number, "needs_task_plan": number, "needs_multi_source_integration": number, "valence": number}. '
@@ -127,74 +112,24 @@ def parse_with_gemini(
             "Interpretation: failure_signal is high when the user indicates previous answer/correction problems."
         )
 
-        request_payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text":
-                                "SYSTEM INSTRUCTION:\n"
-                                + system_prompt
-                                + "\n\nUSER INPUT:\n"
-                                + query
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.0,
-                "maxOutputTokens": 300,  
-                "responseMimeType": "application/json"
-            }
-        }
-
         print(f"Sending request to Gemini with model: {model}")
-
-        response = requests.post(
-            url,
-            headers=headers,
-            json=request_payload,
-            timeout=30
+        raw_content = generate_json(
+            "SYSTEM INSTRUCTION:\n"
+            + system_prompt
+            + "\n\nUSER INPUT:\n"
+            + query,
+            temperature=0.0,
+            max_output_tokens=300,
+            model=model,
         )
-
-        print(f"Response status: {response.status_code}")
-
-        if response.status_code != 200:
-            print(response.text)
-            response.raise_for_status()
-
-        data = response.json()
-
-        print("Response received, extracting content...")
-
-        if "candidates" not in data:
-            print(f"Unexpected Gemini response: {json.dumps(data, indent=2)[:500]}")
-            return None
-
-        if not data["candidates"]:
-            print("No candidates in Gemini response")
-            return None
-
-        try:
-            raw_content = (
-                data["candidates"][0]
-                ["content"]["parts"][0]["text"]
-            )
-
-        except Exception:
-            print("Failed to extract Gemini response")
-            print(json.dumps(data, indent=2))
-            return None
-
-        if not raw_content:
-            print("Empty Gemini response")
-            return None
 
         print(f"Raw content (len={len(raw_content)}):\n{raw_content[:600]}")
 
         stripped = raw_content.strip()
         if stripped and not stripped.endswith("}"):
-            print(f"WARNING: Response appears truncated (does not end with '}}'); got: ...{stripped[-50:]!r}")
+            print(
+                f"WARNING: Response appears truncated (does not end with '}}'); got: ...{stripped[-50:]!r}"
+            )
             return None
 
         parsed_payload = _extract_json(raw_content)
@@ -213,15 +148,17 @@ def parse_with_gemini(
         topic_familiarity_raw = parsed_payload.get("topic_familiarity", 0.5)
         failure_signal_raw = parsed_payload.get("failure_signal", 0.3)
 
-        intent_type_raw = str(
-            parsed_payload.get("intent_type", "mixed")
-        ).strip().lower()
+        intent_type_raw = (
+            str(parsed_payload.get("intent_type", "mixed")).strip().lower()
+        )
 
         reflective_intent_raw = parsed_payload.get("reflective_intent", 0.5)
         verify_request_raw = parsed_payload.get("verify_request", False)
         needs_external_evidence_raw = parsed_payload.get("needs_external_evidence", 0.3)
         needs_task_plan_raw = parsed_payload.get("needs_task_plan", 0.2)
-        needs_multi_source_integration_raw = parsed_payload.get("needs_multi_source_integration", 0.3)
+        needs_multi_source_integration_raw = parsed_payload.get(
+            "needs_multi_source_integration", 0.3
+        )
         valence_raw = parsed_payload.get("valence", 0.0)
 
         verify_request = _coerce_bool(verify_request_raw)
@@ -240,7 +177,9 @@ def parse_with_gemini(
             reflective_intent = _clamp01(float(reflective_intent_raw))
             needs_external_evidence = _clamp01(float(needs_external_evidence_raw))
             needs_task_plan = _clamp01(float(needs_task_plan_raw))
-            needs_multi_source_integration = _clamp01(float(needs_multi_source_integration_raw))
+            needs_multi_source_integration = _clamp01(
+                float(needs_multi_source_integration_raw)
+            )
             valence = _clamp11(float(valence_raw))
 
         except Exception as e:
@@ -248,7 +187,9 @@ def parse_with_gemini(
             return None
 
         if intent_type_raw not in {"reflective", "factual", "mixed"}:
-            print(f"Warning: invalid intent_type '{intent_type_raw}', defaulting to 'mixed'")
+            print(
+                f"Warning: invalid intent_type '{intent_type_raw}', defaulting to 'mixed'"
+            )
             intent_type_raw = "mixed"
 
         (
@@ -286,57 +227,37 @@ def parse_with_gemini(
 
         return result
 
-    except requests.exceptions.RequestException as e:
-        print(f"Request error: {e}")
-        return None
-
     except Exception as e:
         print(f"Unexpected error: {e}")
 
         import traceback
+
         traceback.print_exc()
 
         return None
 
+
 def wrap_parser(query):
-
-    load_dotenv()
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    model_name = "gemini-3.1-flash-lite"
-
-    max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        print(f"wrap_parser attempt {attempt}/{max_attempts}")
-        result_dict = parse_with_gemini(query, api_key, model=model_name)
-
-        if result_dict is not None:
-            break
-
-        if attempt < max_attempts:
-            wait = 10
-            print(f"Retrying in {wait}s...")
-            time.sleep(wait)
+    result_dict = parse_with_gemini(query, model=DEFAULT_MODEL)
 
     if result_dict is None:
         print("⚠️ Using fallback context")
         return [
-        ["urgent", 0.00],
-        ["complexity", 0.30],
-        ["ambiguity", 0.00],
-        ["expertise", 0.5],
-        ["threshold", 0.30],
-        ["topic_familiarity", 0.50],
-        ["failure_signal", 0.30],
-        ["intent_type", "mixed"],
-        ["reflective_intent", 0.5],
-        ["verify_request", 0],
-        ["needs_external_evidence", 0.30],
-        ["needs_task_plan", 0.20],
-        ["needs_multi_source_integration", 0.30],
-        ["valence", 0.00]
+            ["urgent", 0.00],
+            ["complexity", 0.30],
+            ["ambiguity", 0.00],
+            ["expertise", 0.5],
+            ["threshold", 0.30],
+            ["topic_familiarity", 0.50],
+            ["failure_signal", 0.30],
+            ["intent_type", "mixed"],
+            ["reflective_intent", 0.5],
+            ["verify_request", 0],
+            ["needs_external_evidence", 0.30],
+            ["needs_task_plan", 0.20],
+            ["needs_multi_source_integration", 0.30],
+            ["valence", 0.00],
         ]
-        
 
     ordered_keys = [
         "urgent",
@@ -352,13 +273,12 @@ def wrap_parser(query):
         "needs_external_evidence",
         "needs_task_plan",
         "needs_multi_source_integration",
-        "valence"
+        "valence",
     ]
 
     result_list = []
 
     for key in ordered_keys:
-
         if key not in result_dict:
             continue
 

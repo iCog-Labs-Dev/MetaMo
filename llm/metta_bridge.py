@@ -10,7 +10,11 @@ if __package__ in (None, ""):
 from typing import Dict, Any, List
 
 # Import LLM components
-from llm.client import get_stimulus_from_text, get_candidates_from_text
+from llm.client import (
+    get_candidates_from_text,
+    get_stimulus_from_text,
+    get_turn_analysis,
+)
 from llm.conversation import MetaMoChatAssistant
 
 _assistant = None
@@ -20,6 +24,37 @@ def _get_assistant() -> MetaMoChatAssistant:
     if _assistant is None:
         _assistant = MetaMoChatAssistant()
     return _assistant
+
+
+def _actions_as_lists(actions) -> List[List[Any]]:
+    return [
+        [
+            str(action.id),
+            action.goal_correlations.tolist(),
+            float(action.risk_estimate),
+            action.delta_g.tolist(),
+        ]
+        for action in actions
+    ]
+
+
+def analyze_turn_as_lists(
+    text: str, arousal: float, caution: float
+) -> List[Any]:
+    """Return ``[stimulus_values, candidates]`` from one Gemini request."""
+    current_mood = {"arousal": float(arousal), "caution": float(caution)}
+    analysis = get_turn_analysis(text, current_mood)
+    stimulus = analysis.stimulus
+    return [
+        [
+            float(stimulus.novelty),
+            float(stimulus.conduciveness),
+            float(stimulus.risk),
+            float(stimulus.effort),
+        ],
+        _actions_as_lists(analysis.candidates),
+    ]
+
 
 def get_stimulus_as_list(text: str) -> List[float]:
     """
@@ -43,15 +78,7 @@ def get_candidates_as_list(text: str, arousal: float, caution: float) -> List[Li
     current_mood = {"arousal": float(arousal), "caution": float(caution)}
     actions = get_candidates_from_text(text, current_mood)
     
-    result = []
-    for action in actions:
-        result.append([
-            str(action.id),
-            action.goal_correlations.tolist(),
-            float(action.risk_estimate),
-            action.delta_g.tolist()
-        ])
-    return result
+    return _actions_as_lists(actions)
 
 def generate_final_response(user_text: str, action_id: str, ind_level: float, trans_level: float) -> str:
     """

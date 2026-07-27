@@ -63,14 +63,15 @@
         (let* (
             ($_ (py-call (io_bridge.print_output "\n[MetaMo Internal Processing...]")))
 
-            ;; 1. Perception 
-            ($stimulus (getStimulusFromText $userInput))
-
-            ;; 2. Candidate generation
+            ;; 1. Merge mood before the single perception/routing request
             ($mergedForMood (mergeSubsystemStates $states 0.05))
             ($arousal (getModulator $mergedForMood arousal))
             ($caution (getModulator $mergedForMood securing))
-            ($candidates (getCandidatesFromText $userInput $arousal $caution))
+
+            ;; 2. One LLM request returns stimulus signals; candidate routing is local
+            ($analysis (analyzeTurnFromText $userInput $arousal $caution))
+            ($stimulus (index-atom $analysis 0))
+            ($candidates (index-atom $analysis 1))
 
             ;; 3. MetaMo cycle
             ($result (runMetaMoCycleDefault
