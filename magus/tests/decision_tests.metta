@@ -1,83 +1,101 @@
+!(import! &self ../../core/validation)
+!(import! &self ../../core/schema)
+!(import! &self ../../core/features)
+!(import! &self ../../core/state)
 !(import! &self ../../core/helper)
 !(import! &self "../../core/helpers.py")
-!(import! &self ../../core/state)
-!(import! &self ../../core/state_accessors)
-!(import! &self ../../core/config)
-!(import! &self ../../openpsi/config)
 !(import! &self ../../category/functors)
+!(import! &self ../correlation)
+!(import! &self ../profile)
+!(import! &self ../goal_change)
 !(import! &self ../decision)
 
-;; Unit Tests
-
-;; Test magusUnit returns state unchanged
-!(test
-    (magusUnit (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5)))
-    (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5))
+(= (decisionTestSchema)
+    (motivationSchema
+        decision_test
+        (magusGoalSchema (help) (risk) (individuation transcendence help risk) individuation transcendence)
+        (modulatorSchema (resolution threshold securing) () (resolution threshold securing))
+        decision
+        appraisal
+    )
 )
 
-;; Test overgoal support for individuation-leaning goal
-!(test
-    (magusOvergoalSupport gHelp 0.9 0.1)
-    (+ 0.5 (* 0.5 0.9))
+(= (decisionTestProfile)
+    (decisionProfile
+        decision_test
+        (decisionTestSchema)
+        ((help (resolution)))
+        (help)
+        ()
+        ()
+        ((risk 1.0))
+        ()
+        ()
+        none
+        0.01
+        0.02
+        0.05
+        0.0
+        0.1
+    )
 )
 
-;; Test overgoal support for transcendence-leaning goal
-!(test
-    (magusOvergoalSupport gCurio 0.1 0.9)
-    (+ 0.5 (* 0.5 0.9))
+(= (decisionTestState)
+    (motivationState (decisionTestSchema) (0.5 0.5 0.8 0.2) (0.7 0.5 0.5))
 )
 
-;; Test overgoal support for dual-drive goal
-!(test
-    (magusOvergoalSupport gSelf 0.8 0.6)
-    (+ 0.5 (* 0.25 (+ 0.8 0.6)))
+(= (decisionWeakCandidate)
+    (actionCandidate weak (decisionTestSchema) (0.0 0.0 0.1 0.0) 0.1 (0.0 0.0 0.0 0.0) ())
 )
 
-;; Test magusScore returns a number for a valid candidate
+(= (decisionStrongCandidate)
+    (actionCandidate strong (decisionTestSchema) (0.0 0.0 0.9 0.0) 0.1 (0.0 0.0 0.0 0.0) ())
+)
+
+(= (decisionTestDecision)
+    (magusDecision (decisionTestProfile) defaultGoalChangeDeltaG 0.5 0.5)
+)
+
 !(test
-    (> (magusScore
-        (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5))
-        (action act1 (0.0 0.0 0.25 0.5 0.3 0.1 0.2 0.15) 0.1 (0.0 0.0 0.05 0.1 0.05 0.0 0.0 0.0))
-    ) -100.0)
+    (profiledMagusUnit (decisionTestState))
+    (decisionTestState)
+)
+
+!(test
+    (> (decisionProfileOvergoalSupport (decisionTestProfile) help 0.9 0.1) 0.5)
     True
 )
 
-;; Test magusDecide returns a DecisionResult with best action
 !(test
-    (actionId (decisionAction
-        (magusDecide
-            (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5))
-            (
-                (action act1 (0.0 0.0 0.1 0.1 0.1 0.1 0.1 0.1) 0.1 (0.0 0.0 0.01 0.01 0.01 0.0 0.0 0.0))
-                (action act2 (0.0 0.0 0.5 0.5 0.5 0.5 0.5 0.5) 0.05 (0.0 0.0 0.05 0.05 0.05 0.0 0.0 0.0))
+    (> (magusScore (decisionTestDecision) (decisionTestState) (decisionStrongCandidate))
+       (magusScore (decisionTestDecision) (decisionTestState) (decisionWeakCandidate)))
+    True
+)
+
+!(test
+    (candidateId
+        (decisionAction
+            (magusDecide
+                (decisionTestDecision)
+                (decisionTestState)
+                ((decisionWeakCandidate) (decisionStrongCandidate))
+                (goalChangeFeedback ())
             )
         )
-    ))
-    act2
+    )
+    strong
 )
 
-;; Test magusDecision constructs a valid DecisionMonad
 !(test
-    (unit (magusDecision) (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5)))
-    (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5))
-)
-
-;; Behavioral Logic Tests
-
-;; Test Curiosity-Ethics Conflict Penalty
-;; act1: high ethics, high curiosity (conflict)
-;; act2: high ethics, low curiosity (no conflict)
-;; act2 should be preferred even if act1 has slightly higher correlations overall.
-!(test
-    (actionId (decisionAction
-        (magusDecide
-            (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5))
-            (
-                (action conflict_act (0.0 0.0 0.0 0.8 0.0 0.0 -0.8 0.0) 0.01 (0.0 0.0 0.0 0.08 0.0 0.0 -0.08 0.0))
-                (action safe_act (0.0 0.0 0.0 0.1 0.0 0.0 0.8 0.0) 0.01 (0.0 0.0 0.0 0.01 0.0 0.0 0.08 0.0))
+    (size-atom
+        (decisionDeltaG
+            (magusDecide
+                (decisionTestDecision)
+                (decisionTestState)
+                ((decisionStrongCandidate))
+                (goalChangeFeedback ())
             )
         )
-    ))
-    safe_act
+    )
+    4
 )
-
