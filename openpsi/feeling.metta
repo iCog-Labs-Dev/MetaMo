@@ -18,11 +18,11 @@
     (match &self (EmotionModulator $emotion $modulator $ind) $ind)
 )
 
-;; weighted contribution of one dimension
+;; Weighted contribution of one dimension.
 ;; W_m * P(modulatorLevel, indicator) for one emotion dimension.
 (= (emotionDimContribution $state $emotion $modulator)
     (let* (
-        ($level     (getModulator $state $modulator))
+        ($level     (stateModulator $state $modulator))
         ($indicator (emotionIndicator $emotion $modulator))
         ($p         (indicatorMembership $level $indicator))
     )
