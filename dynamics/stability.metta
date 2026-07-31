@@ -1,141 +1,275 @@
-;; Stability and Safety Region Dynamics
+;; Canonical policy-driven stability configuration.
 
-;; Safe Region Check
-;; Checks if the state is within the safe region R.
-;; R = {(G, M) | g_over^Ind >= θ_safe ∧ ||G|| <= G_max}
-(= (isInSafeRegion $state)
+(: StabilityPolicy Type)
+(: defaultStabilityPolicy (-> Number Number Number Number Number Expression StabilityPolicy))
+
+;; Return the theta-safe individuation floor.
+;; Example: (stabilityThetaSafe (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))) -> 0.3
+(= (stabilityThetaSafe (defaultStabilityPolicy $thetaSafe $gMax $etaBoundary $cContract $epsilon $cautionModulators))
+    $thetaSafe
+)
+
+;; Return the maximum goal norm.
+;; Example: (stabilityGMax (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))) -> 2.0
+(= (stabilityGMax (defaultStabilityPolicy $thetaSafe $gMax $etaBoundary $cContract $epsilon $cautionModulators))
+    $gMax
+)
+
+;; Return the boundary-band width.
+;; Example: (stabilityEtaBoundary (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))) -> 0.1
+(= (stabilityEtaBoundary (defaultStabilityPolicy $thetaSafe $gMax $etaBoundary $cContract $epsilon $cautionModulators))
+    $etaBoundary
+)
+
+;; Return the contraction constant.
+;; Example: (stabilityCContract (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))) -> 0.9
+(= (stabilityCContract (defaultStabilityPolicy $thetaSafe $gMax $etaBoundary $cContract $epsilon $cautionModulators))
+    $cContract
+)
+
+;; Return the contraction epsilon.
+;; Example: (stabilityEpsilon (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))) -> 0.05
+(= (stabilityEpsilon (defaultStabilityPolicy $thetaSafe $gMax $etaBoundary $cContract $epsilon $cautionModulators))
+    $epsilon
+)
+
+;; Return caution modulator names.
+;; Example: (stabilityCautionModulators (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))) -> (threshold securing)
+(= (stabilityCautionModulators (defaultStabilityPolicy $thetaSafe $gMax $etaBoundary $cContract $epsilon $cautionModulators))
+    $cautionModulators
+)
+
+;; Construct the Python-compatible default stability policy.
+;; Example: (makeDefaultStabilityPolicy) -> (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))
+(= (makeDefaultStabilityPolicy)
+    (defaultStabilityPolicy 0.3 2.0 0.1 0.9 0.05 (threshold securing))
+)
+
+;; Look up the schema-specific individuation index.
+;; Example: (stabilityIndividuationIndex schema) -> (validationOk 0)
+(= (stabilityIndividuationIndex $schema)
+    (schemaGoalIndex
+        $schema
+        (magusGoalSchemaIndividuationName (motivationSchemaGoals $schema))
+    )
+)
+
+;; Check whether a canonical state is in the policy safe region.
+;; Example: (isInSafeRegion (makeDefaultStabilityPolicy) state) -> True
+(= (isInSafeRegion $policy $state)
     (let* (
-        ($gInd (getGoal $state gInd))
-        ($gNorm (norm (motivationGoals $state)))
+        ($schema (stateSchema $state))
+        ($idxResult (stabilityIndividuationIndex $schema))
     )
-        (and (>= $gInd (eval (THETA_SAFE))) (<= $gNorm (eval (G_MAX))))
-    )
-)
-
-;; Distance to Unsafe Boundary
-;; Approximates distance from current state to the edge of the safe region (∂R).
-;; Returns the minimum of: distance to individuation floor, distance to goal norm ceiling.
-;; Example: (distanceToUnsafeBoundary $state)
-(= (distanceToUnsafeBoundary $state)
-    (let* (
-        ($gInd (getGoal $state gInd))
-        ($gNorm (norm (motivationGoals $state)))
-        ($distTheta (positivePart (- $gInd (eval (THETA_SAFE)))))
-        ($distGMax (positivePart (- (eval (G_MAX)) $gNorm)))
-    )
-        (if (< $distTheta $distGMax) $distTheta $distGMax)
-    )
-)
-
-;; Boundary Band Check
-;; Checks if the state is in the boundary band B_η (inside safe region but close to boundary).
-;; B_η = {x ∈ R | dist(x, X\R) <= η}
-;; Example: (isInBoundaryBand $state)
-(= (isInBoundaryBand $state)
-    (if (isInSafeRegion $state)
-        (<= (distanceToUnsafeBoundary $state) (eval (ETA_BOUNDARY)))
-        False
-    )
-)
-
-;; Boundary Pressure
-;; Returns how strongly the safety boundary should constrain updates.
-;; 0.0 = comfortably inside safe region, 1.0 = outside or on the edge.
-;; Example: (boundaryPressure $state)
-(= (boundaryPressure $state)
-    (if (isInSafeRegion $state)
-        (let $dist (distanceToUnsafeBoundary $state)
-            (if (>= $dist (eval (ETA_BOUNDARY)))
-                0.0
-                (let $raw (- 1.0 (/ $dist (eval (ETA_BOUNDARY))))
-                    (if (< $raw 0.0) 0.0 (if (> $raw 1.0) 1.0 $raw))
+        (case $idxResult (
+            ((validationOk $idx)
+                (and
+                    (>= (index-atom (stateGoals $state) $idx) (stabilityThetaSafe $policy))
+                    (<= (eval (norm (stateGoals $state))) (stabilityGMax $policy))
                 )
+            )
+            ($_ False)
+        ))
+    )
+)
+
+;; Measure distance to the nearest unsafe boundary.
+;; Example: (distanceToUnsafeBoundary policy state) -> 0.2
+(= (distanceToUnsafeBoundary $policy $state)
+    (let* (
+        ($schema (stateSchema $state))
+        ($idxResult (stabilityIndividuationIndex $schema))
+    )
+        (case $idxResult (
+            ((validationOk $idx)
+                (let* (
+                    ($gInd (index-atom (stateGoals $state) $idx))
+                    ($gNorm (eval (norm (stateGoals $state))))
+                    ($distTheta (positivePart (- $gInd (stabilityThetaSafe $policy))))
+                    ($distGMax (positivePart (- (stabilityGMax $policy) $gNorm)))
+                )
+                    (minNumber $distTheta $distGMax)
+                )
+            )
+            ($_ 0.0)
+        ))
+    )
+)
+
+;; Check whether a state is in the policy boundary band.
+;; Example: (isInBoundaryBand policy state) -> False
+(= (isInBoundaryBandFromSafe True $policy $state)
+    (eval (<=
+        (eval (distanceToUnsafeBoundary $policy $state))
+        (stabilityEtaBoundary $policy)
+    ))
+)
+
+(= (isInBoundaryBandFromSafe False $policy $state)
+    False
+)
+
+(= (isInBoundaryBand $policy $state)
+    (let* (
+        ($safe (eval (isInSafeRegion $policy $state)))
+    )
+        (isInBoundaryBandFromSafe $safe $policy $state)
+    )
+)
+
+;; Compute policy boundary pressure.
+;; Example: (boundaryPressure policy state) -> 0.0
+(= (boundaryPressure $policy $state)
+    (if (isInSafeRegion $policy $state)
+        (let* (
+            ($dist (distanceToUnsafeBoundary $policy $state))
+        )
+            (if (>= $dist (stabilityEtaBoundary $policy))
+                0.0
+                (clipUnit (- 1.0 (/ $dist (stabilityEtaBoundary $policy))))
             )
         )
         1.0
     )
 )
 
-;; Raise Boundary Caution
-;; Boosts caution-related modulators as state approaches or crosses safety boundary.
-;; Uses OPENPSI_CAUTION_MOD_IDX from project config to identify which modulators to boost.
-;; This is the $boundaryFn plugged into the bimonad.
-;; Example: (raiseBoundaryCaution (motivation (...) (...)))
-(= (raiseBoundaryCaution $state)
-    (let $pressure (boundaryPressure $state)
+;; Boost one named modulator if the schema contains it.
+;; Example: (boostNamedModulator state threshold 0.1) -> updated-state
+(= (boostNamedModulator $state $modulatorName $boost)
+    (let* (
+        ($idxResult (schemaModulatorIndex (stateSchema $state) $modulatorName))
+    )
+        (case $idxResult (
+            ((validationOk $idx)
+                (stateSetModulator
+                    $state
+                    $modulatorName
+                    (clipUnit (+ (index-atom (stateModulators $state) $idx) $boost))
+                )
+            )
+            ($_ $state)
+        ))
+    )
+)
+
+;; Boost all policy caution modulators that exist in the schema.
+;; Example: (boostNamedModulators state (threshold securing) 0.1) -> updated-state
+(= (boostNamedModulators $state $modulatorNames $boost)
+    (if (== $modulatorNames ())
+        $state
+        (let* (
+            (($head $tail) (decons $modulatorNames))
+        )
+            (boostNamedModulators
+                (boostNamedModulator $state $head $boost)
+                $tail
+                $boost
+            )
+        )
+    )
+)
+
+;; Raise caution-related modulators as boundary pressure rises.
+;; Example: (raiseBoundaryCaution (makeDefaultStabilityPolicy) state) -> updated-state
+(= (raiseBoundaryCaution $policy $state)
+    (let* (
+        ($pressure (boundaryPressure $policy $state))
+    )
         (if (== $pressure 0.0)
             $state
-            (let $boostedMods (boostAtIndices
-                    (motivationModulators $state)
-                    (eval (OPENPSI_CAUTION_MOD_IDX))
-                    (* 0.25 $pressure)
-                    1.0)
-                (motivation (motivationGoals $state) $boostedMods)
+            (boostNamedModulators
+                $state
+                (stabilityCautionModulators $policy)
+                (* 0.25 $pressure)
             )
         )
     )
 )
 
-;; Homeostatic Damping
-;; Damps goal updates near the boundary to enforce contractive dynamics.
-;; Stronger boundary pressure and higher individuation induce more contraction.
-;; This is the $dampingFn plugged into the bimonad.
-;; Example: (applyHomeostaticDamping $state (0.1 -0.05 0.0 ...))
-(= (applyHomeostaticDamping $state $deltaG)
-    (let $pressure (boundaryPressure $state)
+;; Apply policy homeostatic damping to a goal update.
+;; Example: (applyHomeostaticDamping policy state (0.1)) -> (0.1)
+(= (applyHomeostaticDamping $policy $state $deltaG)
+    (let* (
+        ($pressure (boundaryPressure $policy $state))
+        ($idxResult (stabilityIndividuationIndex (stateSchema $state)))
+    )
         (if (== $pressure 0.0)
             $deltaG
-            (let* (
-                ($gInd (getGoal $state gInd))
-                ($dampingFactor (positivePart (- 1.0 (* $pressure $gInd))))
-            )
-                (scaleArray $deltaG $dampingFactor)
-            )
+            (case $idxResult (
+                ((validationOk $idx)
+                    (scaleArray
+                        $deltaG
+                        (positivePart (- 1.0 (* $pressure (index-atom (stateGoals $state) $idx))))
+                    )
+                )
+                ($_ $deltaG)
+            ))
         )
     )
 )
 
-;; Project to Safe Region
-;; Projects a state back into the safe region by restoring individuation floor
-;; and shrinking goal vector if it exceeds the allowed norm.
-;; Also boosts caution modulators as a protective response.
-;; This is the $projectFn plugged into the bimonad.
-;; Example: (projectToSafeRegion $state)
-(= (projectToSafeRegion $state)
+;; Project a canonical state into the policy safe region while preserving its schema.
+;; Example: (projectToSafeRegion policy state) -> projected-state
+(= (projectToSafeRegion $policy $state)
     (let* (
-        ($safeGoals (projectGoalsToSafe
-            (motivationGoals $state)
-            (eval (OPENPSI_GOAL_WEIGHT_IDX))
-            (eval (THETA_SAFE))
-            (eval (G_MAX))))
-        ($boostedMods (boostAtIndices
-            (motivationModulators $state)
-            (eval (OPENPSI_CAUTION_MOD_IDX))
-            0.1
-            1.0))
+        ($schema (stateSchema $state))
+        ($idxResult (stabilityIndividuationIndex $schema))
+        ($initialPressure (boundaryPressure $policy $state))
     )
-        (motivation $safeGoals $boostedMods)
+        (case $idxResult (
+            ((validationOk $idx)
+                (let* (
+                    ($safeGoals (projectGoalsToSafe
+                        (stateGoals $state)
+                        $idx
+                        (stabilityThetaSafe $policy)
+                        (stabilityGMax $policy)
+                    ))
+                    ($projected (motivationState $schema $safeGoals (stateModulators $state)))
+                    ($finalPressure (boundaryPressure $policy $projected))
+                    ($cautionPressure (maxNumber $initialPressure $finalPressure))
+                )
+                    (if (> $cautionPressure 0.0)
+                        (boostNamedModulators
+                            $projected
+                            (stabilityCautionModulators $policy)
+                            (* 0.1 $cautionPressure)
+                        )
+                        $projected
+                    )
+                )
+            )
+            ($_ $state)
+        ))
     )
 )
 
-;; Contractive Update Law Check
-;; Validates that the bimonad update F = D ∘ Ψ is contractive near the boundary.
-;; Requirement: d(F(x), F(y)) <= c * d(x,y) + ε where c < 1.
-;; If neither state is in the boundary band, contractivity relaxes.
-;; This is the $contractiveFn plugged into the bimonad.
-;; Example: (checkContractiveUpdateLaw $bimonad $x $y $stimulus $candidates)
-(= (checkContractiveUpdateLaw $bimonad $x $y $stimulus $candidates)
-    (if (not (or (isInBoundaryBand $x) (isInBoundaryBand $y)))
-        True
-        (let* (
-            ($distInitial (motivationStateDistance $x $y))
-            ($transX (computeTransition $bimonad $x $stimulus $candidates))
-            ($transY (computeTransition $bimonad $y $stimulus $candidates))
-            ($fX (transitionState $transX))
-            ($fY (transitionState $transY))
-            ($distFinal (motivationStateDistance $fX $fY))
-        )
-            (<= $distFinal (+ (* (eval (C_CONTRACT)) $distInitial) (eval (EPSILON))))
-        )
+;; Check the contractive update law through a canonical bimonad.
+;; Example: (checkContractiveUpdateLaw policy bimonad x y stimulus candidates) -> True
+(= (checkContractiveUpdateLawFromBoundary False $policy $bimonad $x $y $stimulus $candidates)
+    True
+)
+
+(= (checkContractiveUpdateLawFromBoundary True $policy $bimonad $x $y $stimulus $candidates)
+    (let* (
+        ($distInitial (eval (stateDistance $x $y)))
+        ($transX (eval (computeTransition $bimonad $x $stimulus $candidates)))
+        ($transY (eval (computeTransition $bimonad $y $stimulus $candidates)))
+        ($fX (eval (transitionComputationState $transX)))
+        ($fY (eval (transitionComputationState $transY)))
+        ($distFinal (eval (stateDistance $fX $fY)))
+        ($limit (eval (+ (* (stabilityCContract $policy) $distInitial) (stabilityEpsilon $policy))))
+    )
+        (eval (<= $distFinal $limit))
+    )
+)
+
+(= (checkContractiveUpdateLaw $policy $bimonad $x $y $stimulus $candidates)
+    (let* (
+        ($xBand (eval (isInBoundaryBand $policy $x)))
+        ($yBand (eval (isInBoundaryBand $policy $y)))
+        ($nearBoundary (eval (or $xBand $yBand)))
+    )
+        (checkContractiveUpdateLawFromBoundary $nearBoundary $policy $bimonad $x $y $stimulus $candidates)
     )
 )
