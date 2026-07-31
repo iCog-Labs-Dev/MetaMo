@@ -1,186 +1,96 @@
-
-!(import! &self "../helpers.py")
-!(import! &self ../helper)
+!(import! &self ../validation)
+!(import! &self ../schema)
+!(import! &self ../features)
 !(import! &self ../state)
-!(import! &self ../state_accessors)
-!(import! &self ../config)
-!(import! &self ../../openpsi/config)
-!(import! &self ../../openpsi/appraisal_helpers)
+!(import! &self ../helper)
+!(import! &self "../helpers.py")
+!(import! &self ../../openpsi/profile)
 !(import! &self ../../openpsi/appraisal)
+!(import! &self ../../magus/correlation)
+!(import! &self ../../magus/profile)
+!(import! &self ../../magus/goal_change)
 !(import! &self ../../magus/decision)
+!(import! &self ../../dynamics/stability)
+!(import! &self ../../dynamics/coherence)
+!(import! &self ../../category/merge)
+!(import! &self ../../category/diagnostics)
 !(import! &self ../../category/functors)
 !(import! &self ../../category/bimonad)
-!(import! &self ../../dynamics/default)
+!(import! &self ../runtime)
 !(import! &self ../registry)
 
-(= (regTestState)
-    (motivation
-        (0.5 0.4 0.6 0.5 0.5 0.5 0.6 0.4)
-        (0.5 0.5 0.5 0.5 0.5 0.5)
+(= (registrySmokeStimulus $raw) $raw)
+(= (registrySmokeFeatures $state $stimulus) $stimulus)
+(= (registrySmokeCoreDeltas $state $features) ((valence 0.0)))
+(= (registrySmokeAppDeltas $state $features) ())
+(= (registrySmokeFeedback $state $stimulus $features) (goalChangeFeedback ()))
+
+(= (registrySmokeSchema)
+    (motivationSchema
+        registry_smoke
+        (magusGoalSchema (help) () (individuation transcendence help) individuation transcendence)
+        (modulatorSchema (valence threshold securing) () (valence threshold securing))
+        decision
+        appraisal
     )
 )
 
-(= (regStimulus)
-    (openPsiStimulus 0.3 0.6 0.1 0.2)
+(= (registrySmokeProfile)
+    (decisionProfile registry_smoke (registrySmokeSchema) ((help (valence))) (help) () () () () () none 0.01 0.02 0.05 0.0 0.1)
 )
 
-(= (regCandidateA)
-    (action MOVE
-        (0.3  0.1  0.5  0.2  0.0 -0.1  0.4  0.1)
-        0.1
-        (0.02 0.01 0.03 0.01 0.01 0.01 0.02 0.01)
+(= (registrySmokeAppraisal)
+    (appraisalProfile registry_smoke (valence) registrySmokeFeatures registrySmokeCoreDeltas registrySmokeAppDeltas registrySmokeFeedback 1.0 ())
+)
+
+(= (registrySmokeCandidates $state $stimulus)
+    ((actionCandidate answer (registrySmokeSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+)
+
+(= (registrySmokeBundle)
+    (applicationBundle
+        registry_smoke
+        (registrySmokeSchema)
+        (registrySmokeAppraisal)
+        (registrySmokeProfile)
+        defaultGoalChangeDeltaG
+        (makeDefaultStabilityPolicy)
+        (makeDefaultCoherencePolicy)
+        (makeDefaultParallelMergePolicy)
+        registrySmokeStimulus
+        registrySmokeCandidates
+        ()
     )
 )
 
-(= (regCandidateB)
-    (action STAY
-        (0.1  0.0  0.2  0.1  0.1  0.2  0.1  0.3)
-        0.05
-        (0.01 0.00 0.01 0.01 0.02 0.01 0.01 0.01)
-    )
-)
-
-(= (regCandidates) ((regCandidateA) (regCandidateB)))
-
-
-;; Symbol readers resolve to config atoms  
-
-!(test (metaMoAppraisalModuleSymbol) openPsiAppraisal)
-!(test (metaMoDecisionModuleSymbol)  magusDecision)
-!(test (metaMoDampingSymbol)         defaultDamping)
-!(test (metaMoBoundarySymbol)        defaultBoundaryStabilize)
-!(test (metaMoProjectSymbol)         defaultProject)
-!(test (metaMoContractiveSymbol)     defaultContractiveCheck)
-!(test (metaMoSafeRegionSymbol)      defaultSafeRegionCheck)
-
-
-;;  buildMetaMo slots match config  
-
-;; Decision slot holds a DecisionMonad wired to magusDecide
-!(test
-    (decisionDecideSymbol (bimonadDecision (buildMetaMo)))
-    magusDecide
-)
-
-;; Dynamics symbols stored in the built bimonad match config
-!(test (bimonadDampingSymbol    (buildMetaMo)) defaultDamping)
-!(test (bimonadBoundarySymbol   (buildMetaMo)) defaultBoundaryStabilize)
-!(test (bimonadProjectSymbol    (buildMetaMo)) defaultProject)
-!(test (bimonadContractiveSymbol (buildMetaMo)) defaultContractiveCheck)
-!(test (bimonadSafeRegionSymbol (buildMetaMo)) defaultSafeRegionCheck)
-
-
-;; defaultMetaMo mirrors buildMetaMo  
-
-!(test
-    (bimonadDampingSymbol (defaultMetaMo))
-    (bimonadDampingSymbol (buildMetaMo))
+(= (registrySmokeState)
+    (motivationState (registrySmokeSchema) (0.5 0.5 0.8) (0.5 0.5 0.5))
 )
 
 !(test
-    (bimonadSafeRegionSymbol (defaultMetaMo))
-    (bimonadSafeRegionSymbol (buildMetaMo))
-)
-
-
-;; end-to-end: step runs 
-
-;; Returns a TransitionResult
-!(test
-    (validateMotivationalStateShape
-        (transitionState
-            (step (defaultMetaMo) (regTestState) (regStimulus) (regCandidates))
-        )
-    )
+    (validationIsOk (validateApplicationBundle (registrySmokeBundle)))
     True
 )
 
 !(test
-    (actionId
+    (bimonadMerge (buildMetaMoFromBundle (registrySmokeBundle)))
+    (makeDefaultParallelMergePolicy)
+)
+
+!(test
+    (bimonadStability (buildValidatedMetaMoFromBundle (registrySmokeBundle)))
+    (makeDefaultStabilityPolicy)
+)
+
+!(test
+    (candidateId
         (transitionAction
-            (step (defaultMetaMo) (regTestState) (regStimulus) (regCandidates))
+            (runRegisteredBundleStep
+                (registrySmokeBundle)
+                (registrySmokeState)
+                (stimulusFeatures ())
+            )
         )
     )
-    MOVE
-)
-
-;; Next state passes shape validation
-!(test
-    (validateMotivationalStateShape
-        (transitionState
-            (step (defaultMetaMo) (regTestState) (regStimulus) (regCandidates))
-        )
-    )
-    True
-)
-
-;; Transition action has the expected action shape
-!(test
-    (validateActionShape
-        (transitionAction
-        (step (defaultMetaMo) (regTestState) (regStimulus) (regCandidates))
-        )
-    )
-    True
-)
-
-;; Same inputs → same action 
-!(test
-    (transitionAction
-        (step (defaultMetaMo) (regTestState) (regStimulus) (regCandidates))
-    )
-    (transitionAction
-        (step (defaultMetaMo) (regTestState) (regStimulus) (regCandidates))
-    )
-)
-
-
-;;  module swap: custom decision wired at call-site  
-
-(= (regFirstUnit $state) $state)
-
-(= (regFirstDecide $state $candidates)
-    (let* (
-        (($head $rest) (decons $candidates))
-    )
-        (decisionResult $head (actionDeltaG $head))
-    )
-)
-
-(= (regFirstScore $state $candidate) 1.0)
-
-(= (regFirstDecision)
-    (decisionMonad regFirstUnit regFirstDecide regFirstScore)
-)
-
-(= (regSwappedBimonad)
-    (metaMoPseudoBimonad
-        (eval (openPsiAppraisal))
-        (regFirstDecision)
-        defaultDamping
-        defaultBoundaryStabilize
-        defaultProject
-        defaultContractiveCheck
-        defaultSafeRegionCheck
-    )
-)
-
-;; Swapped bimonad produces a valid result
-!(test
-    (validateMotivationalStateShape
-        (transitionState
-            (step (regSwappedBimonad) (regTestState) (regStimulus) (regCandidates))
-        )
-    )
-    True
-)
-
-;; firstDecide always picks the first candidate
-!(test
-    (actionId
-        (transitionAction
-            (step (regSwappedBimonad) (regTestState) (regStimulus) (regCandidates))
-        )
-    )
-    (actionId (regCandidateA))
+    answer
 )
