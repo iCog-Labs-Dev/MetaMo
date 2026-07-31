@@ -5,9 +5,9 @@
 !(import! &self "../../core/helpers.py")
 !(import! &self ../coherence)
 
-(= (coherenceSmokeSchema)
+(= (coherenceTestSchema)
     (motivationSchema
-        coherence_smoke
+        synthetic
         (magusGoalSchema (help) (risk) (individuation transcendence help risk) individuation transcendence)
         (modulatorSchema (valence arousal approach resolution threshold securing) (focus) (valence arousal approach resolution threshold securing focus))
         decision
@@ -15,17 +15,17 @@
     )
 )
 
-(= (coherenceSmokeState)
-    (motivationState (coherenceSmokeSchema) (0.5 0.5 0.8 0.2) (0.5 0.5 0.5 0.5 0.5 0.5 0.3))
-)
-
-(= (coherenceSmokeTarget)
-    (motivationState (coherenceSmokeSchema) (0.6 0.5 0.7 0.1) (0.6 0.5 0.5 0.5 0.5 0.5 0.3))
+(= (coherenceState)
+    (motivationState
+        (coherenceTestSchema)
+        (0.5 0.5 0.8 0.2)
+        (0.5 0.5 0.5 0.5 0.5 0.5 0.3)
+    )
 )
 
 (= (coherenceSparseSchema)
     (motivationSchema
-        coherence_sparse
+        sparse
         (magusGoalSchema (help) () (individuation transcendence help) individuation transcendence)
         (modulatorSchema (valence threshold securing) () (valence threshold securing))
         decision
@@ -34,11 +34,15 @@
 )
 
 (= (coherenceSparseState)
-    (motivationState (coherenceSparseSchema) (0.5 0.5 0.8) (0.5 0.5 0.5))
+    (motivationState
+        (coherenceSparseSchema)
+        (0.5 0.5 0.8)
+        (0.5 0.5 0.5)
+    )
 )
 
 !(test
-    (> (calculateBlendFactor (makeDefaultCoherencePolicy) (coherenceSmokeState)) 0.0)
+    (> (size-atom (selfModelVector (estimateSelfModel (makeDefaultCoherencePolicy) (coherenceState)))) 0)
     True
 )
 
@@ -46,8 +50,8 @@
     (selfModelDriftHolds
         (measureSelfModelDrift
             (makeDefaultCoherencePolicy)
-            (coherenceSmokeState)
-            (coherenceSmokeState)
+            (coherenceState)
+            (coherenceState)
         )
     )
     True
@@ -55,16 +59,29 @@
 
 !(test
     (stateSchema
-        (blendStates
-            (makeDefaultCoherencePolicy)
-            (coherenceSmokeState)
-            (coherenceSmokeTarget)
+        (blendResultState
+            (measureBlend
+                (makeDefaultCoherencePolicy)
+                (coherenceState)
+                (coherenceState)
+            )
         )
     )
-    (coherenceSmokeSchema)
+    (coherenceTestSchema)
 )
 
 !(test
     (stateModulatorOrDefault (coherenceSparseState) resolution 0.0)
     0.0
+)
+
+!(test
+    (selfModelDriftHolds
+        (measureSelfModelDrift
+            (makeDefaultCoherencePolicy)
+            (coherenceSparseState)
+            (coherenceSparseState)
+        )
+    )
+    True
 )
