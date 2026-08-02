@@ -1,0 +1,283 @@
+;; Runtime spaces owned by the OmegaClaw/MetaMo state adapter.
+!(bind! &goal-space       (new-space))
+!(bind! &motivation-space (new-space))
+!(bind! &self-model-space (new-space))
+
+(= (motivationDecayRate)
+   (let $res (collapse (match &self (DynamicsConfig decay_rate $v) $v))
+      (if (== $res ()) 0.15 (car-atom $res))))
+
+(= (decayToward $value $baseline)
+   (clampValue (+ $value (* (motivationDecayRate) (- $baseline $value)))))
+
+(= (goalBaseline $name $fallback)
+   (let $res (collapse (match &self (GoalSpec $name $v) $v))
+      (if (== $res ()) $fallback (car-atom $res))))
+
+(= (modulatorBaseline $name $fallback)
+   (let $res (collapse (match &self (ModulatorSpec $name $v) $v))
+      (if (== $res ()) $fallback (car-atom $res))))
+
+(= (replaceGoal $name $newValue)
+   (let* (
+      ($existing (collapse (match &goal-space (goal $name $v) (goal $name $v))))
+      ($_ (if (!= $existing ())
+              (let (goal $n $oldValue) (car-atom $existing)
+                 (remove-atom &goal-space (goal $name $oldValue)))
+              _))
+      ($_ (add-atom &goal-space (goal $name $newValue)))
+   ) ()))
+
+(= (replaceModulator $name $newValue)
+   (let* (
+      ($existing (collapse (match &motivation-space (modulator $name $v) (modulator $name $v))))
+      ($_ (if (!= $existing ())
+              (let (modulator $n $oldValue) (car-atom $existing)
+                 (remove-atom &motivation-space (modulator $name $oldValue)))
+              _))
+      ($_ (add-atom &motivation-space (modulator $name $newValue)))
+   ) ()))
+
+(= (replaceMotive $name $newValue)
+   (let* (
+      ($existing (collapse (match &motivation-space (motive $name $v) (motive $name $v))))
+      ($_ (if (!= $existing ())
+              (let (motive $n $oldValue) (car-atom $existing)
+                 (remove-atom &motivation-space (motive $name $oldValue)))
+              _))
+      ($_ (add-atom &motivation-space (motive $name $newValue)))
+   ) ()))
+
+
+(= (extractGoalValue $name)
+    (let $res (collapse (match &goal-space (goal $name $v) $v))
+        (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (extractModulatorValue $name)
+    (let $res (collapse (match &motivation-space (modulator $name $v) $v))
+        (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (getGoals)
+    (collapse (match &goal-space (goal $name $v) (goal $name $v)))
+)
+
+(= (getAntiGoals)
+    (collapse (match &goal-space (anti-goal $name $v) (anti-goal $name $v)))
+)
+
+(= (getModulators)
+    (collapse (match &motivation-space (modulator $name $v) (modulator $name $v)))
+)
+
+(= (getSelfModel)
+    (collapse (match &self-model-space (self-metric $name $v) (self-metric $name $v)))
+)
+
+
+(= (motivosToMetamoState)
+    (let* (
+        ($g0 (extractGoalValue gInd_over))
+
+        ($g1 (extractGoalValue gTrans_over))
+        ($g2 (extractGoalValue help_user))
+        ($g3 (extractGoalValue learn))
+        ($g4 (extractGoalValue cooperate))
+        ($g5 (extractGoalValue responsiveness))
+        ($g6 (extractGoalValue clarity))
+        ($g7 (extractGoalValue coherence))
+        ($g8 (extractGoalValue reliability))
+        ($g9 (extractGoalValue progress))
+        ($g10 (extractGoalValue adaptivity))
+
+        ($m0 (extractModulatorValue urgency))
+        ($m1 (extractModulatorValue caution))
+        ($m2 (extractModulatorValue persistence))
+        ($m3 (extractModulatorValue exploration_bias))
+        ($m4 (extractModulatorValue context_depth))
+        ($m5 (extractModulatorValue human_deference))
+        ($m6 (extractModulatorValue arousal))
+        ($m7 (extractModulatorValue valence))
+        ($m8 (extractModulatorValue threshold))
+        ($m9 (extractModulatorValue securing))
+        ($m10 (extractModulatorValue focus))
+    )
+    (motivation
+        ($g0 $g1 $g2 $g3 $g4 $g5 $g6 $g7 $g8 $g9 $g10)
+        ($m0 $m1 $m2 $m3 $m4 $m5 $m6 $m7 $m8 $m9 $m10)
+    ))
+)
+
+(= (decayMetamoState $state)
+    (let* (
+        ($goals (motivationGoals $state))
+        ($mods  (motivationModulators $state))
+
+        ($g0  (decayToward (index-atom $goals 0)  (goalBaseline gInd_over      (index-atom $goals 0))))
+        ($g1  (decayToward (index-atom $goals 1)  (goalBaseline gTrans_over    (index-atom $goals 1))))
+        ($g2  (decayToward (index-atom $goals 2)  (goalBaseline help_user      (index-atom $goals 2))))
+        ($g3  (decayToward (index-atom $goals 3)  (goalBaseline learn          (index-atom $goals 3))))
+        ($g4  (decayToward (index-atom $goals 4)  (goalBaseline cooperate      (index-atom $goals 4))))
+        ($g5  (decayToward (index-atom $goals 5)  (goalBaseline responsiveness (index-atom $goals 5))))
+        ($g6  (decayToward (index-atom $goals 6)  (goalBaseline clarity        (index-atom $goals 6))))
+        ($g7  (decayToward (index-atom $goals 7)  (goalBaseline coherence      (index-atom $goals 7))))
+        ($g8  (decayToward (index-atom $goals 8)  (goalBaseline reliability    (index-atom $goals 8))))
+        ($g9  (decayToward (index-atom $goals 9)  (goalBaseline progress       (index-atom $goals 9))))
+        ($g10 (decayToward (index-atom $goals 10) (goalBaseline adaptivity     (index-atom $goals 10))))
+
+        ($m0  (decayToward (index-atom $mods 0)  (modulatorBaseline urgency          (index-atom $mods 0))))
+        ($m1  (decayToward (index-atom $mods 1)  (modulatorBaseline caution          (index-atom $mods 1))))
+        ($m2  (decayToward (index-atom $mods 2)  (modulatorBaseline persistence      (index-atom $mods 2))))
+        ($m3  (decayToward (index-atom $mods 3)  (modulatorBaseline exploration_bias (index-atom $mods 3))))
+        ($m4  (decayToward (index-atom $mods 4)  (modulatorBaseline context_depth    (index-atom $mods 4))))
+        ($m5  (decayToward (index-atom $mods 5)  (modulatorBaseline human_deference  (index-atom $mods 5))))
+        ($m6  (decayToward (index-atom $mods 6)  (modulatorBaseline arousal          (index-atom $mods 6))))
+        ($m7  (decayToward (index-atom $mods 7)  (modulatorBaseline valence          (index-atom $mods 7))))
+        ($m8  (decayToward (index-atom $mods 8)  (modulatorBaseline threshold        (index-atom $mods 8))))
+        ($m9  (decayToward (index-atom $mods 9)  (modulatorBaseline securing         (index-atom $mods 9))))
+        ($m10 (decayToward (index-atom $mods 10) (modulatorBaseline focus            (index-atom $mods 10))))
+    )
+    (motivation
+        ($g0 $g1 $g2 $g3 $g4 $g5 $g6 $g7 $g8 $g9 $g10)
+        ($m0 $m1 $m2 $m3 $m4 $m5 $m6 $m7 $m8 $m9 $m10)
+    ))
+)
+
+
+(= (extractAppraisalDim $dim)
+    (let $res (collapse (match &appraisal-space (appraisal $dim $v) $v))
+        (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (appraisalToStimulus)
+    (let* (
+        ($s0 (extractAppraisalDim novelty))
+        ($s1 (extractAppraisalDim risk))
+        ($s2 (extractAppraisalDim importance))
+        ($s3 (extractAppraisalDim uncertainty))
+        ($s4 (extractAppraisalDim opportunity))
+        ($s5 (extractAppraisalDim progress))
+    )
+    (stimulus ($s0 $s1 $s2 $s3 $s4 $s5))
+    )
+)
+
+
+(= (lookupAlignmentForGoal $cand $goalName)
+    (let $res (collapse (match &self (CandidateGoalAlignment $cand $goalName $w) $w))
+        (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (buildGoalCorrelations $cand)
+    (let* (
+        ($c0 (lookupAlignmentForGoal $cand gInd_over))
+        ($c1 (lookupAlignmentForGoal $cand gTrans_over))
+        ($c2 (lookupAlignmentForGoal $cand help_user))
+        ($c3 (lookupAlignmentForGoal $cand learn))
+        ($c4 (lookupAlignmentForGoal $cand cooperate))
+        ($c5 (lookupAlignmentForGoal $cand responsiveness))
+        ($c6 (lookupAlignmentForGoal $cand clarity))
+        ($c7 (lookupAlignmentForGoal $cand coherence))
+        ($c8 (lookupAlignmentForGoal $cand reliability))
+        ($c9 (lookupAlignmentForGoal $cand progress))
+        ($c10 (lookupAlignmentForGoal $cand adaptivity))
+    )
+    ($c0 $c1 $c2 $c3 $c4 $c5 $c6 $c7 $c8 $c9 $c10)
+    )
+)
+
+(= (lookupRiskEstimate $cand)
+    (let $res (collapse (match &self (CandidateRiskFactor $cand $r) $r))
+        (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (lookupDeltaGForGoal $cand $goalName)
+    (let $res (collapse (match &self (CandidateDeltaG $cand $goalName $d) $d))
+        (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (buildDeltaG $cand)
+    (let* (
+        ($d0 (lookupDeltaGForGoal $cand gInd_over))
+        ($d1 (lookupDeltaGForGoal $cand gTrans_over))
+        ($d2 (lookupDeltaGForGoal $cand help_user))
+        ($d3 (lookupDeltaGForGoal $cand learn))
+        ($d4 (lookupDeltaGForGoal $cand cooperate))
+        ($d5 (lookupDeltaGForGoal $cand responsiveness))
+        ($d6 (lookupDeltaGForGoal $cand clarity))
+        ($d7 (lookupDeltaGForGoal $cand coherence))
+        ($d8 (lookupDeltaGForGoal $cand reliability))
+        ($d9 (lookupDeltaGForGoal $cand progress))
+        ($d10 (lookupDeltaGForGoal $cand adaptivity))
+    )
+    ($d0 $d1 $d2 $d3 $d4 $d5 $d6 $d7 $d8 $d9 $d10)
+    )
+)
+
+(= (candidateToAction $cand)
+    (let* (
+        ($corrs (buildGoalCorrelations $cand))
+        ($risk (lookupRiskEstimate $cand))
+        ($delta (buildDeltaG $cand))
+    )
+    (action $cand $corrs $risk $delta)
+    )
+)
+
+(= (candidatesToActions)
+    (let $cands (collapse (match &candidateSpace (candidate $name) $name))
+        (collapse (let $cand (superpose $cands)
+            (candidateToAction $cand))))
+)
+
+
+(= (writeBackMetamoState $nextState)
+    (let* (
+        ($goals (motivationGoals $nextState))
+        ($mods  (motivationModulators $nextState))
+
+        ;; Goals
+        ($_ (replaceGoal gInd_over      (index-atom $goals 0)))
+        ($_ (replaceGoal gTrans_over    (index-atom $goals 1)))
+        ($_ (replaceGoal help_user      (index-atom $goals 2)))
+        ($_ (replaceGoal learn          (index-atom $goals 3)))
+        ($_ (replaceGoal cooperate      (index-atom $goals 4)))
+        ($_ (replaceGoal responsiveness (index-atom $goals 5)))
+        ($_ (replaceGoal clarity        (index-atom $goals 6)))
+        ($_ (replaceGoal coherence      (index-atom $goals 7)))
+        ($_ (replaceGoal reliability    (index-atom $goals 8)))
+        ($_ (replaceGoal progress       (index-atom $goals 9)))
+        ($_ (replaceGoal adaptivity     (index-atom $goals 10)))
+
+        ;; Modulators
+        ($_ (replaceModulator urgency          (index-atom $mods 0)))
+        ($_ (replaceModulator caution          (index-atom $mods 1)))
+        ($_ (replaceModulator persistence      (index-atom $mods 2)))
+        ($_ (replaceModulator exploration_bias (index-atom $mods 3)))
+        ($_ (replaceModulator context_depth    (index-atom $mods 4)))
+        ($_ (replaceModulator human_deference  (index-atom $mods 5)))
+        ($_ (replaceModulator arousal          (index-atom $mods 6)))
+        ($_ (replaceModulator valence          (index-atom $mods 7)))
+        ($_ (replaceModulator threshold        (index-atom $mods 8)))
+        ($_ (replaceModulator securing         (index-atom $mods 9)))
+        ($_ (replaceModulator focus            (index-atom $mods 10)))
+    ) True)
+)
+
+
+(= (metamoActionToDecision $action $score)
+    (let* (
+        ; ($_ (println! ("Metamo action: " $action)))
+        ; ($_ (println! ("Metamo score: " $score)))
+        
+        ($candName (actionId $action))
+        ; ($_ (println! ("Candidate name: " $candName)))
+        ($res (collapse (match &self (CandidateDecisionMap $candName $mode $dir)
+                            ($mode $dir))))
+        (($mode $dir) (if (== $res ()) (execute execute) (car-atom $res)))
+        ; ($_ (println! ("Mapped to decision: " $mode $dir)))
+    )
+        (decision $candName $mode $dir $score)
+    )
+)
