@@ -2,3 +2,11 @@ numpy
 google-genai
 dotenv
 matplotlib
+python-jose[cryptography]
+uvicorn[standard]
+sqlalchemy>=2
+psycopg2-binary
+redis
+alembic
+fastapi
+python-dotenv
