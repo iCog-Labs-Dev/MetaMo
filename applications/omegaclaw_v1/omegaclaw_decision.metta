@@ -1,4 +1,11 @@
 !(bind! &consecutive-safety-wins (new-state 0))
+!(bind! &active-frame-bundle (new-state ()))
+
+(= (setActiveFrameBundle $bundle)
+   (change-state! &active-frame-bundle $bundle))
+
+(= (activeFrameBundle)
+   (get-state &active-frame-bundle))
 
 
 ;; Check if a candidate is registered as a safety-type action.
@@ -103,6 +110,14 @@
     )
 )
 
+;; Bundle-aware decision facades. The bimonad retains its historical
+;; two-argument function contract, while the runtime boundary is explicit at
+;; the v1 entry point and callers can only score a bundle-scoped candidate.
+(= (omegaclawScoreForBundle $bundle $state $action)
+   (if (== (frameBundleCurrentId $bundle) ())
+       0.0
+       (omegaclawScore $state $action)))
+
 
 (= (findBestAction $state () $bestAction $bestScore) $bestAction)
 (= (findBestAction $state $remaining $bestAction $bestScore)
@@ -141,6 +156,23 @@
     )
 )
 
+(= (omegaclawDecideForBundle $bundle $state $candidates)
+   (if (== (frameBundleCurrentId $bundle) ())
+       (decisionResult (action none () 0.0 ()) ())
+       (omegaclawDecide $state $candidates)))
+
+(= (omegaclawScoreBound $state $action)
+   (let $bundle (activeFrameBundle)
+      (if (== $bundle ())
+          (omegaclawScore $state $action)
+          (omegaclawScoreForBundle $bundle $state $action))))
+
+(= (omegaclawDecideBound $state $candidates)
+   (let $bundle (activeFrameBundle)
+      (if (== $bundle ())
+          (omegaclawDecide $state $candidates)
+          (omegaclawDecideForBundle $bundle $state $candidates))))
+
 (= (omegaclawDecision)
-    (decisionMonad omegaclawUnit omegaclawDecide omegaclawScore)
+    (decisionMonad omegaclawUnit omegaclawDecideBound omegaclawScoreBound)
 )

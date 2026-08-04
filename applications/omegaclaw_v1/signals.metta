@@ -46,17 +46,17 @@
 
 
 ;; refreshSignals
-;; Extract signals from current OmegaClaw state.
-(= (refreshSignals)
+;; Extract typed signals from the bounded adapter projection.
+(= (refreshSignals $bundle)
    (let* (
       ($_ (collapse (clearSignals)))
-      ;; Read OmegaClaw state (interface contract)
-      ($msg        (get-state &prevmsg))
-      ($activeTask (get-state &active-task))
-      ($taskOpen   (get-state &task-open))
-      ($results    (get-state &lastresults))
-      ($error      (get-state &error))
-      ($isNewMsg   (get-state &new-msg-flag))
+      ;; All OmegaClaw inputs arrive through the adapter projections.
+      ($msg        (frameRuntimeText (frameRuntimeMessage $bundle)))
+      ($activeTask (frameRuntimeText (frameRuntimeActiveTask $bundle)))
+      ($taskOpen   (frameRuntimeTaskOpen $bundle))
+      ($results    (frameRuntimeText (frameRuntimeResults $bundle)))
+      ($error      (frameRuntimeText (frameRuntimeError $bundle)))
+      ($isNewMsg   (frameRuntimeNewMessage $bundle))
       ($hasMsg     (hasTextContent $msg))
       ($hasResults (hasTextContent $results))
       ($freshResults (and $hasResults (!= $results (get-state &last-results-seen))))

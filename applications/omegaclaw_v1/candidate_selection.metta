@@ -2,11 +2,11 @@
 
 !(bind! &candidateSpace (new-space))
 
-(= (evalCondition $type $param $thresh)
+(= (evalCondition $bundle $type $param $thresh)
    (case $type (
       (always True)
-      (task-active (get-state &task-open))
-      (task-inactive (not (get-state &task-open)))
+      (task-active (frameRuntimeTaskOpen $bundle))
+      (task-inactive (not (frameRuntimeTaskOpen $bundle)))
       (appraisal-above (> (extractAppraisalDim $param) $thresh))
       (appraisal-below (< (extractAppraisalDim $param) $thresh))
       (modulator-above (> (extractModulatorValue $param) $thresh))
@@ -16,24 +16,24 @@
    )))
 
 (= (allTrue ()) True)
-(= (allTrue $lst)
+(= (allTrue $bundle $lst)
    (let* (
       (($head $tail) (decons-atom $lst))
       ((CandidateCondition $_ $type $param $thresh) $head)
-      ($result (evalCondition $type $param $thresh))
+      ($result (evalCondition $bundle $type $param $thresh))
    )
-   (if $result (allTrue $tail) False)))
+   (if $result (allTrue $bundle $tail) False)))
 
 (= (anyTrue ()) False)
-(= (anyTrue $lst)
+(= (anyTrue $bundle $lst)
    (let* (
       (($head $tail) (decons-atom $lst))
       ((CandidateConditionAny $_ $type $param $thresh) $head)
-      ($result (evalCondition $type $param $thresh))
+      ($result (evalCondition $bundle $type $param $thresh))
    )
-   (if $result True (anyTrue $tail))))
+   (if $result True (anyTrue $bundle $tail))))
 
-(= (candidateIsAvailable $name)
+(= (candidateIsAvailable $bundle $name)
    (if (idleAutonomyActive)
        (if (hasErrors)
            (== $name self-improve)
@@ -64,11 +64,11 @@
                           ($hasAnd (not (== $andRows ())))
                           ($hasOr (not (== $orRows ())))
                           ($highExecutionIntent
-                             (and (get-state &task-open)
+                             (and (frameRuntimeTaskOpen $bundle)
                                   (> (extractAppraisalDim opportunity)
                                      (executionOpportunityThreshold))))
                           ($executionIntent
-                             (and (get-state &task-open)
+                             (and (frameRuntimeTaskOpen $bundle)
                                   (> (extractAppraisalDim opportunity)
                                      (executionIntentThreshold))))
                           ($executionRisky (executionRiskCurrentlyHigh))
@@ -83,7 +83,7 @@
                           ($awaitingClarification
                              (awaitingClarificationResponse))
                           ($needsRepair
-                             (and (get-state &task-open) (hasErrors)))
+                             (and (frameRuntimeTaskOpen $bundle) (hasErrors)))
                        )
                        (if $needsRepair
                            (== $name repair-failure)
@@ -99,21 +99,21 @@
                                                False
                                                (and
                                                   (if $hasAnd
-                                                      (eval (allTrue $andRows))
+                                                      (eval (allTrue $bundle $andRows))
                                                       True)
                                                   (if $hasOr
-                                                      (eval (anyTrue $orRows))
+                                                      (eval (anyTrue $bundle $orRows))
                                                       True)))))))))))))))
 
-(= (generateCandidates)
+(= (generateCandidates $bundle)
    (let* (
       ($_ (clearSpace &candidateSpace))
       ($allCandidates
          (collapse (match &self (CandidateSpec $n $_type) $n)))
       ($_ (collapse
              (let $n (superpose $allCandidates)
-                (if (and (candidateIsAvailable $n)
-                         (candidateAdmitted $n))
+                (if (and (candidateIsAvailable $bundle $n)
+                         (candidateAdmitted $bundle $n))
                     (add-atom &candidateSpace (candidate $n))
                     (empty)))))
    ) True))

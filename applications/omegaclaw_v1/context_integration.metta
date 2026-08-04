@@ -11,6 +11,11 @@
 ;; This is the sole ContextFrames -> MetaMo state boundary. The bundle contains
 ;; compact projections, not the raw RootFrame/current-frame cache, transcript,
 ;; command log, or vector-store records.
+;;
+;; Exact chronological data remains in the audit substrates owned by
+;; OmegaClaw/ContextFrames: history.metta, frame notes, command-batch records,
+;; STM/LTM memory, and runtime logs. Those substrates are deliberately not
+;; fields of FrameStateBundle.
 
 (= (frameStateGoalSummary)
    (let $goalNamespace (get-state &cfv2-current-goal-namespace)
@@ -99,7 +104,14 @@
          (FrameStateRuntime
             (new-message (get-state &new-msg-flag))
             (message-present (not (== (get-state &prevmsg) "")))
-            (last-command-result
+            (message-summary
+               (cfv2-compact-limited (get-state &prevmsg) 1200))
+            ;; Task lifecycle fields are exposed only as bounded, typed
+            ;; projections. MetaMo must not read the OmegaClaw states below.
+            (task-open (get-state &task-open))
+            (active-task-summary
+               (cfv2-compact-limited (get-state &active-task) 500))
+            (last-results-summary
                (cfv2-compact-limited
                   (get-state &lastresults) 1200))
             (error
@@ -118,6 +130,249 @@
          (relations $relations)
          (runtime $runtime))))
 
+;; Explicit MetaMo boundary name. Callers should use this projection rather
+;; than passing RootFrame, CurrentFrame, history, or audit records directly.
+(= (frameStateForMetaMo)
+   (frameStateBundle))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Bounded exposure slices
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; A slice describes exposure depth only. It is not a priority, urgency, or
+;; candidate score.
+
+(= (frameStateSliceRoot $root)
+   (let (FrameStateRoot
+            (id $id)
+            (current-frame-id $currentID)
+            (mode $mode)
+            $_
+            $_)
+         $root
+      (FrameSliceRoot
+         (current-frame-id $currentID)
+         (mode $mode))))
+
+(= (frameStateSliceCurrentMinimal $current)
+   (let (FrameStateCurrent
+            (id $id)
+            $_
+            $_
+            (status $status)
+            $_
+            (priority $priority)
+            $_
+            $_
+            $_
+            (budget $budget)
+            $_
+            $_
+            $_)
+         $current
+      (FrameSliceCurrent
+         (id $id)
+         (status $status)
+         (priority $priority)
+         (budget $budget))))
+
+(= (frameStateSliceCurrentSummary $current)
+   (let (FrameStateCurrent
+            (id $id)
+            (parent $parent)
+            (source $source)
+            (status $status)
+            (frame-mode $mode)
+            (priority $priority)
+            (goal-summary $goal)
+            (history-summary $history)
+            (deliverable-summary $deliverables)
+            (results-summary $results)
+            (budget $budget)
+            (constraints $constraints)
+            $_)
+         $current
+      (FrameSliceCurrent
+         (id $id)
+         (parent $parent)
+         (source $source)
+         (status $status)
+         (frame-mode $mode)
+         (priority $priority)
+         (goal-summary $goal)
+         (history-summary $history)
+         (deliverable-summary $deliverables)
+         (results-summary $results)
+         (budget $budget)
+         (constraints $constraints))))
+
+(= (frameStateSliceCurrentTask $current)
+   (let (FrameStateCurrent
+            (id $id)
+            (parent $parent)
+            (source $source)
+            (status $status)
+            (frame-mode $mode)
+            (priority $priority)
+            (goal-summary $goal)
+            (history-summary $history)
+            (deliverable-summary $deliverables)
+            (results-summary $results)
+            (budget $budget)
+            (constraints $constraints)
+            (certified-method $method))
+         $current
+      (FrameSliceCurrent
+         (id $id)
+         (parent $parent)
+         (source $source)
+         (status $status)
+         (frame-mode $mode)
+         (priority $priority)
+         (goal-summary $goal)
+         (history-summary $history)
+         (deliverable-summary $deliverables)
+         (results-summary $results)
+         (budget $budget)
+         (constraints $constraints)
+         (certified-method $method))))
+
+(= (frameStateSliceRuntime $runtime)
+   (let (FrameStateRuntime
+            (new-message $newMessage)
+            (message-present $messagePresent)
+            (message-summary $messageSummary)
+            (task-open $taskOpen)
+            (active-task-summary $activeTask)
+            (last-results-summary $lastResults)
+            (error $error)
+            (wake-loops $wakeLoops)
+            (next-wake-at $nextWakeAt)
+            (budget-state $budgetState))
+         $runtime
+         (FrameSliceRuntime
+         (new-message $newMessage)
+         (message-present $messagePresent)
+         (last-results-summary $lastResults)
+         (error $error)
+         (wake-loops $wakeLoops)
+         (next-wake-at $nextWakeAt)
+         (budget-state $budgetState))))
+
+;; Direct slice projections use the already bounded ContextFrames cache. They
+;; intentionally reconstruct only the fields allowed by each slice.
+(= (frameStateDirectRoot)
+   (FrameSliceRoot
+      (current-frame-id (get-state &cfv2-current-frame-id))
+      (mode (get-state &cfv2-root-mode))))
+
+(= (frameStateDirectMinimal)
+   (FrameSliceCurrent
+      (id (get-state &cfv2-current-frame-id))
+      (status (get-state &cfv2-current-status))
+      (priority (get-state &cfv2-current-priority))
+      (budget (cfv2-compact-limited
+                 (get-state &cfv2-current-budget) 600))))
+
+(= (frameStateDirectSummary)
+   (FrameSliceCurrent
+      (id (get-state &cfv2-current-frame-id))
+      (parent (cfv2-compact-limited
+                 (get-state &cfv2-current-parent-frame-id) 120))
+      (source (get-state &cfv2-current-source))
+      (status (get-state &cfv2-current-status))
+      (frame-mode (get-state &cfv2-current-frame-mode))
+      (priority (get-state &cfv2-current-priority))
+      (goal-summary (cfv2-compact-limited
+                        (frameStateGoalSummary) 500))
+      (history-summary (cfv2-compact-limited
+                           (get-state &cfv2-current-history-summary) 900))
+      (deliverable-summary (cfv2-compact-limited
+                               (get-state &cfv2-current-deliverables) 500))
+      (results-summary (cfv2-compact-limited
+                           (get-state &cfv2-current-results) 900))
+      (budget (cfv2-compact-limited
+                 (get-state &cfv2-current-budget) 600))
+      (constraints (cfv2-compact-limited
+                      (get-state &cfv2-current-constraints) 900))))
+
+(= (frameStateDirectTask)
+   (FrameSliceCurrent
+      (id (get-state &cfv2-current-frame-id))
+      (parent (cfv2-compact-limited
+                 (get-state &cfv2-current-parent-frame-id) 120))
+      (source (get-state &cfv2-current-source))
+      (status (get-state &cfv2-current-status))
+      (frame-mode (get-state &cfv2-current-frame-mode))
+      (priority (get-state &cfv2-current-priority))
+      (goal-summary (cfv2-compact-limited
+                        (frameStateGoalSummary) 500))
+      (history-summary (cfv2-compact-limited
+                           (get-state &cfv2-current-history-summary) 900))
+      (deliverable-summary (cfv2-compact-limited
+                               (get-state &cfv2-current-deliverables) 500))
+      (results-summary (cfv2-compact-limited
+                           (get-state &cfv2-current-results) 900))
+      (budget (cfv2-compact-limited
+                 (get-state &cfv2-current-budget) 600))
+      (constraints (cfv2-compact-limited
+                      (get-state &cfv2-current-constraints) 900))
+      (certified-method (cfv2-compact-limited
+                           (get-state &cfv2-current-method) 500))))
+
+(= (frameStateForSlice Minimal $bundle)
+   (FrameStateSlice
+      (slice Minimal)
+      (root (frameStateDirectRoot))
+      (current (frameStateDirectMinimal))
+      (index ())
+      (relations ())
+      (runtime ())))
+
+(= (frameStateForSlice CurrentFrameSummary $bundle)
+   (FrameStateSlice
+      (slice CurrentFrameSummary)
+      (root (frameStateDirectRoot))
+      (current (frameStateDirectSummary))
+      (index ())
+      (relations ())
+      (runtime ())))
+
+(= (frameStateForSlice CurrentFrameTask $bundle)
+   (FrameStateSlice
+      (slice CurrentFrameTask)
+      (root (frameStateDirectRoot))
+      (current (frameStateDirectTask))
+      (index ())
+      (relations ())
+      (runtime (frameStateSliceRuntime
+                   (frameBundleRuntime (frameStateBundle))))))
+
+(= (frameStateForSlice CurrentFrameAndRelations $bundle)
+   (FrameStateSlice
+      (slice CurrentFrameAndRelations)
+      (root (frameStateDirectRoot))
+      (current (frameStateDirectTask))
+      (index ())
+      (relations (if (== (get-state &cfv2-current-frame-id) ())
+                     ()
+                     (cfv2-compact-limited
+                        (frameStateTake (frameStateMaxRelations)
+                           (cfv2-get-relation
+                              (get-state &cfv2-current-frame-id)))
+                        1200)))
+      (runtime (frameStateSliceRuntime
+                   (frameBundleRuntime (frameStateBundle))))))
+
+(= (frameStateForSlice IndexOverview $bundle)
+   (FrameStateSlice
+      (slice IndexOverview)
+      (root (frameStateDirectRoot))
+      (current ())
+      (index (frameStateIndexProjection))
+      (relations ())
+      (runtime ())))
+
+
 ;; Named accessors keep MetaMo modules from reaching through the bundle into
 ;; ContextFrames state directly.
 (= (frameBundleRoot $bundle)
@@ -130,6 +385,95 @@
    (let (FrameStateBundle $_ $_ $_ (relations $relations) $_) $bundle $relations))
 (= (frameBundleRuntime $bundle)
    (let (FrameStateBundle $_ $_ $_ $_ (runtime $runtime)) $bundle $runtime))
+
+(= (frameBundleCurrentStatus $bundle)
+   (let (FrameStateBundle $root (current (FrameStateCurrent
+            $id $parent $source (status $value) $mode $priority $goal
+            $history $deliverables $results $budget $constraints $method))
+         $index $relations $runtime)
+         $bundle $value))
+(= (frameBundleCurrentMode $bundle)
+   (let (FrameStateBundle $root (current (FrameStateCurrent
+            $id $parent $source $status (frame-mode $value) $priority $goal
+            $history $deliverables $results $budget $constraints $method))
+         $index $relations $runtime)
+         $bundle $value))
+(= (frameBundleCurrentPriority $bundle)
+   (let (FrameStateBundle $root (current (FrameStateCurrent
+            $id $parent $source $status $mode (priority $value) $goal
+            $history $deliverables $results $budget $constraints $method))
+         $index $relations $runtime)
+         $bundle $value))
+(= (frameBundleCurrentBudget $bundle)
+   (let (FrameStateBundle $root (current (FrameStateCurrent
+            $id $parent $source $status $mode $priority $goal
+            $history $deliverables $results (budget $value) $constraints $method))
+         $index $relations $runtime)
+         $bundle $value))
+(= (frameBundleRootMode $bundle)
+   (let (FrameStateBundle (root (FrameStateRoot $id $currentFrame (mode $value)
+            $globalBudget $globalConstraints)) $current $index $relations $runtime)
+         $bundle $value))
+(= (frameBundleCurrentId $bundle)
+   (let (FrameStateBundle (root $root) (current (FrameStateCurrent
+            (id $value) $parent $source $status $mode $priority $goal
+            $history $deliverables $results $budget $constraints $method))
+         $index $relations $runtime)
+         $bundle $value))
+
+;; Typed projections are the only runtime values consumed by MetaMo modules.
+(= (frameRuntimeNewMessage $bundle)
+   (let (FrameStateRuntime (new-message $value) (message-present $messagePresent)
+            (message-summary $messageSummary) (task-open $taskOpen)
+            (active-task-summary $activeTask) (last-results-summary $results)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+(= (frameRuntimeMessagePresent $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $value)
+            (message-summary $messageSummary) (task-open $taskOpen)
+            (active-task-summary $activeTask) (last-results-summary $results)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+(= (frameRuntimeMessage $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
+            (message-summary $value) (task-open $taskOpen)
+            (active-task-summary $activeTask) (last-results-summary $results)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+(= (frameRuntimeTaskOpen $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
+            (message-summary $messageSummary) (task-open $value)
+            (active-task-summary $activeTask) (last-results-summary $results)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+(= (frameRuntimeActiveTask $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
+            (message-summary $messageSummary) (task-open $taskOpen)
+            (active-task-summary $value) (last-results-summary $results)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+(= (frameRuntimeResults $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
+            (message-summary $messageSummary) (task-open $taskOpen)
+            (active-task-summary $activeTask) (last-results-summary $value)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+(= (frameRuntimeError $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
+            (message-summary $messageSummary) (task-open $taskOpen)
+            (active-task-summary $activeTask) (last-results-summary $results)
+            (error $value) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+
+(= (frameRuntimeText $value)
+   (if (== $value ()) "" $value))
 
 !(bind! &last-attention-directive
    (new-state
@@ -171,13 +515,33 @@
        (repair-failure True)
        ($_ False))))
 
-(= (contextPolicyGate $candidate)
+(= (frameBundleHasCurrent $bundle)
+   (not (== (frameBundleCurrentId $bundle) ())))
+
+(= (frameBundleActive $bundle)
+   (or (== (frameBundleCurrentStatus $bundle) Active)
+       (== (frameBundleCurrentStatus $bundle) Focused)))
+
+(= (frameBundleModeCompatible $bundle)
+   (== (frameBundleCurrentMode $bundle) (frameBundleRootMode $bundle)))
+
+(= (frameBundleBudgetOpen $bundle)
+   (let $budget (frameBundleCurrentBudget $bundle)
+      (case $budget
+         ((ResourceBudget $maximum $remaining $unit (status Closed)) False)
+          ((ResourceBudget $maximum $remaining $unit (status Exhausted)) False)
+          ($otherBudget True))))
+
+(= (contextPolicyGate $bundle $candidate)
    (contextPolicyGateFacts
       (candidateRequiresFrame $candidate)
-      (cfv2-has-current-frame)
-      (cfv2-current-frame-active)
-      (cfv2-current-frame-mode-compatible)
-      (cfv2-budget-open)))
+      (frameBundleHasCurrent $bundle)
+      (frameBundleActive $bundle)
+      (frameBundleModeCompatible $bundle)
+      (frameBundleBudgetOpen $bundle)))
+
+(= (feasibilityGate $bundle $candidate)
+   (contextPolicyGate $bundle $candidate))
 
 (= (contextPolicyGateFacts False $_ $_ $_ $_)
    (GateDecision Admitted Feasible))
@@ -192,9 +556,18 @@
 (= (contextPolicyGateFacts True True True True True)
    (GateDecision Admitted Feasible))
 
-(= (candidateAdmitted $candidate)
-   (let (GateDecision $admission $_reason) (contextPolicyGate $candidate)
+(= (candidateAdmitted $bundle $candidate)
+   (let (GateDecision $admission $reason) (feasibilityGate $bundle $candidate)
       (== $admission Admitted)))
+
+(= (feasibilityGateActions $bundle ()) True)
+(= (feasibilityGateActions $bundle $actions)
+   (let* (
+      (($head $tail) (decons-atom $actions))
+      ($gate (feasibilityGate $bundle (actionId $head)))
+      ((GateDecision $admission $reason) $gate))
+      (and (== $admission Admitted)
+           (feasibilityGateActions $bundle $tail))))
 
 (= (directiveSlice $candidate)
    (case $candidate
@@ -209,19 +582,19 @@
 ;; Directive priority is deliberately separate from frame priority and
 ;; candidate score. It is a bounded scheduler hint derived from both inputs;
 ;; neither source value is overwritten.
-(= (directivePriority $score)
-   (let $framePriority (get-state &cfv2-current-priority)
+(= (directivePriority $bundle $score)
+   (let $framePriority (frameBundleCurrentPriority $bundle)
       (clampValue (+ (* 0.70 $score) (* 0.30 $framePriority)))))
 
-(= (makeAttentionDirective $candidate $score)
+(= (makeAttentionDirective $bundle $candidate $score)
    (let* (
-      ($gate (contextPolicyGate $candidate))
+      ($gate (feasibilityGate $bundle $candidate))
       ((GateDecision $admission $reason) $gate)
-      ($target (if (cfv2-has-current-frame)
-                   (cfv2-root-current-frame-id)
+      ($target (if (!= (frameBundleCurrentId $bundle) ())
+                   (frameBundleCurrentId $bundle)
                    ()))
       ($priority (if (== $admission Admitted)
-                     (directivePriority $score)
+                     (directivePriority $bundle $score)
                      0))
    )
       (AttentionDirective
@@ -233,8 +606,8 @@
          (priority $priority)
          (source MetaMo))))
 
-(= (attentionDirectiveForDecision $candidate $score)
-   (makeAttentionDirective $candidate $score))
+(= (attentionDirectiveForDecision $bundle $candidate $score)
+   (makeAttentionDirective $bundle $candidate $score))
 
 (= (lastAttentionDirective)
    (get-state &last-attention-directive))

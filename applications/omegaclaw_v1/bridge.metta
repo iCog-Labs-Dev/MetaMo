@@ -16,7 +16,11 @@
 (= (motivationContextBlock)
    (let* (
       ($_ (ensureMotivationRestored))
-      ($_ (eval (refreshSignals)))
+      ;; ContextFrames has already ingested input and updated its frame state.
+      ;; Capture one bounded snapshot and pass it through the whole cycle.
+      ($bundle (frameStateForMetaMo))
+      ($_ (setActiveFrameBundle $bundle))
+      ($_ (eval (refreshSignals $bundle)))
       ($_ (refreshTaskExecutionObserved))
       ($_ (completePreviousTaskIfSuccessful))
       ($_ (eval (clearSpace &appraisal-space)))
@@ -25,13 +29,16 @@
       ($currentMetaMoState (eval (motivosToMetamoState)))
       ($stimulus (eval (appraisalToStimulus)))
 
-      ($_ (generateCandidates))
+      ($_ (generateCandidates $bundle))
       ($actions (eval (candidatesToActions)))
+      ;; Hard feasibility is complete before the MetaMo decision/mode step.
+      ($feasibility (feasibilityGateActions $bundle $actions))
+      ($admittedActions (if $feasibility $actions ()))
       ($sysStates
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
       ($cycleResult
          (runMetaMoCycleDefault
-            (omegaclawBimonad) $sysStates $stimulus $actions () ()))
+            (omegaclawBimonad) $sysStates $stimulus $admittedActions () ()))
 
       ($finalAction (cycleFinalAction $cycleResult))
       ($nextSysStates (cycleNextStates $cycleResult))
@@ -39,13 +46,13 @@
       ($nextState (eval (decayMetamoState $rawNextState)))
       ($_ (eval (writeBackMetamoState $nextState)))
 
-      ($score (omegaclawScore $nextState $finalAction))
+      ($score (omegaclawScoreForBundle $bundle $nextState $finalAction))
       ($decisionResult
          (eval (metamoActionToDecision $finalAction $score)))
       ((decision $selectedCandidate $_mode $_directive $_score)
          $decisionResult)
       ($attentionDirective
-         (attentionDirectiveForDecision $selectedCandidate $score))
+         (attentionDirectiveForDecision $bundle $selectedCandidate $score))
       ($_ (change-state! &last-attention-directive $attentionDirective))
 
       ($_ (advanceAutonomyPhase $selectedCandidate))

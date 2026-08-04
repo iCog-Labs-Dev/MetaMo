@@ -23,6 +23,10 @@
 !(bind! &error (new-state ""))
 !(bind! &loops (new-state 0))
 !(bind! &nextWakeAt (new-state 0))
+!(bind! &task-open (new-state False))
+!(bind! &active-task (new-state ""))
+!(bind! &failure-streak (new-state 0))
+!(bind! &last-results-seen (new-state ""))
 
 !(initContextFrame)
 
@@ -30,6 +34,13 @@
 !(test (== (cfv2-has-current-frame) False) True)
 !(test (!= (contextFrameForPrompt) ()) True)
 !(test (!= (frameStateBundle) ()) True)
+!(test (!= (frameStateForMetaMo) ()) True)
+!(test (== (frameRuntimeNewMessage (frameStateForMetaMo)) False) True)
+!(test (== (frameRuntimeTaskOpen (frameStateForMetaMo)) False) True)
+!(test (!= (frameStateForSlice Minimal (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice CurrentFrameSummary (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice CurrentFrameAndRelations (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice IndexOverview (frameStateBundle)) ()) True)
 
 ;; Frame creation is exercised by the full runtime test suite. It requires the
 ;; optional ChromaDB relation-composer dependency, so this import smoke test
@@ -39,13 +50,14 @@
 
 ;; With no current frame, execution is rejected before scoring. This proves
 ;; hard pruning is not merely a score penalty.
-!(test (== (eval (contextPolicyGate execute-skill))
+!(test (== (eval (contextPolicyGate (frameStateForMetaMo) execute-skill))
            (GateDecision Rejected NoActiveFrame)) True)
-!(test (== (eval (candidateAdmitted execute-skill)) False) True)
+!(test (== (eval (candidateAdmitted (frameStateForMetaMo) execute-skill)) False) True)
+!(test (== (eval (feasibilityGateActions (frameStateForMetaMo) ())) True) True)
 
 ;; Verify that a typed rejected directive is emitted with separate target,
 ;; slice, admission, priority, task, and source fields.
-!(test (eval (makeAttentionDirective execute-skill 0.80))
+!(test (eval (makeAttentionDirective (frameStateForMetaMo) execute-skill 0.80))
       (AttentionDirective
          (target ())
          (slice CurrentFrameTask)
