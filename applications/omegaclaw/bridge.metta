@@ -8,7 +8,13 @@
 
 !(bind! &failure-streak           (new-state 0))
 !(bind! &active-task              (new-state ""))
+!(bind! &task-open                (new-state False))
+!(bind! &motivation-restored      (new-state False))
+!(bind! &motivation-save-countdown (new-state 10))
 !(bind! &last-motivation-decision (new-state (decision clarity orient inspect 0.0)))
+!(bind! &autonomy-phase          (new-state recall))
+!(bind! &autonomy-action-count   (new-state 0))
+!(bind! &task-execution-observed (new-state ""))
 !(bind! &success-count            (new-state 0))
 !(bind! &failure-count            (new-state 0))
 !(bind! &cycle-count              (new-state 0))
@@ -22,6 +28,244 @@
 (= (selfModelAlpha)
    (let $v (collapse (match &self (DynamicsConfig self_model_alpha $x) $x))
       (if (== $v ()) 0.20 (car-atom $v))))
+
+(= (persistenceInterval)
+   (let $v (collapse (match &self (DynamicsConfig persistence_interval $x) $x))
+      (if (== $v ()) 10 (car-atom $v))))
+
+(= (autonomyActionsBeforeRefresh)
+   (let $v (collapse (match &self (DynamicsConfig autonomy_actions_before_refresh $x) $x))
+      (if (== $v ()) 2 (car-atom $v))))
+
+(= (executionOpportunityThreshold)
+   (let $v (collapse (match &self (DynamicsConfig execution_opportunity_threshold $x) $x))
+      (if (== $v ()) 0.75 (car-atom $v))))
+
+(= (executionIntentThreshold)
+   (let $v (collapse (match &self (DynamicsConfig execution_intent_threshold $x) $x))
+      (if (== $v ()) 0.50 (car-atom $v))))
+
+(= (executionRiskLimit)
+   (let $v (collapse (match &self (DynamicsConfig execution_risk_limit $x) $x))
+      (if (== $v ()) 0.45 (car-atom $v))))
+
+(= (executionUncertaintyLimit)
+   (let $v (collapse (match &self (DynamicsConfig execution_uncertainty_limit $x) $x))
+      (if (== $v ()) 0.65 (car-atom $v))))
+
+(= (executionCautionLimit)
+   (let $v (collapse (match &self (DynamicsConfig execution_caution_limit $x) $x))
+      (if (== $v ()) 0.75 (car-atom $v))))
+
+(= (idleAutonomyActive)
+   (and (not (get-state &new-msg-flag))
+        (not (get-state &task-open))))
+
+(= (autonomyPhaseAllows $name)
+   (let $phase (get-state &autonomy-phase)
+      (case $phase (
+         (recall (== $name recall-goals))
+         (invent (== $name invent-goal))
+         (plan   (== $name plan-goal))
+         (act    (== $name background-work))
+         ($_ False)
+      ))))
+
+(= (advanceAutonomyPhase $candidate)
+   (if (idleAutonomyActive)
+       (case $candidate (
+          (recall-goals
+             (let* (
+                ($_ (change-state! &autonomy-action-count 0))
+                ($_ (change-state! &autonomy-phase invent))
+             ) True))
+          (invent-goal
+             (let $_ (change-state! &autonomy-phase plan) True))
+          (plan-goal
+             (let $_ (change-state! &autonomy-phase act) True))
+          (background-work
+             (let* (
+                ($nextCount (+ (get-state &autonomy-action-count) 1))
+                ($_ (change-state! &autonomy-action-count $nextCount))
+             )
+             (if (< $nextCount (autonomyActionsBeforeRefresh))
+                 (let $_ (change-state! &autonomy-phase plan) True)
+                 (let* (
+                    ($_ (change-state! &autonomy-action-count 0))
+                    ($_ (change-state! &autonomy-phase recall))
+                 ) True))))
+          ($_ False)
+       ))
+       False))
+
+(= (autonomyPhaseForCandidate $candidate)
+   (case $candidate (
+      (recall-goals recall)
+      (invent-goal  invent)
+      (plan-goal    plan)
+      (background-work act)
+      ($_ none)
+   )))
+
+(= (ensureMotivationRestored)
+   (if (get-state &motivation-restored)
+       True
+       (let* (
+          ($_ (tryRestoreOrInit))
+          ($_ (change-state! &motivation-restored True))
+          ($_ (change-state! &motivation-save-countdown (persistenceInterval)))
+       ) True)))
+
+(= (maybeSaveMotivationalState)
+   (let $count (get-state &motivation-save-countdown)
+      (if (<= $count 0)
+          (let* (
+             ($_ (saveMotivationalState))
+             ($_ (change-state! &motivation-save-countdown (persistenceInterval)))
+          ) True)
+          (let $_ (change-state! &motivation-save-countdown (- $count 1)) False))))
+
+(= (hasSignal $kind)
+    (let $res (collapse (match &signal-space (signal $kind $_) True))
+        (if (== $res ()) False True))
+)
+
+(= (refreshTaskExecutionObserved)
+   (if (get-state &new-msg-flag)
+       (let $_ (change-state! &task-execution-observed "") True)
+       (let $merged (py-call (helper.merge_observed_execution_commands
+                              (get-state &task-execution-observed)
+                              (get-state &lastresults)))
+          (change-state! &task-execution-observed $merged))))
+
+(= (executionContinuationNeeded)
+   (and (get-state &task-open)
+        (and (not (get-state &new-msg-flag))
+             (py-call (helper.task_needs_more_execution
+                       (get-state &active-task)
+                       (get-state &task-execution-observed))))))
+
+(= (awaitingClarificationResponse)
+   (let* (
+      ($lastDecision (get-state &last-motivation-decision))
+      ((decision $candidate $_mode $_directive $_score) $lastDecision)
+   )
+   (and (get-state &task-open)
+        (and (not (get-state &new-msg-flag))
+             (== $candidate ask-clarification)))))
+
+(= (directUserResponseNeeded)
+   (and (hasSignal user-waiting)
+        (< (extractAppraisalDim opportunity) (executionIntentThreshold))))
+
+(= (executionCautionBlocks)
+   (and (> (extractModulatorValue caution) (executionCautionLimit))
+        (or (> (extractAppraisalDim risk) 0.10)
+            (> (extractAppraisalDim uncertainty) 0.20))))
+
+(= (executionRiskCurrentlyHigh)
+   (or (> (extractAppraisalDim risk) (executionRiskLimit))
+       (or (> (extractAppraisalDim uncertainty) (executionUncertaintyLimit))
+           (executionCautionBlocks))))
+
+(= (freshExecutionRequestNeeded)
+   (and (hasSignal user-waiting)
+        (> (extractAppraisalDim opportunity) (executionIntentThreshold))))
+
+(= (taskResultReady)
+   (and (get-state &task-open)
+        (and (not (get-state &new-msg-flag))
+             (and (not (awaitingClarificationResponse))
+                  (and (hasResults) (not (hasErrors)))))))
+
+(= (resultQuestionNeedsResponse)
+   (and (hasSignal user-waiting)
+        (py-call (helper.is_result_status_question (get-state &prevmsg)))))
+
+        
+(= (printDecisionRoutingDebug)
+   (let* (
+      ($idle                 (idleAutonomyActive))
+      ($_ (println! ("[MotivationDebug] Idle autonomy active" $idle)))
+      ($userWaiting          (hasSignal user-waiting))
+      ($_ (println! ("[MotivationDebug] User waiting signal" $userWaiting)))
+      ($directResponse       (directUserResponseNeeded))
+      ($_ (println! ("[MotivationDebug] Direct response needed" $directResponse)))
+      ($resultQuestion       (resultQuestionNeedsResponse))
+      ($_ (println! ("[MotivationDebug] Result question needs response" $resultQuestion)))
+      ($taskResult           (taskResultReady))
+      ($_ (println! ("[MotivationDebug] Task result ready" $taskResult)))
+      ($freshExecution       (freshExecutionRequestNeeded))
+      ($_ (println! ("[MotivationDebug] Fresh execution request needed" $freshExecution)))
+      ($continuation         (executionContinuationNeeded))
+      ($_ (println! ("[MotivationDebug] continuation needed" $continuation)))
+      ($executionRiskHigh    (executionRiskCurrentlyHigh))
+      ($_ (println! ("[MotivationDebug] execution risk currently high" $executionRiskHigh)))
+      ($opportunity          (extractAppraisalDim opportunity))
+      ($_ (println! ("[MotivationDebug]  opportunity" $opportunity)))
+      ($risk                 (extractAppraisalDim risk))
+      ($_ (println! ("[MotivationDebug] Risk " $risk)))
+      ($uncertainty          (extractAppraisalDim uncertainty))
+      ($_ (println! ("[MotivationDebug] uncertainty" $uncertainty)))
+      ($caution              (extractModulatorValue caution))
+      ($_ (println! ("[MotivationDebug] Caution " $caution)))
+   )
+   ()))
+
+(= (completeTaskIfTerminal $candidate)
+   (if (or (== $candidate respond)
+           (or (== $candidate repair-failure)
+               (or (== $candidate defer) (== $candidate none))))
+       (let* (
+          ($_ (change-state! &task-open False))
+          ($_ (change-state! &active-task ""))
+          ($_ (change-state! &task-execution-observed ""))
+       ) True)
+       False))
+
+(= (completePreviousTaskIfSuccessful)
+   (if (and (not (get-state &new-msg-flag))
+            (and (hasResults) (not (hasErrors))))
+       (let* (
+          ($lastDecision (get-state &last-motivation-decision))
+          ((decision $candidate $_mode $_directive $_score) $lastDecision)
+       )
+          (completeTaskIfTerminal $candidate))
+       False))
+
+
+(= (homeostaticRuleTriggered $condType $metric $threshold)
+   (case $condType (
+      (modulator-exceeds (> (extractModulatorValue $metric) $threshold))
+      (modulator-below   (< (extractModulatorValue $metric) $threshold))
+      (self-metric-exceeds (> (fetchSelfMetricValue $metric) $threshold))
+      (self-metric-below   (< (fetchSelfMetricValue $metric) $threshold))
+      ($_ (println! ("Unknown homeostatic condition type: " $condType)))
+   ))
+)
+
+(= (applyHomeostaticAction $actionType $target $delta)
+   (case $actionType (
+      (raise-modulator (replaceModulator $target (clamp (+ (extractModulatorValue $target) $delta))))
+      (lower-modulator (replaceModulator $target (clamp (- (extractModulatorValue $target) $delta))))
+      (raise-goal      (replaceGoal       $target (clamp (+ (extractGoalValue       $target) $delta))))
+      (lower-goal      (replaceGoal       $target (clamp (- (extractGoalValue       $target) $delta))))
+      ($_ (println! ("Unknown homeostatic action type: " $actionType)))
+   ))
+)
+
+(= (applyHomeostaticRule $rule)
+   (let (HomeostaticRule $condType $metric $threshold $actionType $target $delta) $rule
+      (if (homeostaticRuleTriggered $condType $metric $threshold)
+          (applyHomeostaticAction $actionType $target $delta)
+          ())))
+
+(= (runHomeostasis)
+   (collapse
+      (let $rule (match &self
+                     (HomeostaticRule $condType $metric $threshold $actionType $target $delta)
+                     (HomeostaticRule $condType $metric $threshold $actionType $target $delta))
+         (applyHomeostaticRule $rule))))
 
 (= (fetchSelfMetricValue $name)
    (let $res (collapse (match &self-model-space (self-metric $name $v) $v))
@@ -83,8 +327,11 @@
 ;; MotivOS-formatted decision result for injection into the LLM prompt.
 (= (motivationContextBlock)
     (let* (
+        ($_ (ensureMotivationRestored))
         ($signals (eval (refreshSignals)))
       ;   ($_ (println! ("Signals" $signals)))
+        ($_ (refreshTaskExecutionObserved))
+        ($_ (completePreviousTaskIfSuccessful))
         ($_ (eval (clearSpace &appraisal-space)))
         ($_ (eval (computeAllDimensions)))
          
@@ -92,10 +339,14 @@
          ; ($_ (println! ("Current state" $currentMetaMoState)))
          ($stimulus (eval (appraisalToStimulus)))
          ; ($_ (println! ("Current Stimulus" $stimulus)))
+         ; ($_ (printDecisionRoutingDebug))
          
          ($_ (generateCandidates))
+         ($availableCandidates
+            (collapse (match &candidateSpace (candidate $name) $name)))
+         ; ($_ (println! ("[MotivationDebug] Available candidates" $availableCandidates)))
          ($actions (eval (candidatesToActions)))
-         ; ($_ (println! ("Actions" $actions)))
+         ; ($_ (println! ("[MotivationDebug] Candidate actions" $actions)))
          
          ($sysStates (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
          
@@ -106,21 +357,27 @@
 
         ($finalAction   (cycleFinalAction  $cycleResult))
         ($nextSysStates (cycleNextStates   $cycleResult))
-      ;   ($_ (println! ("final action" $finalAction)))
+      ;   ($_ (println! ("[MotivationDebug] Final action" $finalAction)))
       ;   ($_ (println! ("next sys states" $nextSysStates)))
 
-        ($nextState (findSubsystemState omegaclaw $nextSysStates))
+        ($rawNextState (findSubsystemState omegaclaw $nextSysStates))
+        ($nextState (eval (decayMetamoState $rawNextState)))
       ;   ($_ (println! ("next state" $nextState)))
         ($x (eval (writeBackMetamoState $nextState)))
       ;   ($_ (println! ("write back result" $x)))
         
-        ($score (omegaclawScore $currentMetaMoState $finalAction))
+        ($score (omegaclawScore $nextState $finalAction))
       ;   ($_ (println! ("score" $score)))
         ($decisionResult (eval (metamoActionToDecision $finalAction $score)))
       ;   ($_ (println! ("decision result" $decisionResult)))
+        ((decision $selectedCand $_mode $_directive $_score) $decisionResult)
+
+        ($_ (advanceAutonomyPhase $selectedCand))
         ($_ (change-state! &last-motivation-decision $decisionResult))
         ($_ (updateSelfModel (hasErrors) (hasResults)))
-        ;; ($_ (saveMotivationalState))
+        ($_ (runHomeostasis))
+        ($_ (maybeSaveMotivationalState))
+        ($_ (collapse (clearSignals)))
     )
         $decisionResult
     )
@@ -128,13 +385,11 @@
 
 
 (= (hasErrors)
-    (let $err (collapse (match &signal-space (signal failure $_) True))
-        (if (== $err ()) False True))
+    (or (hasSignal failure) (hasSignal repeated-failure))
 )
 
 (= (hasResults)
-    (let $res (collapse (match &signal-space (signal verified-success $_) True))
-        (if (== $res ()) False True))
+    (or (hasSignal progress-made) (hasSignal verified-success))
 )
 
 ;; Weighted contribution of one signal kind to one appraisal dimension.
@@ -176,20 +431,19 @@
 )
 
 
-(= (evalCondition always _ _) True)
-(= (evalCondition task-active _ _) (hasContent (get-state &active-task)))
-(= (evalCondition appraisal-above $param $thresh)
-   (let $v (eval (extractAppraisalDim $param)) (> $v $thresh)))
-(= (evalCondition appraisal-below $param $thresh)
-   (let $v (eval (extractAppraisalDim $param)) (< $v $thresh)))
-(= (evalCondition modulator-above $param $thresh)
-   (let $v (eval (extractModulatorValue $param)) (> $v $thresh)))
-(= (evalCondition self-metric-above $param $thresh)
-   (let $v (eval (fetchSelfMetricValue $param)) (> $v $thresh)))
-(= (evalCondition self-metric-below $param $thresh)
-   (let $v (eval (fetchSelfMetricValue $param)) (< $v $thresh)))
-
-(= (hasContent $str) (not (== $str "")))
+(= (evalCondition $type $param $thresh)
+   (case $type (
+      (always True)
+      (task-active (get-state &task-open))
+      (task-inactive (not (get-state &task-open)))
+      (appraisal-above (> (extractAppraisalDim $param) $thresh))
+      (appraisal-below (< (extractAppraisalDim $param) $thresh))
+      (modulator-above (> (extractModulatorValue $param) $thresh))
+      (self-metric-above (> (fetchSelfMetricValue $param) $thresh))
+      (self-metric-below (< (fetchSelfMetricValue $param) $thresh))
+      ($_ (println! ("Unknown condition type: " $type)))
+   ))
+)
 
 (= (allTrue ()) True)
 (= (allTrue $lst)
@@ -210,25 +464,69 @@
    (if $result True (anyTrue $tail))))
 
 (= (candidateIsAvailable $name)
-   (let* (
-      ($andRows (collapse (match &self (CandidateCondition $name $t $p $h)
-                              (CandidateCondition $name $t $p $h))))
-      ($orRows  (collapse (match &self (CandidateConditionAny $name $t $p $h)
-                              (CandidateConditionAny $name $t $p $h))))
-      ($hasAnd  (not (== $andRows ())))
-      ($hasOr   (not (== $orRows  ())))
-   )
-   (if (and (not $hasAnd) (not $hasOr))
-       False
-       (and (if $hasAnd (eval (allTrue $andRows)) True)
-            (if $hasOr  (eval (anyTrue $orRows))  True)))))
+   (if (idleAutonomyActive)
+       (if (hasErrors)
+           (== $name self-improve)
+           (autonomyPhaseAllows $name))
+       (if (directUserResponseNeeded)
+           (== $name respond)
+           (if (resultQuestionNeedsResponse)
+               (== $name respond)
+               (if (taskResultReady)
+                   (if (executionContinuationNeeded)
+                       (if (executionRiskCurrentlyHigh)
+                           (== $name ask-clarification)
+                           (== $name execute-skill))
+                       (== $name respond))
+                   (if (freshExecutionRequestNeeded)
+                       (if (executionRiskCurrentlyHigh)
+                           (== $name ask-clarification)
+                           (== $name execute-skill))
+                       (let* (
+                  ($andRows (collapse (match &self (CandidateCondition $name $t $p $h)
+                                          (CandidateCondition $name $t $p $h))))
+                  ($orRows  (collapse (match &self (CandidateConditionAny $name $t $p $h)
+                                          (CandidateConditionAny $name $t $p $h))))
+                  ($hasAnd  (not (== $andRows ())))
+                  ($hasOr   (not (== $orRows  ())))
+                  ($highExecutionIntent (and (get-state &task-open)
+                                             (> (extractAppraisalDim opportunity)
+                                                (executionOpportunityThreshold))))
+                  ($executionIntent (and (get-state &task-open)
+                                         (> (extractAppraisalDim opportunity)
+                                            (executionIntentThreshold))))
+                  ($executionRisky (executionRiskCurrentlyHigh))
+                  ($executionContinuation (executionContinuationNeeded))
+                  ($blockedExecution (and (or $executionIntent $executionContinuation)
+                                          $executionRisky))
+                  ($safeHighExecutionIntent (and $highExecutionIntent
+                                                 (not $executionRisky)))
+                  ($safeExecutionContinuation (and $executionContinuation
+                                                   (not $executionRisky)))
+                  ($awaitingClarification (awaitingClarificationResponse))
+                  ($needsRepair (and (get-state &task-open) (hasErrors)))
+               )
+               (if $needsRepair
+                   (== $name repair-failure)
+                   (if $awaitingClarification
+                       False
+                       (if $blockedExecution
+                           (== $name ask-clarification)
+                           (if $safeExecutionContinuation
+                               (== $name execute-skill)
+                               (if $safeHighExecutionIntent
+                                   (== $name execute-skill)
+                                   (if (and (not $hasAnd) (not $hasOr))
+                                       False
+                                       (and (if $hasAnd (eval (allTrue $andRows)) True)
+                                            (if $hasOr  (eval (anyTrue $orRows))  True)))))))))))))))
 
 (= (generateCandidates)
    (let* (
       ($_ (clearSpace &candidateSpace))
-      ($andNames (collapse (match &self (CandidateCondition $n $_t $_p $_h) $n)))
-      ($orNames  (collapse (match &self (CandidateConditionAny $n $_t $_p $_h) $n)))
-      ($allCandidates (unionAtom $andNames $orNames))
+      ($allCandidates (collapse (match &self (CandidateSpec $n $_type) $n)))
+      ($_ (println! ("[MotivationDebug] Candidate sources"
+                     (registered-names $allCandidates))))
       ($_ (collapse
              (let $n (superpose $allCandidates)
                 (if (candidateIsAvailable $n)
@@ -246,14 +544,20 @@
 ;; Map winning candidate name to a binding imperative for the LLM.
 (= (candidateInstruction $directive)
    (case $directive (
-      (respond           "REQUIRED: Respond to the user now. Your primary output MUST include a send command.")
+      (respond           "REQUIRED: Respond to the user now. Your primary output MUST include a send command. Base completion and status claims only on LAST_SKILL_USE_RESULTS. If it already answers the user's question, send that result and do not rerun tools. When the user requests only the tool result, relay only the observed result without adding claims from HISTORY or assumptions.")
       (retrieve-memory   "REQUIRED: Query long-term memory before responding. Your primary output MUST include a query command.")
       (search-knowledge  "REQUIRED: Search for relevant knowledge before responding. Your primary output MUST include a search or query command.")
-      (execute-skill     "REQUIRED: Execute the requested skill or task now. Your primary output MUST include the appropriate skill command.")
+      (execute-skill     "REQUIRED: Execute the requested skill or task now. If the user requested multiple executable steps, include the next pending skill command instead of only reporting progress. Include send only for truthful status or already-observed results; never invent command output.")
       (learn             "REQUIRED: Capture and store new knowledge this cycle. Your primary output MUST include a remember command.")
       (self-improve      "REQUIRED: Reflect on recent failures and update your approach. Consider using remember to store the lesson.")
+      (background-work   "REQUIRED: Execute exactly one safe read-only background step from the active internal plan. Do not send. Prefer read-file, query, or a read-only shell inspection such as pwd, ls, find, rg, grep, wc, head, tail, or git status/log/diff/show. Do not write files.")
+      (recall-goals      "REQUIRED: Query long-term memory for current goals or active-goal context. Do not send this cycle.")
+      (invent-goal       "REQUIRED: Create one bounded non-duplicate active-goal proposal. Use pin or remember. Do not send this cycle.")
+      (plan-goal         "REQUIRED: Convert the active internal goal and latest results into one concrete next background step. Use pin or remember. Do not send this cycle.")
+      (repair-failure    "REQUIRED: Repair the previous failed command or formatting issue now. If the failed command was send, output one corrected send. If it was a file command, output the smallest corrective read-file, write-file, or append-file. Do not merely say you will fix it.")
       (defer             "REQUIRED: Do not take irreversible action this cycle. Verify the situation first before acting.")
       (ask-clarification "REQUIRED: Ask the user a clarifying question. Your primary output MUST include a send command with a question.")
+      (none              "REQUIRED: No user-facing task is active. Work silently or output an empty command list: ().")
       ($other            "REQUIRED: Act according to your current motivational state and the STEP_POLICY above.")
    ))
 )
@@ -272,6 +576,12 @@
       ((decision $selectedCand $mode $directive $score) $decisionResult)
       ($guidance    (directiveGuidance $directive))
       ($instruction (candidateInstruction $selectedCand))
+      ($activeTask  (get-state &active-task))
+      ($autonomyPhase (autonomyPhaseForCandidate $selectedCand))
+      ($nextAutonomyPhase (get-state &autonomy-phase))
+      ($autonomyActionCount (get-state &autonomy-action-count))
+      ($taskExecutionObserved (get-state &task-execution-observed))
+      ($runtimeContext (py-call (helper.runtime_context)))
    )
    (eval (string-safe
       (eval (py-str (
@@ -283,8 +593,16 @@
          " Example — multiple commands:"
          " ((query \"topic\") (send \"message\"))"
          " Do not output conversational text outside the expression."
+         " IMPORTANT: For code passed as a string argument, prefer single-quoted Python strings inside the code. Avoid quote characters that can terminate the surrounding MeTTa string."
          " LAST_SKILL_USE_RESULTS: " (eval (last_chars (get-state &lastresults) (maxFeedback)))
          " HISTORY: " (eval (getHistory))
+         " ACTIVE_TASK: " (eval (string-safe $activeTask))
+         " TASK_EXECUTION_OBSERVED: " (eval (string-safe (repr $taskExecutionObserved)))
+         " AUTONOMY_PHASE: " (eval (string-safe (repr $autonomyPhase)))
+         " AUTONOMY_NEXT_PHASE: " (eval (string-safe (repr $nextAutonomyPhase)))
+         " AUTONOMY_ACTION_COUNT: " (eval (string-safe (repr $autonomyActionCount)))
+         " RUNTIME_CONTEXT: " (eval (string-safe $runtimeContext))
+         " FILE_PATH_POLICY: Relative file paths used by file skills resolve against RUNTIME_CONTEXT working_directory."
          " TIME: " (eval (get_time_as_string))
          " STEP_POLICY: " $guidance
          " MOTIVATION_INSTRUCTION: " $instruction
@@ -338,5 +656,13 @@
       ($_ (initOmegaClawMotivation))
       ($_ (collapse (clearSignals)))
       ($_ (change-state! &new-msg-flag False))
+      ($_ (change-state! &last-results-seen ""))
+      ($_ (change-state! &active-task ""))
+      ($_ (change-state! &task-open False))
+      ($_ (change-state! &task-execution-observed ""))
+      ($_ (change-state! &autonomy-phase recall))
+      ($_ (change-state! &autonomy-action-count 0))
+      ($_ (change-state! &motivation-restored False))
+      ($_ (change-state! &motivation-save-countdown (persistenceInterval)))
    )
    (eval (omegaclaw))))

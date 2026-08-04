@@ -1,9 +1,27 @@
 
+(= (clampValue $value)
+   (if (< $value 0.0) 0.0 (if (> $value 1.0) 1.0 $value)))
+
+(= (motivationDecayRate)
+   (let $res (collapse (match &self (DynamicsConfig decay_rate $v) $v))
+      (if (== $res ()) 0.15 (car-atom $res))))
+
+(= (decayToward $value $baseline)
+   (clampValue (+ $value (* (motivationDecayRate) (- $baseline $value)))))
+
+(= (goalBaseline $name $fallback)
+   (let $res (collapse (match &self (GoalSpec $name $v) $v))
+      (if (== $res ()) $fallback (car-atom $res))))
+
+(= (modulatorBaseline $name $fallback)
+   (let $res (collapse (match &self (ModulatorSpec $name $v) $v))
+      (if (== $res ()) $fallback (car-atom $res))))
+
 (= (replaceGoal $name $newValue)
    (let* (
       ($existing (collapse (match &goal-space (goal $name $v) (goal $name $v))))
       ($_ (if (!= $existing ())
-              (let ((goal $n $oldValue) (car-atom $existing))
+              (let (goal $n $oldValue) (car-atom $existing)
                  (remove-atom &goal-space (goal $name $oldValue)))
               _))
       ($_ (add-atom &goal-space (goal $name $newValue)))
@@ -13,7 +31,7 @@
    (let* (
       ($existing (collapse (match &motivation-space (modulator $name $v) (modulator $name $v))))
       ($_ (if (!= $existing ())
-              (let ((modulator $n $oldValue) (car-atom $existing))
+              (let (modulator $n $oldValue) (car-atom $existing)
                  (remove-atom &motivation-space (modulator $name $oldValue)))
               _))
       ($_ (add-atom &motivation-space (modulator $name $newValue)))
@@ -23,7 +41,7 @@
    (let* (
       ($existing (collapse (match &motivation-space (motive $name $v) (motive $name $v))))
       ($_ (if (!= $existing ())
-              (let ((motive $n $oldValue) (car-atom $existing))
+              (let (motive $n $oldValue) (car-atom $existing)
                  (remove-atom &motivation-space (motive $name $oldValue)))
               _))
       ($_ (add-atom &motivation-space (motive $name $newValue)))
@@ -38,6 +56,22 @@
 (= (extractModulatorValue $name)
     (let $res (collapse (match &motivation-space (modulator $name $v) $v))
         (if (== $res ()) 0.0 (car-atom $res)))
+)
+
+(= (getGoals)
+    (collapse (match &goal-space (goal $name $v) (goal $name $v)))
+)
+
+(= (getAntiGoals)
+    (collapse (match &goal-space (anti-goal $name $v) (anti-goal $name $v)))
+)
+
+(= (getModulators)
+    (collapse (match &motivation-space (modulator $name $v) (modulator $name $v)))
+)
+
+(= (getSelfModel)
+    (collapse (match &self-model-space (self-metric $name $v) (self-metric $name $v)))
 )
 
 
@@ -67,6 +101,41 @@
         ($m8 (extractModulatorValue threshold))
         ($m9 (extractModulatorValue securing))
         ($m10 (extractModulatorValue focus))
+    )
+    (motivation
+        ($g0 $g1 $g2 $g3 $g4 $g5 $g6 $g7 $g8 $g9 $g10)
+        ($m0 $m1 $m2 $m3 $m4 $m5 $m6 $m7 $m8 $m9 $m10)
+    ))
+)
+
+(= (decayMetamoState $state)
+    (let* (
+        ($goals (motivationGoals $state))
+        ($mods  (motivationModulators $state))
+
+        ($g0  (decayToward (index-atom $goals 0)  (goalBaseline gInd_over      (index-atom $goals 0))))
+        ($g1  (decayToward (index-atom $goals 1)  (goalBaseline gTrans_over    (index-atom $goals 1))))
+        ($g2  (decayToward (index-atom $goals 2)  (goalBaseline help_user      (index-atom $goals 2))))
+        ($g3  (decayToward (index-atom $goals 3)  (goalBaseline learn          (index-atom $goals 3))))
+        ($g4  (decayToward (index-atom $goals 4)  (goalBaseline cooperate      (index-atom $goals 4))))
+        ($g5  (decayToward (index-atom $goals 5)  (goalBaseline responsiveness (index-atom $goals 5))))
+        ($g6  (decayToward (index-atom $goals 6)  (goalBaseline clarity        (index-atom $goals 6))))
+        ($g7  (decayToward (index-atom $goals 7)  (goalBaseline coherence      (index-atom $goals 7))))
+        ($g8  (decayToward (index-atom $goals 8)  (goalBaseline reliability    (index-atom $goals 8))))
+        ($g9  (decayToward (index-atom $goals 9)  (goalBaseline progress       (index-atom $goals 9))))
+        ($g10 (decayToward (index-atom $goals 10) (goalBaseline adaptivity     (index-atom $goals 10))))
+
+        ($m0  (decayToward (index-atom $mods 0)  (modulatorBaseline urgency          (index-atom $mods 0))))
+        ($m1  (decayToward (index-atom $mods 1)  (modulatorBaseline caution          (index-atom $mods 1))))
+        ($m2  (decayToward (index-atom $mods 2)  (modulatorBaseline persistence      (index-atom $mods 2))))
+        ($m3  (decayToward (index-atom $mods 3)  (modulatorBaseline exploration_bias (index-atom $mods 3))))
+        ($m4  (decayToward (index-atom $mods 4)  (modulatorBaseline context_depth    (index-atom $mods 4))))
+        ($m5  (decayToward (index-atom $mods 5)  (modulatorBaseline human_deference  (index-atom $mods 5))))
+        ($m6  (decayToward (index-atom $mods 6)  (modulatorBaseline arousal          (index-atom $mods 6))))
+        ($m7  (decayToward (index-atom $mods 7)  (modulatorBaseline valence          (index-atom $mods 7))))
+        ($m8  (decayToward (index-atom $mods 8)  (modulatorBaseline threshold        (index-atom $mods 8))))
+        ($m9  (decayToward (index-atom $mods 9)  (modulatorBaseline securing         (index-atom $mods 9))))
+        ($m10 (decayToward (index-atom $mods 10) (modulatorBaseline focus            (index-atom $mods 10))))
     )
     (motivation
         ($g0 $g1 $g2 $g3 $g4 $g5 $g6 $g7 $g8 $g9 $g10)

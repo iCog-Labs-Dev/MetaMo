@@ -2,16 +2,20 @@
 
 
 !(bind! &new-msg-flag (new-state False))
+!(bind! &last-results-seen (new-state ""))
 
 
-(= (hasContent $value)
+(= (hasTextContent $value)
    (> (eval (string_length (eval (string-safe $value)))) 2))
 
 (= (clearSignals)
    (clearSpace &signal-space))
 
 (= (addSignal $kind $strength)
-   (add-atom &signal-space (signal $kind $strength)))
+   (let* (
+      ($_ (collapse (let $old (match &signal-space (signal $kind $_) (signal $kind $_)) (remove-atom &signal-space $old))))
+   )
+   (add-atom &signal-space (signal $kind $strength))))
 
 (= (getSignals)
    (collapse (match &signal-space (signal $kind $strength) (signal $kind $strength))))
@@ -36,13 +40,20 @@
       ;; Read OmegaClaw state (interface contract)
       ($msg        (get-state &prevmsg))
       ($activeTask (get-state &active-task))
+      ($taskOpen   (get-state &task-open))
       ($results    (get-state &lastresults))
       ($error      (get-state &error))
       ($isNewMsg   (get-state &new-msg-flag))
-      ($hasMsg     (hasContent $msg))
-      ($hasResults (hasContent $results))
+      ($hasMsg     (hasTextContent $msg))
+      ($hasResults (hasTextContent $results))
+      ($freshResults (and $hasResults (!= $results (get-state &last-results-seen))))
       ($hasError   (> (eval (string_length (eval (string-safe (repr $error))))) 4))
       ($resultsLen (eval (string_length (eval (string-safe $results)))))
+      ($prov       (provider))
+      ($confirmScore (if $isNewMsg
+                         (py-call (lib_llm_ext.executionConfirmationScore $prov $msg $activeTask))
+                         0.0))
+      ($executionFollowup (and $isNewMsg (> $confirmScore 0.75)))
 
       ;; Failure streak: updated based on error presence.
       ($_ (if $hasError
@@ -62,22 +73,22 @@
               _))
 
       ;; 3. Task drift — only on a new message when topic changed
-      ($_ (if (and $isNewMsg (and (hasContent $activeTask) (!= $msg $activeTask)))
+      ($_ (if (and $isNewMsg (and $taskOpen (and (hasTextContent $activeTask) (!= $msg $activeTask))))
               (addSignal task-drift (signalStrength task-drift 0.45))
               _))
 
       ;; 4. Ambiguity — new message with no results and no error
-      ($_ (if (and $isNewMsg (and (not $hasResults) (not $hasError)))
+      ($_ (if (and $isNewMsg (and (not $freshResults) (not $hasError)))
               (addSignal ambiguity (signalStrength ambiguity 0.60))
               _))
 
       ;; 5. Progress made — skills executed and returned results without error.
-      ($_ (if (and $hasResults (not $hasError))
+      ($_ (if (and $freshResults (not $hasError))
               (addSignal progress-made (signalStrength progress-made 0.40))
               _))
 
       ;; 6. Stalled progress — new message, no results, no error
-      ($_ (if (and $isNewMsg (and (not $hasResults) (not $hasError)))
+      ($_ (if (and $isNewMsg (and (not $freshResults) (not $hasError)))
               (addSignal stalled-progress (signalStrength stalled-progress 0.35))
               _))
 
@@ -88,8 +99,7 @@
 
       ;; 8. Semantic extraction — only on new messages (skip LLM call on idle)
       ($_ (if $isNewMsg
-              (collapse (let* (($prov (provider))
-                               ($semStr (py-call (lib_llm_ext.extractSemantics $prov $msg)))
+              (collapse (let* (($semStr (py-call (lib_llm_ext.extractSemantics $prov $msg)))
                                ($semList (catch (sread $semStr))))
                           (if (and (!= $semList ()) (!= $semList (Error)))
                               (let $s (superpose $semList)
@@ -97,9 +107,27 @@
                               (empty))))
               _))
 
+      ;; Confirmation replies inherit semantic execution intent from the open
+      ;; task instead of becoming generic chat.
+      ($_ (if $executionFollowup
+              (addSignal execution-request $confirmScore)
+              _))
+
       ;; Track the active task (update only when a new message arrived)
-      ($_ (if $isNewMsg
+      ($_ (if (and $isNewMsg
+                   (and (not $executionFollowup)
+                        (or (not $hasError) (not (hasTextContent $activeTask)))))
               (change-state! &active-task $msg)
+              _))
+      ($_ (if $isNewMsg
+              (change-state! &task-open True)
+              _))
+      ($_ (if $hasResults
+              (change-state! &last-results-seen $results)
               _))
    )
    (getSignals)))
+
+
+(= (clearSpace $space)
+   (collapse (let $atom (get-atoms $space) (remove-atom $space $atom))))

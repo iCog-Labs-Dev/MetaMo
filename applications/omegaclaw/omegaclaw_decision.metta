@@ -23,13 +23,33 @@
 
 (= (omegaclawUnit $state) $state)
 
+(= (candidateType $candName)
+    (let $res (collapse (match &self (CandidateSpec $candName $type) $type))
+        (if (== $res ()) unknown (car-atom $res)))
+)
+
+(= (candidateModulatorBias $state $type)
+    (let $rows (collapse (match &self (CandidateTypeModulator $type $mod $sign)
+                            (CandidateTypeModulator $type $mod $sign)))
+        (if (== $rows ())
+            0.0
+            (let $parts (collapse
+                    (let $row (superpose $rows)
+                        (let (CandidateTypeModulator $_type $mod $sign) $row
+                            (* $sign (- (getModulator $state $mod) 0.5)))))
+                (* 0.20 (sum $parts)))))
+)
+
 ;; omegaclawScore: score a single MetaMo Action against the current state.
 (= (omegaclawScore $state $action)
-    (let* (
+    (if (== (actionId $action) none)
+        0.0
+        (let* (
         ($candName  (actionId $action))
         ; ($_ (println! ("Scoring candidate: " $candName)))
         ($gInd      (getGoal $state gInd_over))
         ($gTrans    (getGoal $state gTrans_over))
+        ($type      (candidateType $candName))
         ($corrs     (actionGoalCorrelations $action))
         ($goals     (motivationGoals $state))
         ; ($_ (println! ("all: " $goals $corrs $gInd $gTrans)))
@@ -71,13 +91,15 @@
         ;             " isSafety: " $isSafety)))
 
         ;; 5. Composite score, clamped to [0, 1]
-        ($x (* $goalAlignment (+ 1.0 $transBonus)))
+        ($modulatorBias (candidateModulatorBias $state $type))
+        ($x (+ (* $goalAlignment (+ 1.0 $transBonus)) $modulatorBias))
         ($y (+ $stabilityPenalty (+ $riskPenalty $antiSatPenalty)))
         ($rawScore (eval (clamp (- $x $y))))
         ; ($_ (println! ("rawScore: " $rawScore " x: " $x " y: " $y)))
 
-    )
-        $rawScore
+        )
+            $rawScore
+        )
     )
 )
 
