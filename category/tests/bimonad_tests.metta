@@ -80,7 +80,7 @@
 )
 
 (= (bimonadSmokeCandidate)
-    (actionCandidate answer (bimonadSmokeSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ())
+    (actionCandidate answer (bimonadSmokeSchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ())
 )
 
 !(test

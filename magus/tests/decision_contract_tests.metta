@@ -89,7 +89,6 @@
                             appraisal
                         )
                         (0.0 0.0 0.1 0.0)
-                        0.1
                         (0.0 0.0 0.0 0.0)
                         ()
                     )
@@ -112,7 +111,6 @@
                             appraisal
                         )
                         (0.0 0.0 0.9 0.0)
-                        0.1
                         (0.0 0.0 0.0 0.0)
                         ()
                     )
@@ -130,4 +128,3 @@
     (profiledMagusUnit (motivationState schema (0.5) (0.5)))
     (motivationState schema (0.5) (0.5))
 )
-

@@ -1,5 +1,6 @@
 !(import! &self ../validation)
 !(import! &self ../schema)
+!(import! &self ../features)
 !(import! &self ../state)
 !(import! &self ../helper)
 !(import! &self "../helpers.py")
@@ -27,9 +28,8 @@
         answer
         (stateTestSchema)
         (0.0 0.0 0.7 -0.2)
-        0.1
         (0.0 0.0 0.05 -0.01)
-        ((source test))
+        ((source test) (risk 0.1))
     )
 )
 
@@ -51,6 +51,11 @@
 !(test
     (candidateGoalDelta (stateTestCandidate) help)
     0.05
+)
+
+!(test
+    (candidateRiskEstimate (stateTestCandidate))
+    0.1
 )
 
 !(test

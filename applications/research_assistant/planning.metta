@@ -95,7 +95,7 @@
         ($risk (+ (+ (+ 0.05 (* 0.32 $unsupported)) (* 0.35 $privacy)) (* 0.35 $unsafe)))
         ($delta (researchAssistantDeltaVector ((help 0.02) (ethics 0.01))))
     )
-        (actionCandidate safe_answer (researchAssistantSchema) $corrs $risk $delta (researchAssistantCandidateMetadata safe_answer $signals $risk))
+        (actionCandidate safe_answer (researchAssistantSchema) $corrs $delta (researchAssistantCandidateMetadata safe_answer $signals $risk))
     )
 )
 
@@ -130,7 +130,7 @@
         ($risk (+ (+ (+ 0.10 (* 0.35 $unsupported)) (* 0.30 $privacy)) (* 0.50 $unsafe)))
         ($delta (researchAssistantDeltaVector ((curiosity 0.025) (novelty 0.025))))
     )
-        (actionCandidate guided_explore (researchAssistantSchema) $corrs $risk $delta (researchAssistantCandidateMetadata guided_explore $signals $risk))
+        (actionCandidate guided_explore (researchAssistantSchema) $corrs $delta (researchAssistantCandidateMetadata guided_explore $signals $risk))
     )
 )
 
@@ -161,7 +161,7 @@
         ($risk (+ 0.03 (* 0.10 $privacy)))
         ($delta (researchAssistantDeltaVector ((help 0.01) (sociality 0.02) (context_loss -0.02))))
     )
-        (actionCandidate ask_clarifying_question (researchAssistantSchema) $corrs $risk $delta (researchAssistantCandidateMetadata ask_clarifying_question $signals $risk))
+        (actionCandidate ask_clarifying_question (researchAssistantSchema) $corrs $delta (researchAssistantCandidateMetadata ask_clarifying_question $signals $risk))
     )
 )
 
@@ -193,7 +193,7 @@
         ($risk (+ (+ (+ 0.07 (* 0.25 $unsupported)) (* 0.20 $privacy)) (* 0.20 $unsafe)))
         ($delta (researchAssistantDeltaVector ((help 0.015) (self_improvement 0.01))))
     )
-        (actionCandidate compare_options (researchAssistantSchema) $corrs $risk $delta (researchAssistantCandidateMetadata compare_options $signals $risk))
+        (actionCandidate compare_options (researchAssistantSchema) $corrs $delta (researchAssistantCandidateMetadata compare_options $signals $risk))
     )
 )
 
@@ -226,7 +226,7 @@
         ($risk (+ (+ (+ 0.05 (* 0.20 $unsupported)) (* 0.20 $privacy)) (* 0.15 $unsafe)))
         ($delta (researchAssistantDeltaVector ((help 0.02) (ethics 0.015) (context_loss -0.02))))
     )
-        (actionCandidate summarize_source (researchAssistantSchema) $corrs $risk $delta (researchAssistantCandidateMetadata summarize_source $signals $risk))
+        (actionCandidate summarize_source (researchAssistantSchema) $corrs $delta (researchAssistantCandidateMetadata summarize_source $signals $risk))
     )
 )
 
@@ -256,7 +256,7 @@
         ($risk 0.02)
         ($delta (researchAssistantDeltaVector ((ethics 0.03) (unsafe_assistance -0.03) (privacy_violation -0.02))))
     )
-        (actionCandidate decline_risky_request (researchAssistantSchema) $corrs $risk $delta (researchAssistantCandidateMetadata decline_risky_request $signals $risk))
+        (actionCandidate decline_risky_request (researchAssistantSchema) $corrs $delta (researchAssistantCandidateMetadata decline_risky_request $signals $risk))
     )
 )
 

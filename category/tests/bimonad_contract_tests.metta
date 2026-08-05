@@ -87,10 +87,10 @@
             (bimonadTestBimonad)
             (motivationState (bimonadTestSchema) (0.5 0.5 0.8) (0.5 0.5 0.5))
             (stimulusFeatures ())
-            ((actionCandidate answer (bimonadTestSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+            ((actionCandidate answer (bimonadTestSchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ()))
         )
     )
-    (actionCandidate answer (bimonadTestSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ())
+    (actionCandidate answer (bimonadTestSchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ())
 )
 
 !(test
@@ -100,11 +100,10 @@
                 (bimonadTestBimonad)
                 (motivationState (bimonadTestSchema) (0.5 0.5 0.8) (0.5 0.5 0.5))
                 (stimulusFeatures ())
-                ((actionCandidate answer (bimonadTestSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+                ((actionCandidate answer (bimonadTestSchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ()))
                 True
             )
         )
     )
     True
 )
-

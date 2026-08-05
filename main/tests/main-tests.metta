@@ -45,7 +45,7 @@
 )
 
 (= (mainSmokeCandidates $state $stimulus)
-    ((actionCandidate answer (mainSmokeSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+    ((actionCandidate answer (mainSmokeSchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ()))
 )
 
 (= (mainSmokeBundle)

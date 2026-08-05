@@ -49,7 +49,7 @@
 )
 
 (= (runtimeCandidatesA $state $stimulus)
-    ((actionCandidate answer (runtimeSchemaA) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+    ((actionCandidate answer (runtimeSchemaA) (0.0 0.0 0.8) (0.0 0.0 0.0) ()))
 )
 
 (= (runtimeBundleA)
@@ -74,4 +74,3 @@
     (== (bundleSchema (runtimeBundleA)) (bundleSchema (runtimeBundleB)))
     False
 )
-

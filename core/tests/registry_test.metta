@@ -44,7 +44,7 @@
 )
 
 (= (registrySmokeCandidates $state $stimulus)
-    ((actionCandidate answer (registrySmokeSchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+    ((actionCandidate answer (registrySmokeSchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ()))
 )
 
 (= (registrySmokeBundle)

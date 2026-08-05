@@ -34,7 +34,7 @@
     (appraisalProfile registry (valence) registryFeatures registryCoreDeltas registryAppDeltas registryFeedback 1.0 ())
 )
 (= (registryCandidates $state $stimulus)
-    ((actionCandidate answer (registrySchema) (0.0 0.0 0.8) 0.0 (0.0 0.0 0.0) ()))
+    ((actionCandidate answer (registrySchema) (0.0 0.0 0.8) (0.0 0.0 0.0) ()))
 )
 (= (registryBundle)
     (applicationBundle registry (registrySchema) (registryAppraisal) (registryProfile) defaultGoalChangeDeltaG (makeDefaultStabilityPolicy) (makeDefaultCoherencePolicy) (makeDefaultParallelMergePolicy) registryStimulus registryCandidates ())

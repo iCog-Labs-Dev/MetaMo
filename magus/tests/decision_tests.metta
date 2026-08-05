@@ -45,11 +45,11 @@
 )
 
 (= (decisionWeakCandidate)
-    (actionCandidate weak (decisionTestSchema) (0.0 0.0 0.1 0.0) 0.1 (0.0 0.0 0.0 0.0) ())
+    (actionCandidate weak (decisionTestSchema) (0.0 0.0 0.1 0.0) (0.0 0.0 0.0 0.0) ())
 )
 
 (= (decisionStrongCandidate)
-    (actionCandidate strong (decisionTestSchema) (0.0 0.0 0.9 0.0) 0.1 (0.0 0.0 0.0 0.0) ())
+    (actionCandidate strong (decisionTestSchema) (0.0 0.0 0.9 0.0) (0.0 0.0 0.0 0.0) ())
 )
 
 (= (decisionTestDecision)

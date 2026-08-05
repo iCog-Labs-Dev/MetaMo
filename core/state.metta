@@ -4,7 +4,7 @@
 (: motivationState (-> MotivationSchema Expression Expression MotivationState))
 
 (: ActionCandidate Type)
-(: actionCandidate (-> Symbol MotivationSchema Expression Number Expression Expression ActionCandidate))
+(: actionCandidate (-> Symbol MotivationSchema Expression Expression Expression ActionCandidate))
 
 ;; Return the schema from a canonical motivational state.
 ;; Example: (stateSchema (motivationState schema (0.5) (0.5))) -> schema
@@ -134,38 +134,38 @@
 )
 
 ;; Return the action id from a canonical candidate.
-;; Example: (candidateId (actionCandidate act schema (0.1) 0.2 (0.0) ())) -> act
-(= (candidateId (actionCandidate $id $schema $correlations $risk $deltaG $metadata))
+;; Example: (candidateId (actionCandidate act schema (0.1) (0.0) ())) -> act
+(= (candidateId (actionCandidate $id $schema $correlations $deltaG $metadata))
     $id
 )
 
 ;; Return the candidate schema.
-;; Example: (candidateSchema (actionCandidate act schema (0.1) 0.2 (0.0) ())) -> schema
-(= (candidateSchema (actionCandidate $id $schema $correlations $risk $deltaG $metadata))
+;; Example: (candidateSchema (actionCandidate act schema (0.1) (0.0) ())) -> schema
+(= (candidateSchema (actionCandidate $id $schema $correlations $deltaG $metadata))
     $schema
 )
 
 ;; Return candidate goal correlations.
-;; Example: (candidateGoalCorrelations (actionCandidate act schema (0.1) 0.2 (0.0) ())) -> (0.1)
-(= (candidateGoalCorrelations (actionCandidate $id $schema $correlations $risk $deltaG $metadata))
+;; Example: (candidateGoalCorrelations (actionCandidate act schema (0.1) (0.0) ())) -> (0.1)
+(= (candidateGoalCorrelations (actionCandidate $id $schema $correlations $deltaG $metadata))
     $correlations
 )
 
-;; Return candidate risk estimate.
-;; Example: (candidateRiskEstimate (actionCandidate act schema (0.1) 0.2 (0.0) ())) -> 0.2
-(= (candidateRiskEstimate (actionCandidate $id $schema $correlations $risk $deltaG $metadata))
-    $risk
+;; Return candidate risk estimate from metadata.
+;; Example: (candidateRiskEstimate (actionCandidate act schema (0.1) (0.0) ((risk 0.2)))) -> 0.2
+(= (candidateRiskEstimate $candidate)
+    (featurePairsGet (candidateMetadata $candidate) risk 0.0)
 )
 
 ;; Return candidate Delta G hint.
-;; Example: (candidateDeltaG (actionCandidate act schema (0.1) 0.2 (0.0) ())) -> (0.0)
-(= (candidateDeltaG (actionCandidate $id $schema $correlations $risk $deltaG $metadata))
+;; Example: (candidateDeltaG (actionCandidate act schema (0.1) (0.0) ())) -> (0.0)
+(= (candidateDeltaG (actionCandidate $id $schema $correlations $deltaG $metadata))
     $deltaG
 )
 
 ;; Return candidate metadata.
-;; Example: (candidateMetadata (actionCandidate act schema (0.1) 0.2 (0.0) ((risk 0.2)))) -> ((risk 0.2))
-(= (candidateMetadata (actionCandidate $id $schema $correlations $risk $deltaG $metadata))
+;; Example: (candidateMetadata (actionCandidate act schema (0.1) (0.0) ((risk 0.2)))) -> ((risk 0.2))
+(= (candidateMetadata (actionCandidate $id $schema $correlations $deltaG $metadata))
     $metadata
 )
 
