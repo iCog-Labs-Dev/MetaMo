@@ -39,14 +39,13 @@
       (if (== $v ()) 0.75 (car-atom $v))))
 
 (= (idleAutonomyActive)
-   (and (not (get-state &new-msg-flag))
-        (not (get-state &task-open))))
+   (idleAutonomyActiveForBundle (activeFrameBundle)))
 
 ;; Bundle-scoped lifecycle predicates. These are the only variants used by
 ;; candidate selection; the legacy zero-argument helpers remain for startup
 ;; and persistence code outside the MetaMo input boundary.
 (= (idleAutonomyActiveForBundle $bundle)
-   (and (not (frameRuntimeNewMessage $bundle))
+   (and (not (bundle-runtime-has-new-message $bundle))
         (not (frameRuntimeTaskOpen $bundle))))
 
 (= (autonomyPhaseAllows $name)
@@ -96,47 +95,37 @@
    )))
 
 (= (refreshTaskExecutionObserved)
-   (if (get-state &new-msg-flag)
-       (let $_ (change-state! &task-execution-observed "") True)
-       (let $merged (py-call (helper.merge_observed_execution_commands
-                              (get-state &task-execution-observed)
-                              (get-state &lastresults)))
-          (change-state! &task-execution-observed $merged))))
+   (let $bundle (activeFrameBundle)
+      (if (bundle-runtime-has-new-message $bundle)
+          (let $_ (change-state! &task-execution-observed "") True)
+          (let $merged (py-call (helper.merge_observed_execution_commands
+                                 (frameRuntimeExecutionObserved $bundle)
+                                 (frameRuntimeResults $bundle)))
+             (change-state! &task-execution-observed $merged)))))
 
 (= (executionContinuationNeeded)
-   (and (get-state &task-open)
-        (and (not (get-state &new-msg-flag))
-             (py-call (helper.task_needs_more_execution
-                       (get-state &active-task)
-                       (get-state &task-execution-observed))))))
+   (executionContinuationNeededForBundle (activeFrameBundle)))
 
 (= (executionContinuationNeededForBundle $bundle)
    (and (frameRuntimeTaskOpen $bundle)
-        (and (not (frameRuntimeNewMessage $bundle))
+        (and (not (bundle-runtime-has-new-message $bundle))
              (py-call (helper.task_needs_more_execution
                        (frameRuntimeText (frameRuntimeActiveTask $bundle))
                        (frameRuntimeExecutionObserved $bundle))))))
 
 (= (awaitingClarificationResponse)
-   (let* (
-      ($lastDecision (get-state &last-motivation-decision))
-      ((decision $candidate $_mode $_directive $_score) $lastDecision)
-   )
-   (and (get-state &task-open)
-        (and (not (get-state &new-msg-flag))
-             (== $candidate ask-clarification)))))
+   (awaitingClarificationResponseForBundle (activeFrameBundle)))
 
 (= (awaitingClarificationResponseForBundle $bundle)
    (let* (
       ($lastDecision (get-state &last-motivation-decision))
       ((decision $candidate $_mode $_directive $_score) $lastDecision))
    (and (frameRuntimeTaskOpen $bundle)
-        (and (not (frameRuntimeNewMessage $bundle))
+        (and (not (bundle-runtime-has-new-message $bundle))
              (== $candidate ask-clarification)))))
 
 (= (directUserResponseNeeded)
-   (and (hasSignal user-waiting)
-        (< (extractAppraisalDim opportunity) (executionIntentThreshold))))
+   (directUserResponseNeededForBundle (activeFrameBundle)))
 
 (= (directUserResponseNeededForBundle $bundle)
    (and (hasSignal user-waiting)
@@ -160,28 +149,23 @@
                     (> (extractAppraisalDim uncertainty) 0.20))))))
 
 (= (freshExecutionRequestNeeded)
-   (and (hasSignal user-waiting)
-        (> (extractAppraisalDim opportunity) (executionIntentThreshold))))
+   (freshExecutionRequestNeededForBundle (activeFrameBundle)))
 
 (= (freshExecutionRequestNeededForBundle $bundle)
    (and (hasSignal user-waiting)
         (> (extractAppraisalDim opportunity) (executionIntentThreshold))))
 
 (= (taskResultReady)
-   (and (get-state &task-open)
-        (and (not (get-state &new-msg-flag))
-             (and (not (awaitingClarificationResponse))
-                  (and (hasResults) (not (hasErrors)))))))
+   (taskResultReadyForBundle (activeFrameBundle)))
 
 (= (taskResultReadyForBundle $bundle)
    (and (frameRuntimeTaskOpen $bundle)
-        (and (not (frameRuntimeNewMessage $bundle))
+        (and (not (bundle-runtime-has-new-message $bundle))
              (and (not (awaitingClarificationResponseForBundle $bundle))
                   (and (hasResults) (not (hasErrors)))))))
 
 (= (resultQuestionNeedsResponse)
-   (and (hasSignal user-waiting)
-       (py-call (helper.is_result_status_question (get-state &prevmsg)))))
+   (resultQuestionNeedsResponseForBundle (activeFrameBundle)))
 
 (= (resultQuestionNeedsResponseForBundle $bundle)
    (and (hasSignal user-waiting)

@@ -495,6 +495,19 @@
 (= (frameRuntimeText $value)
    (if (== $value ()) "" $value))
 
+;; Migration seam: keep raw OmegaClaw state reads in this adapter and expose
+;; only derived, bounded values to MetaMo modules.
+(= (bundle-runtime-has-error $bundle)
+   (not (== (get-state &error) "")))
+(= (bundle-runtime-has-new-message $bundle)
+   (frameRuntimeNewMessage $bundle))
+(= (bundle-current-status $bundle)
+   (frameBundleCurrentStatus $bundle))
+(= (bundle-current-budget-state $bundle)
+   (frameBundleCurrentBudget $bundle))
+(= (bundle-current-priority $bundle)
+   (frameBundleCurrentPriority $bundle))
+
 !(bind! &last-attention-directive
    (new-state
       (AttentionDirective
@@ -539,14 +552,14 @@
    (not (== (frameBundleCurrentId $bundle) ())))
 
 (= (frameBundleActive $bundle)
-   (or (== (frameBundleCurrentStatus $bundle) Active)
-       (== (frameBundleCurrentStatus $bundle) Focused)))
+   (or (== (bundle-current-status $bundle) Active)
+       (== (bundle-current-status $bundle) Focused)))
 
 (= (frameBundleModeCompatible $bundle)
    (== (frameBundleCurrentMode $bundle) (frameBundleRootMode $bundle)))
 
 (= (frameBundleBudgetOpen $bundle)
-   (let $budget (frameBundleCurrentBudget $bundle)
+   (let $budget (bundle-current-budget-state $bundle)
       (case $budget
          ((ResourceBudget $maximum $remaining $unit (status Closed)) False)
           ((ResourceBudget $maximum $remaining $unit (status Exhausted)) False)
@@ -603,7 +616,7 @@
 ;; candidate score. It is a bounded scheduler hint derived from both inputs;
 ;; neither source value is overwritten.
 (= (directivePriority $bundle $score)
-   (let $framePriority (frameBundleCurrentPriority $bundle)
+   (let $framePriority (bundle-current-priority $bundle)
       (clampValue (+ (* 0.70 $score) (* 0.30 $framePriority)))))
 
 (= (makeAttentionDirective $bundle $candidate $score)

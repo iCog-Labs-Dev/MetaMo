@@ -38,6 +38,7 @@
 !(test (!= (frameStateForMetaMo) ()) True)
 !(test (== (frameRuntimeNewMessage (frameStateForMetaMo)) False) True)
 !(test (== (frameRuntimeTaskOpen (frameStateForMetaMo)) False) True)
+!(test (== (bundle-runtime-has-new-message (frameStateForMetaMo)) False) True)
 !(test (!= (frameStateForSlice Minimal (frameStateBundle)) ()) True)
 !(test (!= (frameStateForSlice CurrentFrameSummary (frameStateBundle)) ()) True)
 !(test (!= (frameStateForSlice CurrentFrameAndRelations (frameStateBundle)) ()) True)

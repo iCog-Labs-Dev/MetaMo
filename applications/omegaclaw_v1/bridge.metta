@@ -16,14 +16,15 @@
 (= (motivationContextBlock)
    (let* (
       ($_ (ensureMotivationRestored))
+      ;; Capture the adapter snapshot before any MetaMo lifecycle logic.
+      ($bundle (frameStateForMetaMo))
+      ($_ (setActiveFrameBundle $bundle))
       ;; Refresh internal execution bookkeeping before ContextFrames publishes
       ;; the snapshot consumed by MetaMo.
       ($_ (refreshTaskExecutionObserved))
       ($_ (completePreviousTaskIfSuccessful))
       ;; ContextFrames has already ingested input and updated its frame state.
       ;; Capture one bounded snapshot and pass it through the whole cycle.
-      ($bundle (frameStateForMetaMo))
-      ($_ (setActiveFrameBundle $bundle))
       ($_ (eval (refreshSignals $bundle)))
       ($_ (eval (clearSpace &appraisal-space)))
       ($_ (eval (computeAllDimensions)))
@@ -112,12 +113,13 @@
 (= (getContext)
    (let* (
       ($decisionResult (motivationContextBlock))
+      ($bundle (activeFrameBundle))
       ($_ (println! (MOTIVATION-CONTEXT-BLOCK: $decisionResult)))
       ((decision $selectedCandidate $_mode $directive $_score)
          $decisionResult)
       ($guidance (directiveGuidance $directive))
       ($instruction (candidateInstruction $selectedCandidate))
-      ($activeTask (get-state &active-task))
+      ($activeTask (frameRuntimeActiveTask $bundle))
       ($autonomyPhase (autonomyPhaseForCandidate $selectedCandidate))
       ($nextAutonomyPhase (get-state &autonomy-phase))
       ($autonomyActionCount (get-state &autonomy-action-count))
@@ -136,7 +138,7 @@
          " Do not output conversational text outside the expression."
          " IMPORTANT: For code passed as a string argument, prefer single-quoted Python strings inside the code. Avoid quote characters that can terminate the surrounding MeTTa string."
          " LAST_SKILL_USE_RESULTS: "
-            (eval (last_chars (get-state &lastresults) (maxFeedback)))
+            (eval (last_chars (frameRuntimeResults $bundle) (maxFeedback)))
          " HISTORY: " (eval (getHistory))
          " ACTIVE_TASK: " (eval (string-safe $activeTask))
          " TASK_EXECUTION_OBSERVED: "

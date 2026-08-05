@@ -60,7 +60,7 @@
       ($hasMsg     (hasTextContent $msg))
       ($hasResults (hasTextContent $results))
       ($freshResults (and $hasResults (!= $results (get-state &last-results-seen))))
-      ($hasError   (> (eval (string_length (eval (string-safe (repr $error))))) 4))
+      ($hasError   (bundle-runtime-has-error $bundle))
       ($resultsLen (eval (string_length (eval (string-safe $results)))))
       ($prov       (provider))
       ($confirmScore (if $isNewMsg
