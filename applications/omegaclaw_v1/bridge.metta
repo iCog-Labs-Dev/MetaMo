@@ -16,13 +16,15 @@
 (= (motivationContextBlock)
    (let* (
       ($_ (ensureMotivationRestored))
+      ;; Refresh internal execution bookkeeping before ContextFrames publishes
+      ;; the snapshot consumed by MetaMo.
+      ($_ (refreshTaskExecutionObserved))
+      ($_ (completePreviousTaskIfSuccessful))
       ;; ContextFrames has already ingested input and updated its frame state.
       ;; Capture one bounded snapshot and pass it through the whole cycle.
       ($bundle (frameStateForMetaMo))
       ($_ (setActiveFrameBundle $bundle))
       ($_ (eval (refreshSignals $bundle)))
-      ($_ (refreshTaskExecutionObserved))
-      ($_ (completePreviousTaskIfSuccessful))
       ($_ (eval (clearSpace &appraisal-space)))
       ($_ (eval (computeAllDimensions)))
 

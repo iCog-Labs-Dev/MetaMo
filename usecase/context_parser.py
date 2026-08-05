@@ -7,7 +7,7 @@ import os
 import time
 
 
-def _clamp01(x: float) -> float:
+def _clampValue(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
@@ -85,9 +85,9 @@ def _calibrate_action_signals(
 ) -> tuple[float, float, float]:
 
     return (
-        _clamp01(needs_external_evidence),
-        _clamp01(needs_task_plan),
-        _clamp01(needs_multi_source_integration),
+        _clampValue(needs_external_evidence),
+        _clampValue(needs_task_plan),
+        _clampValue(needs_multi_source_integration),
     )
 
 
@@ -229,17 +229,17 @@ def parse_with_gemini(
             verify_request = False
 
         try:
-            urgent = _clamp01(float(urgent_raw))
-            complexity = _clamp01(float(complexity_raw))
-            ambiguity = _clamp01(float(ambiguity_raw))
-            expertise = _clamp01(float(expertise_raw))
-            threshold = _clamp01(float(threshold_raw))
-            topic_familiarity = _clamp01(float(topic_familiarity_raw))
-            failure_signal = _clamp01(float(failure_signal_raw))
-            reflective_intent = _clamp01(float(reflective_intent_raw))
-            needs_external_evidence = _clamp01(float(needs_external_evidence_raw))
-            needs_task_plan = _clamp01(float(needs_task_plan_raw))
-            needs_multi_source_integration = _clamp01(float(needs_multi_source_integration_raw))
+            urgent = _clampValue(float(urgent_raw))
+            complexity = _clampValue(float(complexity_raw))
+            ambiguity = _clampValue(float(ambiguity_raw))
+            expertise = _clampValue(float(expertise_raw))
+            threshold = _clampValue(float(threshold_raw))
+            topic_familiarity = _clampValue(float(topic_familiarity_raw))
+            failure_signal = _clampValue(float(failure_signal_raw))
+            reflective_intent = _clampValue(float(reflective_intent_raw))
+            needs_external_evidence = _clampValue(float(needs_external_evidence_raw))
+            needs_task_plan = _clampValue(float(needs_task_plan_raw))
+            needs_multi_source_integration = _clampValue(float(needs_multi_source_integration_raw))
             valence = _clamp11(float(valence_raw))
 
         except Exception as e:

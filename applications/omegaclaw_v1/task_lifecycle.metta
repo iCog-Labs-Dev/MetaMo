@@ -42,6 +42,13 @@
    (and (not (get-state &new-msg-flag))
         (not (get-state &task-open))))
 
+;; Bundle-scoped lifecycle predicates. These are the only variants used by
+;; candidate selection; the legacy zero-argument helpers remain for startup
+;; and persistence code outside the MetaMo input boundary.
+(= (idleAutonomyActiveForBundle $bundle)
+   (and (not (frameRuntimeNewMessage $bundle))
+        (not (frameRuntimeTaskOpen $bundle))))
+
 (= (autonomyPhaseAllows $name)
    (let $phase (get-state &autonomy-phase)
       (case $phase (
@@ -103,6 +110,13 @@
                        (get-state &active-task)
                        (get-state &task-execution-observed))))))
 
+(= (executionContinuationNeededForBundle $bundle)
+   (and (frameRuntimeTaskOpen $bundle)
+        (and (not (frameRuntimeNewMessage $bundle))
+             (py-call (helper.task_needs_more_execution
+                       (frameRuntimeText (frameRuntimeActiveTask $bundle))
+                       (frameRuntimeExecutionObserved $bundle))))))
+
 (= (awaitingClarificationResponse)
    (let* (
       ($lastDecision (get-state &last-motivation-decision))
@@ -112,7 +126,19 @@
         (and (not (get-state &new-msg-flag))
              (== $candidate ask-clarification)))))
 
+(= (awaitingClarificationResponseForBundle $bundle)
+   (let* (
+      ($lastDecision (get-state &last-motivation-decision))
+      ((decision $candidate $_mode $_directive $_score) $lastDecision))
+   (and (frameRuntimeTaskOpen $bundle)
+        (and (not (frameRuntimeNewMessage $bundle))
+             (== $candidate ask-clarification)))))
+
 (= (directUserResponseNeeded)
+   (and (hasSignal user-waiting)
+        (< (extractAppraisalDim opportunity) (executionIntentThreshold))))
+
+(= (directUserResponseNeededForBundle $bundle)
    (and (hasSignal user-waiting)
         (< (extractAppraisalDim opportunity) (executionIntentThreshold))))
 
@@ -126,7 +152,18 @@
        (or (> (extractAppraisalDim uncertainty) (executionUncertaintyLimit))
            (executionCautionBlocks))))
 
+(= (executionRiskCurrentlyHighForBundle $bundle)
+   (or (> (extractAppraisalDim risk) (executionRiskLimit))
+       (or (> (extractAppraisalDim uncertainty) (executionUncertaintyLimit))
+           (and (> (extractModulatorValue caution) (executionCautionLimit))
+                (or (> (extractAppraisalDim risk) 0.10)
+                    (> (extractAppraisalDim uncertainty) 0.20))))))
+
 (= (freshExecutionRequestNeeded)
+   (and (hasSignal user-waiting)
+        (> (extractAppraisalDim opportunity) (executionIntentThreshold))))
+
+(= (freshExecutionRequestNeededForBundle $bundle)
    (and (hasSignal user-waiting)
         (> (extractAppraisalDim opportunity) (executionIntentThreshold))))
 
@@ -136,9 +173,20 @@
              (and (not (awaitingClarificationResponse))
                   (and (hasResults) (not (hasErrors)))))))
 
+(= (taskResultReadyForBundle $bundle)
+   (and (frameRuntimeTaskOpen $bundle)
+        (and (not (frameRuntimeNewMessage $bundle))
+             (and (not (awaitingClarificationResponseForBundle $bundle))
+                  (and (hasResults) (not (hasErrors)))))))
+
 (= (resultQuestionNeedsResponse)
    (and (hasSignal user-waiting)
-        (py-call (helper.is_result_status_question (get-state &prevmsg)))))
+       (py-call (helper.is_result_status_question (get-state &prevmsg)))))
+
+(= (resultQuestionNeedsResponseForBundle $bundle)
+   (and (hasSignal user-waiting)
+        (py-call (helper.is_result_status_question
+                  (frameRuntimeText (frameRuntimeMessage $bundle))))))
 
 (= (completeTaskIfTerminal $candidate)
    (if (or (== $candidate respond)

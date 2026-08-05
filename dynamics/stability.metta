@@ -6,7 +6,7 @@
 (= (isInSafeRegion $state)
     (let* (
         ($gInd (getGoal $state gInd))
-        ($gNorm (norm (motivationGoals $state)))
+        ($gNorm (eval (norm (motivationGoals $state))))
     )
         (and (>= $gInd (eval (THETA_SAFE))) (<= $gNorm (eval (G_MAX))))
     )
@@ -19,7 +19,7 @@
 (= (distanceToUnsafeBoundary $state)
     (let* (
         ($gInd (getGoal $state gInd))
-        ($gNorm (norm (motivationGoals $state)))
+        ($gNorm (eval (norm (motivationGoals $state))))
         ($distTheta (positivePart (- $gInd (eval (THETA_SAFE)))))
         ($distGMax (positivePart (- (eval (G_MAX)) $gNorm)))
     )

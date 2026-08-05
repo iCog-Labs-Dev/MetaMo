@@ -109,6 +109,9 @@
             ;; Task lifecycle fields are exposed only as bounded, typed
             ;; projections. MetaMo must not read the OmegaClaw states below.
             (task-open (get-state &task-open))
+            (task-execution-observed
+               (cfv2-compact-limited
+                  (get-state &task-execution-observed) 1200))
             (active-task-summary
                (cfv2-compact-limited (get-state &active-task) 500))
             (last-results-summary
@@ -242,6 +245,7 @@
             (message-present $messagePresent)
             (message-summary $messageSummary)
             (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask)
             (last-results-summary $lastResults)
             (error $error)
@@ -425,6 +429,7 @@
 (= (frameRuntimeNewMessage $bundle)
    (let (FrameStateRuntime (new-message $value) (message-present $messagePresent)
             (message-summary $messageSummary) (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask) (last-results-summary $results)
             (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
@@ -432,6 +437,7 @@
 (= (frameRuntimeMessagePresent $bundle)
    (let (FrameStateRuntime (new-message $newMessage) (message-present $value)
             (message-summary $messageSummary) (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask) (last-results-summary $results)
             (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
@@ -439,6 +445,7 @@
 (= (frameRuntimeMessage $bundle)
    (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
             (message-summary $value) (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask) (last-results-summary $results)
             (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
@@ -446,6 +453,7 @@
 (= (frameRuntimeTaskOpen $bundle)
    (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
             (message-summary $messageSummary) (task-open $value)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask) (last-results-summary $results)
             (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
@@ -453,6 +461,7 @@
 (= (frameRuntimeActiveTask $bundle)
    (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
             (message-summary $messageSummary) (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $value) (last-results-summary $results)
             (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
@@ -460,6 +469,7 @@
 (= (frameRuntimeResults $bundle)
    (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
             (message-summary $messageSummary) (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask) (last-results-summary $value)
             (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
@@ -467,8 +477,18 @@
 (= (frameRuntimeError $bundle)
    (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
             (message-summary $messageSummary) (task-open $taskOpen)
+            (task-execution-observed $observed)
             (active-task-summary $activeTask) (last-results-summary $results)
             (error $value) (wake-loops $wakeLoops) (next-wake-at $nextWake)
+            (budget-state $budgetState))
+         (frameBundleRuntime $bundle) $value))
+
+(= (frameRuntimeExecutionObserved $bundle)
+   (let (FrameStateRuntime (new-message $newMessage) (message-present $messagePresent)
+            (message-summary $messageSummary) (task-open $taskOpen)
+            (task-execution-observed $value)
+            (active-task-summary $activeTask) (last-results-summary $results)
+            (error $error) (wake-loops $wakeLoops) (next-wake-at $nextWake)
             (budget-state $budgetState))
          (frameBundleRuntime $bundle) $value))
 

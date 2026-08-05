@@ -32,7 +32,7 @@ mkdir -p repos
 git clone https://github.com/asi-alliance/OmegaClaw-Core.git repos/OmegaClaw-Core
 git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chromadb
 git clone https://github.com/iCog-Labs-Dev/MetaMo.git MetaMo
-cp MetaMo/applications/omegaclaw/run.metta ./run_omega.metta
+cp MetaMo/applications/omegaclaw_v1/run.metta ./run_omega.metta
 ```
 
 ## Usage

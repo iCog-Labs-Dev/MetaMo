@@ -126,15 +126,8 @@
               (addSignal execution-request $confirmScore)
               _))
 
-      ;; Track the active task (update only when a new message arrived)
-      ($_ (if (and $isNewMsg
-                   (and (not $executionFollowup)
-                        (or (not $hasError) (not (hasTextContent $activeTask)))))
-              (change-state! &active-task $msg)
-              _))
-      ($_ (if $isNewMsg
-              (change-state! &task-open True)
-              _))
+      ;; Task lifecycle belongs to ContextFrames. Signals only extract typed
+      ;; facts from the bundle and must not update task runtime state.
       ($_ (if $hasResults
               (change-state! &last-results-seen $results)
               _))

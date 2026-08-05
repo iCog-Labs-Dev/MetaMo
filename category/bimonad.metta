@@ -94,7 +94,11 @@
    )
     (let* (
         ($dampedDeltaG (eval ($dampingFn $decisionState $proposedDeltaG)))
-        ($nextGoals (eval (clipVector (vectorAdd (motivationGoals $decisionState) $dampedDeltaG) 0.0 1.0)))
+        ($nextGoals (eval (clipVector
+            (if (== $dampedDeltaG ())
+                (motivationGoals $decisionState)
+                (vectorAdd (motivationGoals $decisionState) $dampedDeltaG))
+            0.0 1.0)))
         ($nextState (motivation $nextGoals (motivationModulators $decisionState)))
     )
         (eval ($projectFn $nextState))

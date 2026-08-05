@@ -26,6 +26,21 @@ if rg -q 'get-state &(prevmsg|lastresults|error|new-msg-flag|task-open|active-ta
   exit 1
 fi
 
+# Lifecycle decisions must use bundle-scoped predicates rather than calling
+# helpers that reach back into OmegaClaw task state.
+if rg -q '\((idleAutonomyActive|directUserResponseNeeded|resultQuestionNeedsResponse|taskResultReady|executionContinuationNeeded|executionRiskCurrentlyHigh|freshExecutionRequestNeeded|awaitingClarificationResponse)(\)|\s)' \
+    "$candidates"; then
+  echo "Candidate selection bypasses the bundle-scoped lifecycle boundary" >&2
+  exit 1
+fi
+
+# Signal extraction may maintain MetaMo-local signal history, but it must not
+# mutate the task state owned by ContextFrames/OmegaClaw.
+if rg -q 'change-state! &(active-task|task-open)' "$signals"; then
+  echo "Signal extraction mutates task runtime state" >&2
+  exit 1
+fi
+
 # The source order is part of the contract.
 python3 - "$bridge" <<'PY'
 from pathlib import Path

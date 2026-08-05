@@ -25,6 +25,7 @@
 !(bind! &nextWakeAt (new-state 0))
 !(bind! &task-open (new-state False))
 !(bind! &active-task (new-state ""))
+!(bind! &task-execution-observed (new-state ""))
 !(bind! &failure-streak (new-state 0))
 !(bind! &last-results-seen (new-state ""))
 

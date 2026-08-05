@@ -132,6 +132,16 @@
     )
 )
 
+(= (findBestActionForBundle $bundle $state () $bestAction $bestScore)
+   $bestAction)
+(= (findBestActionForBundle $bundle $state $remaining $bestAction $bestScore)
+   (let* (
+      (($head $tail) (decons-atom $remaining))
+      ($score (omegaclawScoreForBundle $bundle $state $head)))
+      (if (> $score $bestScore)
+          (findBestActionForBundle $bundle $state $tail $head $score)
+          (findBestActionForBundle $bundle $state $tail $bestAction $bestScore))))
+
 
 ;; omegaclawDecide: select the best action and update the anti-saturation counter.
 (= (omegaclawDecide $state $candidates)
@@ -159,7 +169,21 @@
 (= (omegaclawDecideForBundle $bundle $state $candidates)
    (if (== (frameBundleCurrentId $bundle) ())
        (decisionResult (action none () 0.0 ()) ())
-       (omegaclawDecide $state $candidates)))
+       (if (== $candidates ())
+           (decisionResult (action none () 0.0 ()) ())
+           (let* (
+              (($head $tail) (decons-atom $candidates))
+              ($firstScore (omegaclawScoreForBundle $bundle $state $head))
+              ($bestAction
+                 (findBestActionForBundle
+                    $bundle $state $tail $head $firstScore))
+              ($candName (actionId $bestAction))
+              ($isSafety (isSafetyCandidate $candName))
+              ($_ (if $isSafety
+                      (change-state! &consecutive-safety-wins
+                         (+ (get-state &consecutive-safety-wins) 1))
+                      (change-state! &consecutive-safety-wins 0))))
+              (decisionResult $bestAction (actionDeltaG $bestAction))))))
 
 (= (omegaclawScoreBound $state $action)
    (let $bundle (activeFrameBundle)
