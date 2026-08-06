@@ -57,6 +57,18 @@
 !(test (== (eval (candidateAdmitted (frameStateForMetaMo) execute-skill)) False) True)
 !(test (== (eval (feasibilityGateActions (frameStateForMetaMo) ())) True) True)
 
+;; Relations are six-field advisory projections. A same-frame judgment is
+;; marked for verification and does not create or merge a frame.
+!(test (eval (frameStateProjectRelation
+               (FrameRelation frame-a frame-a SameFrame "same" 0.90 Proposed)))
+      (FrameStateRelation
+         (source-frame frame-a)
+         (target-frame frame-a)
+         (relation-type SameFrame)
+         (reason (cfv2-compact-limited "same" 240))
+         (confidence 0.90)
+         (evidence-status VerificationRequired)))
+
 ;; Verify that a typed rejected directive is emitted with separate target,
 ;; slice, admission, priority, task, and source fields.
 !(test (eval (makeAttentionDirective (frameStateForMetaMo) execute-skill 0.80))

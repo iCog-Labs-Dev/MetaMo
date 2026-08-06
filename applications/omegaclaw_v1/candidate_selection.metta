@@ -33,7 +33,7 @@
    )
    (if $result True (anyTrue $bundle $tail))))
 
-(= (candidateIsAvailable $bundle $name)
+(= (candidateIsAvailableRaw $bundle $name)
    (if (idleAutonomyActiveForBundle $bundle)
        (if (hasErrors)
            (== $name self-improve)
@@ -104,6 +104,13 @@
                                                   (if $hasOr
                                                       (eval (anyTrue $bundle $orRows))
                                                       True)))))))))))))))
+
+;; A possible same-frame relation is advisory evidence, but it must route the
+;; cycle through the verification/defer candidate before other work.
+(= (candidateIsAvailable $bundle $name)
+   (if (bundleNeedsRelationVerification $bundle)
+       (== $name defer)
+       (candidateIsAvailableRaw $bundle $name)))
 
 (= (generateCandidates $bundle)
    (let* (

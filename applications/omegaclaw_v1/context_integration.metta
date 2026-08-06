@@ -37,6 +37,64 @@
           ($rest (frameStateTake (- $n 1) $tail)))
           (cons $head $rest))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Advisory relation projection
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Relations cross the boundary as evidence, never as frame topology.  Keep
+;; the projection deliberately positional and small: no notes, embeddings,
+;; timestamps, or source-frame payloads are exposed to MetaMo.
+
+(= (frameStateRelationEvidence $source $target $type $evidence)
+   (case $type
+      ((SameFrame VerificationRequired)
+       (PossibleSameFrame VerificationRequired)
+       ($_ $evidence))))
+
+(= (frameStateProjectRelation
+      (FrameRelation $source $target $type $reason $confidence $evidence))
+   (let $status (eval (frameStateRelationEvidence
+                        $source $target $type $evidence))
+      (FrameStateRelation
+         (source-frame $source)
+         (target-frame $target)
+         (relation-type $type)
+         (reason (cfv2-compact-limited $reason 240))
+         (confidence $confidence)
+         (evidence-status $status))))
+
+;; Accept the two relation shapes used by ContextFrames relation providers.
+(= (frameStateProjectRelation
+      (Relation $source $target $type $reason $confidence $evidence))
+   (frameStateProjectRelation
+      (FrameRelation $source $target $type $reason $confidence $evidence)))
+
+;; Unknown relation shapes are intentionally dropped by the projection rules;
+;; no raw relation atom is allowed to cross the boundary.
+
+(= (frameStateBoundRelations ()) ())
+(= (frameStateBoundRelations $relations)
+   (let* (
+      (($head $tail) (decons-atom $relations))
+      ($projected (frameStateProjectRelation $head)))
+      (cons $projected
+            (frameStateBoundRelations
+               (frameStateTake (- (frameStateMaxRelations) 1) $tail)))))
+
+;; A same-frame relation is evidence requiring verification, never permission
+;; to merge or rewrite either frame.
+(= (relationNeedsVerification
+      (FrameStateRelation $_ $_ $_ $_ $_ (evidence-status VerificationRequired)))
+   True)
+(= (relationNeedsVerification $relation) False)
+(= (relationsNeedVerification ()) False)
+(= (relationsNeedVerification $relations)
+   (let* ((($head $tail) (decons-atom $relations)))
+      (if (relationNeedsVerification $head)
+          True
+          (relationsNeedVerification $tail))))
+(= (bundleNeedsRelationVerification $bundle)
+   (relationsNeedVerification (frameBundleRelations $bundle)))
+
 (= (frameStateBoundRefs $status)
    (if (== (get-state &cfv2-frame-indexspace) ())
        ()
@@ -94,7 +152,7 @@
       ($currentID (get-state &cfv2-current-frame-id))
       ($relations (if (== $currentID ()) ()
                      (cfv2-compact-limited
-                        (frameStateTake (frameStateMaxRelations)
+                        (frameStateBoundRelations
                            (cfv2-get-relation $currentID))
                         1200)))
       ($root (frameStateRootProjection))
@@ -360,7 +418,7 @@
       (relations (if (== (get-state &cfv2-current-frame-id) ())
                      ()
                      (cfv2-compact-limited
-                        (frameStateTake (frameStateMaxRelations)
+                        (frameStateBoundRelations
                            (cfv2-get-relation
                               (get-state &cfv2-current-frame-id)))
                         1200)))
