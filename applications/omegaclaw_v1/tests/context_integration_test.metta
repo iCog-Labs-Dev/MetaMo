@@ -92,6 +92,12 @@
          (next-wake-at 2)
          (budget-state open-budget)))))
 
+;; Constitutional mode mapping consumes existing signal facts only.
+!(test (eval (constitutionalModeFromSignalFacts True False False True)) Threat)
+!(test (eval (constitutionalModeFromSignalFacts False True False True)) Rumination)
+!(test (eval (constitutionalModeFromSignalFacts False False True True)) Sleep)
+!(test (eval (constitutionalModeFromSignalFacts False False False True)) Engaged)
+
 (= (hasTypedHistorySummary
       (FrameStateCurrent $_ $_ $_ $_ $_ $_ $_
          (history-summary $_) $_ $_ $_ $_ $_))

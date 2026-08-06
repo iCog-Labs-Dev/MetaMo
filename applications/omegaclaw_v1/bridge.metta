@@ -26,6 +26,7 @@
       ;; ContextFrames has already ingested input and updated its frame state.
       ;; Capture one bounded snapshot and pass it through the whole cycle.
       ($_ (eval (refreshSignals $bundle)))
+      ($_ (eval (refreshConstitutionalMode $bundle)))
       ($_ (eval (clearSpace &appraisal-space)))
       ($_ (eval (computeAllDimensions)))
 
@@ -153,6 +154,7 @@
          " FILE_PATH_POLICY: Relative file paths used by file skills resolve against RUNTIME_CONTEXT working_directory."
          " TIME: " (eval (get_time_as_string))
          " STEP_POLICY: " $guidance
+         " CONSTITUTIONAL_MODE: " (eval (constitutionalMode))
          " MOTIVATION_INSTRUCTION: " $instruction
          " MOTIVATION_DECISION: "
             (eval (string-safe (repr $decisionResult)))
