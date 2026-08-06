@@ -64,6 +64,12 @@
 
 ;; Accept the two relation shapes used by ContextFrames relation providers.
 (= (frameStateProjectRelation
+      (Relation (FrameID-1 $source) (FrameID-2 $target)
+                (Class $type) (Reason $reason) (Confidence $confidence)))
+   (frameStateProjectRelation
+      (FrameRelation $source $target $type $reason $confidence Unverified)))
+
+(= (frameStateProjectRelation
       (Relation $source $target $type $reason $confidence $evidence))
    (frameStateProjectRelation
       (FrameRelation $source $target $type $reason $confidence $evidence)))
@@ -132,8 +138,9 @@
                                   (get-state &cfv2-current-deliverables) 500))
          (results-summary (cfv2-compact-limited
                              (get-state &cfv2-current-results) 900))
-         (budget (cfv2-compact-limited
-                    (get-state &cfv2-current-budget) 600))
+         ;; ResourceBudget is already a bounded typed record; preserve its
+         ;; status so feasibility can distinguish open/closed/exhausted.
+         (budget (get-state &cfv2-current-budget))
          (constraints (cfv2-compact-limited
                          (get-state &cfv2-current-constraints) 900))
          (certified-method (cfv2-compact-limited
@@ -472,6 +479,12 @@
             $history $deliverables $results (budget $value) $constraints $method))
          $index $relations $runtime)
          $bundle $value))
+(= (frameBundleCurrentHistory $bundle)
+   (let (FrameStateBundle $root (current (FrameStateCurrent
+            $id $parent $source $status $mode $priority $goal
+            (history-summary $value) $deliverables $results $budget $constraints $method))
+         $index $relations $runtime)
+         $bundle $value))
 (= (frameBundleRootMode $bundle)
    (let (FrameStateBundle (root (FrameStateRoot $id $currentFrame (mode $value)
             $globalBudget $globalConstraints)) $current $index $relations $runtime)
@@ -556,7 +569,7 @@
 ;; Migration seam: keep raw OmegaClaw state reads in this adapter and expose
 ;; only derived, bounded values to MetaMo modules.
 (= (bundle-runtime-has-error $bundle)
-   (not (== (get-state &error) "")))
+   (not (== (frameRuntimeError $bundle) "")))
 (= (bundle-runtime-has-new-message $bundle)
    (frameRuntimeNewMessage $bundle))
 (= (bundle-current-status $bundle)

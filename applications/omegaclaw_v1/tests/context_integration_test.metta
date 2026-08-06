@@ -31,6 +31,78 @@
 
 !(initContextFrame)
 
+;; ---------------------------------------------------------------------------
+;; Layer 1: pure adapter projections
+;; ---------------------------------------------------------------------------
+(= (pureTestBundle)
+   (FrameStateBundle
+      (root (FrameStateRoot root-id current-id (mode Fast) root-budget root-constraints))
+      (current (FrameStateCurrent
+         (id current-id)
+         (parent ())
+         UserDirective
+         (status Active)
+         (frame-mode Fast)
+         (priority 0.8)
+         (goal-summary compact-goal)
+         (history-summary compact-history)
+         (deliverable-summary compact-deliverable)
+         (results-summary compact-results)
+         (budget open-budget)
+         (constraints compact-constraints)
+         (certified-method certified-method)))
+      (index (active (a b)) (completed (c)))
+      (relations
+         ((FrameStateRelation
+            (source-frame current-id)
+            (target-frame other-id)
+            (relation-type RelatedButSeparate)
+            (reason compact-reason)
+            (confidence 0.7)
+            (evidence-status Unverified))))
+      (runtime (FrameStateRuntime
+         (new-message True)
+         (message-present True)
+         (message-summary compact-message)
+         (task-open True)
+         (task-execution-observed compact-observed)
+         (active-task-summary compact-task)
+         (last-results-summary compact-results)
+         (error "")
+         (wake-loops 1)
+         (next-wake-at 2)
+         (budget-state open-budget)))))
+
+(= (hasTypedHistorySummary
+      (FrameStateCurrent $_ $_ $_ $_ $_ $_ $_
+         (history-summary $_) $_ $_ $_ $_ $_))
+   True)
+
+!(test (!= (frameStateForMetaMo) ()) True)
+!(test (frameBundleCurrentId (pureTestBundle)) current-id)
+!(test (frameBundleCurrentPriority (pureTestBundle)) 0.8)
+!(test (frameBundleCurrentHistory (pureTestBundle)) compact-history)
+!(test (hasTypedHistorySummary (frameBundleCurrent (pureTestBundle))) True)
+!(test (frameRuntimeMessage (pureTestBundle)) compact-message)
+!(test (frameRuntimeResults (pureTestBundle)) compact-results)
+!(test (!= (cfv2-compact-limited "abcdefghijklmnopqrstuvwxyz" 8)
+           "abcdefghijklmnopqrstuvwxyz") True)
+!(test (size-atom
+         (frameStateTake (frameStateMaxIndexRefs)
+            (a b c d e f g h i j k l m n o p q r s t u v w x y))) 20)
+!(test (size-atom
+         (frameStateTake (frameStateMaxRelations)
+            (r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12)))
+      10)
+
+;; Each slice resolves through the supplied bundle and remains non-empty; the
+;; slice constructors encode the field omissions in their contracts.
+!(test (!= (frameStateForSlice Minimal (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice CurrentFrameSummary (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice CurrentFrameTask (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice CurrentFrameAndRelations (frameStateBundle)) ()) True)
+!(test (!= (frameStateForSlice IndexOverview (frameStateBundle)) ()) True)
+
 ;; Required ContextFrames symbols must resolve and produce values after init.
 !(test (== (cfv2-has-current-frame) False) True)
 !(test (!= (contextFrameForPrompt) ()) True)
@@ -79,6 +151,57 @@
          (admission Rejected)
          (reason NoActiveFrame)
          (priority 0)
+         (source MetaMo)))
+
+;; ---------------------------------------------------------------------------
+;; Layer 2: ContextFrames integration
+;; ---------------------------------------------------------------------------
+;; The optional relation-composer dependency is not required for these
+;; integration checks; drive the same ContextFrames cache boundary directly.
+!(change-state! &cfv2-current-frame-id integrated-frame-one)
+!(change-state! &cfv2-current-status Active)
+!(change-state! &cfv2-current-frame-mode (get-state &cfv2-root-mode))
+!(change-state! &cfv2-current-source UserDirective)
+!(change-state! &cfv2-current-history-summary "first integrated user message")
+!(test (frameBundleCurrentId (frameStateForMetaMo)) integrated-frame-one)
+
+!(change-state! &cfv2-current-frame-id integrated-frame-two)
+!(test (frameBundleCurrentId (frameStateForMetaMo)) integrated-frame-two)
+!(change-state! &cfv2-current-frame-id integrated-frame-one)
+!(test (frameBundleCurrentId (frameStateForMetaMo)) integrated-frame-one)
+
+;; Closed budget blocks an operational candidate; incompatible mode reports
+;; the mode-specific feasibility failure.
+!(change-state! &cfv2-current-budget
+   (ResourceBudget 1 0 units (status Closed)))
+!(test (eval (contextPolicyGateFacts True True True True False))
+      (GateDecision Rejected BudgetExhausted))
+!(change-state! &cfv2-current-budget (cfv2-default-budget))
+!(change-state! &cfv2-current-frame-mode MismatchedMode)
+!(test (eval (contextPolicyGateFacts True True True False True))
+      (GateDecision Rejected FrameModeMismatch))
+!(change-state! &cfv2-current-frame-mode (get-state &cfv2-root-mode))
+
+!(change-state! &prevmsg "new integrated user message")
+!(change-state! &new-msg-flag True)
+!(test (!= (frameRuntimeMessage (frameStateForMetaMo))
+           "new integrated user message") True)
+!(change-state! &lastresults "command-result")
+!(test (!= (frameRuntimeResults (frameStateForMetaMo)) ()) True)
+
+;; ---------------------------------------------------------------------------
+;; Layer 3: MetaMo boundary
+;; ---------------------------------------------------------------------------
+!(test (!= (frameStateForMetaMo) ()) True)
+!(test (bundle-runtime-has-error (pureTestBundle)) False)
+!(test (makeAttentionDirective (pureTestBundle) respond 0.5)
+      (AttentionDirective
+         (target current-id)
+         (slice CurrentFrameSummary)
+         (task respond)
+         (admission Admitted)
+         (reason Feasible)
+         (priority (clampValue 0.59))
          (source MetaMo)))
 
 ;; Required public aliases remain resolvable.

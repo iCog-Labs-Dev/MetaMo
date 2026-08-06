@@ -123,7 +123,7 @@
       ($autonomyPhase (autonomyPhaseForCandidate $selectedCandidate))
       ($nextAutonomyPhase (get-state &autonomy-phase))
       ($autonomyActionCount (get-state &autonomy-action-count))
-      ($taskExecutionObserved (get-state &task-execution-observed))
+      ($taskExecutionObserved (frameRuntimeExecutionObserved $bundle))
       ($runtimeContext (py-call (helper.runtime_context)))
    )
    (eval (string-safe
@@ -139,7 +139,7 @@
          " IMPORTANT: For code passed as a string argument, prefer single-quoted Python strings inside the code. Avoid quote characters that can terminate the surrounding MeTTa string."
          " LAST_SKILL_USE_RESULTS: "
             (eval (last_chars (frameRuntimeResults $bundle) (maxFeedback)))
-         " HISTORY: " (eval (getHistory))
+         " HISTORY: " (eval (frameBundleCurrentHistory $bundle))
          " ACTIVE_TASK: " (eval (string-safe $activeTask))
          " TASK_EXECUTION_OBSERVED: "
             (eval (string-safe (repr $taskExecutionObserved)))
