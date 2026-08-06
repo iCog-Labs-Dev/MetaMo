@@ -98,6 +98,17 @@
 !(test (eval (constitutionalModeFromSignalFacts False False True True)) Sleep)
 !(test (eval (constitutionalModeFromSignalFacts False False False True)) Engaged)
 
+;; Mode gates are monotonic: Sleep may tighten execution, but cannot relax a
+;; base-policy rejection.
+!(setConstitutionalMode Sleep)
+!(test (eval (constitutionalModeGate execute-skill))
+      (GateDecision Rejected SleepModeOperationalWork))
+!(test (eval (constitutionalModeGate respond))
+      (GateDecision Admitted Feasible))
+!(test (eval (feasibilityGate (frameStateForMetaMo) execute-skill))
+      (GateDecision Rejected NoActiveFrame))
+!(setConstitutionalMode Engaged)
+
 (= (hasTypedHistorySummary
       (FrameStateCurrent $_ $_ $_ $_ $_ $_ $_
          (history-summary $_) $_ $_ $_ $_ $_))

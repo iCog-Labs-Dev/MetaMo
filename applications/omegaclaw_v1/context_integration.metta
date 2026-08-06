@@ -644,8 +644,21 @@
       (frameBundleModeCompatible $bundle)
       (frameBundleBudgetOpen $bundle)))
 
+;; Constitutional modes are a monotonic tightening layer. They may reject an
+;; otherwise feasible candidate, but they never admit a candidate rejected by
+;; the base action-policy gate.
+(= (constitutionalModeGate $candidate)
+   (if (and (== (constitutionalMode) Sleep)
+            (candidateRequiresFrame $candidate))
+       (GateDecision Rejected SleepModeOperationalWork)
+       (GateDecision Admitted Feasible)))
+
 (= (feasibilityGate $bundle $candidate)
-   (contextPolicyGate $bundle $candidate))
+   (let (GateDecision $baseAdmission $baseReason)
+           (contextPolicyGate $bundle $candidate)
+      (if (== $baseAdmission Rejected)
+          (GateDecision Rejected $baseReason)
+          (constitutionalModeGate $candidate))))
 
 (= (contextPolicyGateFacts False $_ $_ $_ $_)
    (GateDecision Admitted Feasible))
