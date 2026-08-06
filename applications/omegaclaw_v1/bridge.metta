@@ -164,6 +164,7 @@
 ;; Initialize all motivational spaces from the registry defaults.
 (= (initOmegaClawMotivation)
    (let* (
+      ($_ (setConstitutionalMode (constitutionalModeDefault)))
       ($_ (clearSpace &goal-space))
       ($_ (collapse
              (let* (

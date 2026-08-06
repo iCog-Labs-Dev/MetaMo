@@ -14,6 +14,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/utils))
 !(import! &self (library MetaMo applications/omegaclaw_v1/registry))
 !(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/mode_layer)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/signals)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/context_integration)
 
@@ -30,6 +31,17 @@
 !(bind! &last-results-seen (new-state ""))
 
 !(initContextFrame)
+
+;; Constitutional MVP mode set is separate from Fast/Slow frame mode and
+;; operation directives.
+!(test (eval (constitutionalModeSet)) (Engaged Threat Rumination Sleep))
+!(test (eval (constitutionalModeDefault)) Engaged)
+!(test (eval (constitutionalModeValid Engaged)) True)
+!(test (eval (constitutionalModeValid Threat)) True)
+!(test (eval (constitutionalModeValid Rumination)) True)
+!(test (eval (constitutionalModeValid Sleep)) True)
+!(test (eval (constitutionalModeValid Fast)) False)
+!(test (constitutionalMode) Engaged)
 
 ;; ---------------------------------------------------------------------------
 ;; Layer 1: pure adapter projections

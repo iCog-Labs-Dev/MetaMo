@@ -6,6 +6,14 @@
 (MotiveSpec coherence 0.45)
 (MotiveSpec responsiveness 0.45)
 
+;; Constitutional MVP mode set. This is separate from ContextFrames Fast/Slow
+;; frame mode and from operation directives such as execute or verify.
+(ConstitutionalMode Engaged)
+(ConstitutionalMode Threat)
+(ConstitutionalMode Rumination)
+(ConstitutionalMode Sleep)
+(ConstitutionalModeDefault Engaged)
+
 
 (ModulatorSpec urgency 0.50)
 (ModulatorSpec caution 0.50)

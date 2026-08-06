@@ -38,6 +38,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/utils))
 !(import! &self (library MetaMo applications/omegaclaw_v1/registry))
 !(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
+!(import! &self (library MetaMo applications/omegaclaw_v1/mode_layer))
 !(import! &self (library MetaMo applications/omegaclaw_v1/signals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_appraisal))
 !(import! &self (library MetaMo applications/omegaclaw_v1/homeostasis))
