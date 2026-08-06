@@ -6,7 +6,7 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
 
 - [ ] Implement the finite mode regulator.
 - [x] Add the constitutional mode set: `Engaged`, `Threat`, `Rumination`, and `Sleep` for the MVP.
-  - [ ] Add the preemption order: Threat-remediation > Recovery > Interactive > Orienting > Engaged > Rumination > Sleep.
+  - [x] Add the preemption order: Threat-remediation > Recovery > Interactive > Orienting > Engaged > Rumination > Sleep.
   - [ ] Consume existing signals rather than introducing a parallel salience substrate.
   - [ ] Enforce mode monotonicity: modes may tighten gates but never relax the policy floor.
   - [ ] Keep trigger thresholds registry-resident and mark them as seed values.

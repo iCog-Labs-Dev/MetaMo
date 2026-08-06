@@ -11,6 +11,29 @@
 (= (constitutionalModeDefault)
    Engaged)
 
+(= (constitutionalModePreemptionOrder)
+   (cons Threat-remediation
+      (cons Recovery
+         (cons Interactive
+            (cons Orienting
+               (cons Engaged
+                  (cons Rumination (cons Sleep ()))))))))
+
+(= (constitutionalModePreemptionRank $mode)
+   (case $mode
+      ((Threat-remediation 7)
+       (Recovery 6)
+       (Interactive 5)
+       (Orienting 4)
+       (Engaged 3)
+       (Rumination 2)
+       (Sleep 1)
+       ($_ 0))))
+
+(= (constitutionalModePreempts $higher $lower)
+   (> (constitutionalModePreemptionRank $higher)
+      (constitutionalModePreemptionRank $lower)))
+
 (= (constitutionalModeValid $mode)
    (case $mode
       ((Engaged True)

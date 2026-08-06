@@ -14,6 +14,17 @@
 (ConstitutionalMode Sleep)
 (ConstitutionalModeDefault Engaged)
 
+;; Constitutional preemption order. Higher rank preempts lower rank when
+;; triggers collide. Recovery, Interactive, and Orienting are declared here
+;; for the constitutional order even though they are not MVP runtime modes.
+(ConstitutionalModePreemption Threat-remediation 7)
+(ConstitutionalModePreemption Recovery 6)
+(ConstitutionalModePreemption Interactive 5)
+(ConstitutionalModePreemption Orienting 4)
+(ConstitutionalModePreemption Engaged 3)
+(ConstitutionalModePreemption Rumination 2)
+(ConstitutionalModePreemption Sleep 1)
+
 
 (ModulatorSpec urgency 0.50)
 (ModulatorSpec caution 0.50)

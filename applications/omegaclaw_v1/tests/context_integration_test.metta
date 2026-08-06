@@ -42,6 +42,13 @@
 !(test (eval (constitutionalModeValid Sleep)) True)
 !(test (eval (constitutionalModeValid Fast)) False)
 !(test (constitutionalMode) Engaged)
+!(test (eval (constitutionalModePreemptionOrder))
+      (Threat-remediation Recovery Interactive Orienting Engaged Rumination Sleep))
+!(test (eval (constitutionalModePreemptionRank Threat-remediation)) 7)
+!(test (eval (constitutionalModePreemptionRank Sleep)) 1)
+!(test (eval (constitutionalModePreempts Threat-remediation Engaged)) True)
+!(test (eval (constitutionalModePreempts Engaged Sleep)) True)
+!(test (eval (constitutionalModePreempts Sleep Threat-remediation)) False)
 
 ;; ---------------------------------------------------------------------------
 ;; Layer 1: pure adapter projections
