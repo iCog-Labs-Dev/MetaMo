@@ -98,6 +98,34 @@
 !(test (eval (constitutionalModeFromSignalFacts False False True True)) Sleep)
 !(test (eval (constitutionalModeFromSignalFacts False False False True)) Engaged)
 
+;; Transition collisions resolve by constitutional priority: danger wins over
+;; failure and missing-frame sleep, failure wins over missing-frame sleep, and
+;; the no-trigger case remains Engaged.
+!(test (eval (constitutionalModeFromSignalFacts True True True True)) Threat)
+!(test (eval (constitutionalModeFromSignalFacts True True False True)) Threat)
+!(test (eval (constitutionalModeFromSignalFacts False True True True)) Rumination)
+!(test (eval (constitutionalModeFromSignalFacts False False True True)) Sleep)
+!(test (eval (constitutionalModeFromSignalFacts False False False True)) Engaged)
+
+;; Preemption is strict: equal modes and unknown modes do not preempt.
+!(test (eval (constitutionalModePreempts Threat Threat)) False)
+!(test (eval (constitutionalModePreempts Engaged Engaged)) False)
+!(test (eval (constitutionalModePreempts Unknown Engaged)) False)
+!(test (eval (constitutionalModePreempts Engaged Unknown)) True)
+
+;; Signal-driven transitions update the runtime mode, while an invalid mode
+;; transition is rejected and leaves the default Engaged state unchanged.
+!(clearSignals)
+!(setConstitutionalMode Engaged)
+!(test (eval (refreshConstitutionalMode (pureTestBundle))) ())
+!(test (constitutionalMode) Engaged)
+!(setConstitutionalMode Rumination)
+!(test (constitutionalMode) Rumination)
+!(clearSignals)
+!(setConstitutionalMode Engaged)
+!(test (setConstitutionalMode InvalidMode) (ModeRejected InvalidMode))
+!(test (constitutionalMode) Engaged)
+
 ;; Mode gates are monotonic: Sleep may tighten execution, but cannot relax a
 ;; base-policy rejection.
 !(setConstitutionalMode Sleep)

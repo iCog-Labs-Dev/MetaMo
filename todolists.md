@@ -9,7 +9,7 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
   - [x] Add the preemption order: Threat-remediation > Recovery > Interactive > Orienting > Engaged > Rumination > Sleep.
   - [x] Consume existing signals rather than introducing a parallel salience substrate.
   - [x] Enforce mode monotonicity: modes may tighten gates but never relax the policy floor.
-  - [ ] Keep trigger thresholds registry-resident and mark them as seed values.
+  - [x] Keep trigger thresholds registry-resident and mark them as seed values.
   - [ ] Add transition tests for collisions, preemption, and default Engaged behavior.
 
 - [ ] Add the reasoner proposal channel (R3/S3 migration seam).
