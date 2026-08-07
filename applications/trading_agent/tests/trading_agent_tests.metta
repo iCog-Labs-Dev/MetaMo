@@ -1,0 +1,138 @@
+!(import! &self ../../../core/validation)
+!(import! &self ../../../core/schema)
+!(import! &self ../../../core/features)
+!(import! &self ../../../core/state)
+!(import! &self ../../../core/helper)
+!(import! &self "../../../core/helpers.py")
+!(import! &self ../../../core/runtime)
+!(import! &self ../../../core/registry)
+!(import! &self ../../../openpsi/profile)
+!(import! &self ../../../openpsi/appraisal)
+!(import! &self ../../../magus/profile)
+!(import! &self ../../../magus/goal_change)
+!(import! &self ../../../magus/decision)
+!(import! &self ../../../dynamics/stability)
+!(import! &self ../../../dynamics/coherence)
+!(import! &self ../../../category/diagnostics)
+!(import! &self ../../../category/bimonad)
+!(import! &self ../../../category/merge)
+!(import! &self ../../../category/functors)
+!(import! &self ../../../category/laws)
+!(import! &self ../../../applications/common/openpsi_conventions)
+!(import! &self ../schema)
+!(import! &self ../state)
+!(import! &self ../portfolio)
+!(import! &self ../market)
+!(import! &self ../stimulus)
+!(import! &self ../actions)
+!(import! &self ../planning)
+!(import! &self ../appraisal_profile)
+!(import! &self ../decision_profile)
+!(import! &self ../runtime)
+
+!(test (size-atom (tradingGoalNames)) 14)
+!(test (size-atom (tradingModulatorNames)) 12)
+!(test (validationIsOk (validateMotivationSchema (tradingSchema))) True)
+!(test (schemaIsAntiGoal (tradingSchema) drawdown) True)
+!(test (tradingModulatorIndex confidence) (validationOk 9))
+
+!(test (stateGoal (tradingPrudenceState) capital) 0.9)
+!(test (stateGoal (tradingAmbitionState) transcendence) 0.88)
+!(test (stateModulator (tradingAmbitionState) confidence) 0.7)
+!(test (validationIsOk (validateMotivationState (tradingPrudenceState))) True)
+!(test (validationIsOk (validateMotivationState (tradingAmbitionState))) True)
+
+!(test (tradingScenarioPriceCount vshape) 32)
+!(test (tradingScenarioPriceCount realistic) 50)
+!(test (eval (roundNum (tradingScenarioReturn vshape 1) 2)) 0.01)
+!(test (eval (roundNum (tradingSignal vshape 1) 2)) 0.17)
+!(test (eval (roundNum (tradingDecayedTurbulence -0.05 0.0) 2)) 0.3)
+!(test (eval (roundNum (tradingDecayedTurbulence 0.02 0.72) 2)) 0.54)
+
+!(test (tradingPortfolioValue (tradingInitialPortfolio) 10.0) 100.0)
+!(test (tradingPortfolioMapper (tradingExecuteTrade (tradingInitialPortfolio) buy 10.0) cash) 75.0)
+!(test (eval (roundNum (tradingPortfolioMapper (tradingExecuteTrade (tradingInitialPortfolio) buy 10.0) units) 2)) 2.49)
+!(test (eval (roundNum (tradingPortfolioMapper (tradingExecuteTrade (tradingInitialPortfolio) buy 10.0) entry) 2)) 10.03)
+!(test (eval (roundNum (tradingPortfolioValue (tradingExecuteTrade (tradingInitialPortfolio) buy 10.0) 10.0) 2)) 99.93)
+!(test (tradingPortfolioValue (tradingPortfolio 0.0 10.0 10.0 100.0 100.0) 12.0) 120.0)
+!(test (eval (roundNum (tradingPortfolioMapper (tradingExecuteTrade (tradingPortfolio 0.0 10.0 10.0 100.0 100.0) sell 12.0) cash) 2)) 119.64)
+!(test (eval (roundNum (tradingPortfolioMapper (tradingExecuteTrade (tradingPortfolio 50.0 5.0 10.0 100.0 110.0) sell 12.0) cash) 2)) 109.82)
+!(test (< (tradingPortfolioValue (tradingExecuteTrade (tradingExecuteTrade (tradingInitialPortfolio) buy 10.0) sell 10.0) 10.0) 100.0) True)
+!(test (eval (roundNum (tradingExposure (tradingPortfolio 0.0 10.0 10.0 100.0 100.0) 12.0) 2)) 1.0)
+!(test (eval (roundNum (tradingUnrealizedPnl (tradingPortfolio 0.0 10.0 10.0 100.0 100.0) 12.0) 2)) 0.2)
+
+(= (tradingTestCrashObservation)
+    (makeTradingObservation -0.115 True 0.69 1.0 -0.10 0.12 -0.05 0.20 0.40 0.50 0.02)
+)
+
+!(test (eval (roundNum (featureMapNumeric (tradingStimulusFeatures (tradingTestCrashObservation)) risk 0.0) 2)) 0.89)
+!(test (featureMapNumericUnit (tradingStimulusFeatures (tradingTestCrashObservation)) exposure 0.0) 1.0)
+!(test (eval (roundNum (featureMapNumericUnit (tradingStimulusFeatures (tradingTestCrashObservation)) confidence 0.0) 2)) 0.4)
+
+(= (tradingTestFlatObservation)
+    (makeTradingObservation 0.03 False 0.09 0.0 0.0 0.0 0.03 0.02 0.75 0.10 0.01)
+)
+
+!(test (candidateId (car-atom (tradingBuildCandidates (tradingDefaultState) (tradingTestFlatObservation)))) buy)
+!(test (candidateId (car-atom (tradingBuildCandidates (tradingDefaultState) (tradingTestCrashObservation)))) sell)
+!(test (size-atom (tradingBuildCandidates (tradingDefaultState) (tradingTestFlatObservation))) 2)
+!(test (size-atom (tradingBuildCandidates (tradingDefaultState) (tradingTestCrashObservation))) 3)
+!(test (validationIsOk (validateActionCandidate (tradingBuyCandidate (tradingStimulusFeatures (tradingTestFlatObservation)) (tradingCurrentMoodFromState (tradingDefaultState))))) True)
+!(test (> (candidateGoalCorrelation (tradingSellCandidate (tradingStimulusFeatures (tradingTestCrashObservation)) (tradingCurrentMoodFromState (tradingDefaultState))) safety) 0.5) True)
+
+!(test (appraisalProfileName (tradingAppraisalProfile)) trading_openpsi)
+!(test (decisionProfileName (tradingDecisionProfile)) trading_magus_additive)
+!(test (validationIsOk (tradingValidatedBundle)) True)
+!(test (bundleId (tradingBundle)) trading_agent)
+
+(= (tradingAppraisedCrashState)
+    (eval (appraisalProfileAppraise
+        (tradingAppraisalProfile)
+        (tradingDefaultState)
+        (tradingTestCrashObservation)
+    ))
+)
+
+!(test (> (stateModulator (tradingAppraisedCrashState) volatility) 0.2) True)
+!(test (> (stateModulator (tradingAppraisedCrashState) stress) 0.1) True)
+
+(= (tradingBundleFlatStep)
+    (eval (tradingBundleStepWithDiagnostics
+        (tradingDefaultState)
+        (tradingTestFlatObservation)
+        True
+    ))
+)
+
+(= (tradingOfferedFlatAction $actionId)
+    (or (== $actionId buy) (== $actionId hold))
+)
+
+!(test (tradingOfferedFlatAction (candidateId (diagnosedAction (tradingBundleFlatStep)))) True)
+!(test (validationIsOk (validateMotivationState (diagnosedState (tradingBundleFlatStep)))) True)
+
+(= (tradingEngineFirstCycle)
+    (eval (tradingRunCycle (tradingInitialEngineState) vshape 2))
+)
+
+!(test (tradingOfferedFlatAction (candidateId (tradingCycleMapper (tradingEngineFirstCycle) action))) True)
+!(test (size-atom (tradingEngineMapper (tradingCycleMapper (tradingEngineFirstCycle) engine) history)) 1)
+!(test (eval (roundNum (tradingObservationMapper (tradingCycleMapper (tradingEngineFirstCycle) observation) return) 2)) 0.01)
+!(test (validationIsOk (validateMotivationState (tradingEngineMapper (tradingCycleMapper (tradingEngineFirstCycle) engine) prudence))) True)
+
+!(test (tradingBaselineAction 0.20 False 0.0) buy)
+!(test (tradingBaselineAction -0.20 True 0.5) sell)
+!(test (tradingBaselineAction 0.20 True 0.9) hold)
+
+!(test
+    (case (tradingLogRecord vshape 1 101.38 buy (tradingDefaultState) (tradingInitialPortfolio)) (
+        ((TRADER scenario vshape step 1 price 101.38 action buy emotion $emotion feelings $feelings valence $valence securing $securing gInd $gInd gTrans $gTrans value 100.0) True)
+        ($_ False)
+    ))
+    True
+)
+
+!(test
+    (tradingBaselineLogRecord vshape 1 101.38 buy (tradingInitialPortfolio))
+    (BASELINE scenario vshape step 1 price 101.38 action buy value 100.0)
+)
