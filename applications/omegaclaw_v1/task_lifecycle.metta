@@ -13,30 +13,24 @@
                        (DynamicsConfig autonomy_actions_before_refresh $x) $x))
       (if (== $v ()) 2 (car-atom $v))))
 
+(= (seedThreshold $key)
+   (let $v (collapse (match &self (SeedThreshold $key $x) $x))
+      (if (== $v ()) 0.0 (car-atom $v))))
+
 (= (executionOpportunityThreshold)
-   (let $v (collapse (match &self
-                       (DynamicsConfig execution_opportunity_threshold $x) $x))
-      (if (== $v ()) 0.75 (car-atom $v))))
+   (seedThreshold execution_opportunity_threshold))
 
 (= (executionIntentThreshold)
-   (let $v (collapse (match &self
-                       (DynamicsConfig execution_intent_threshold $x) $x))
-      (if (== $v ()) 0.50 (car-atom $v))))
+   (seedThreshold execution_intent_threshold))
 
 (= (executionRiskLimit)
-   (let $v (collapse (match &self
-                       (DynamicsConfig execution_risk_limit $x) $x))
-      (if (== $v ()) 0.45 (car-atom $v))))
+   (seedThreshold execution_risk_limit))
 
 (= (executionUncertaintyLimit)
-   (let $v (collapse (match &self
-                       (DynamicsConfig execution_uncertainty_limit $x) $x))
-      (if (== $v ()) 0.65 (car-atom $v))))
+   (seedThreshold execution_uncertainty_limit))
 
 (= (executionCautionLimit)
-   (let $v (collapse (match &self
-                       (DynamicsConfig execution_caution_limit $x) $x))
-      (if (== $v ()) 0.75 (car-atom $v))))
+   (seedThreshold execution_caution_limit))
 
 (= (idleAutonomyActive)
    (idleAutonomyActiveForBundle (activeFrameBundle)))

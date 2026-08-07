@@ -247,11 +247,14 @@
 (DynamicsConfig self_model_alpha  0.20)
 (DynamicsConfig persistence_interval 10)
 (DynamicsConfig autonomy_actions_before_refresh 2)
-(DynamicsConfig execution_opportunity_threshold 0.75)
-(DynamicsConfig execution_intent_threshold 0.50)
-(DynamicsConfig execution_risk_limit 0.45)
-(DynamicsConfig execution_uncertainty_limit 0.65)
-(DynamicsConfig execution_caution_limit 0.75)
+
+;; Seed thresholds: initial trigger values are registry data, not algorithm
+;; constants. Runtime adaptation may change the effective values later.
+(SeedThreshold execution_opportunity_threshold 0.75)
+(SeedThreshold execution_intent_threshold      0.50)
+(SeedThreshold execution_risk_limit           0.45)
+(SeedThreshold execution_uncertainty_limit    0.65)
+(SeedThreshold execution_caution_limit        0.75)
 
 
 ;; CANDIDATE CONDITIONS
