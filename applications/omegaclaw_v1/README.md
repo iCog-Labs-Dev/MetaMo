@@ -44,3 +44,20 @@ OMEGACLAW_AUTH_SECRET=<channel-secret> sh run.sh run_omega.metta IRC_channel="<i
 ```
 
 *(Note: Replace `<channel-secret>` and `<irc-channel>` with your own values, similarly to the default OmegaClaw setup).*
+
+## Minimal loop demo
+
+The deterministic vertical-slice demo exercises the v1 path from one bounded
+`FrameStateBundle` through adapter projection, signal refresh, constitutional
+mode selection, candidate generation, feasibility checking, and action/directive
+selection. It does not require a live channel, LLM, persistence backend, or
+ChromaDB:
+
+```bash
+applications/omegaclaw_v1/tests/run_minimal_loop.sh
+```
+
+The demo is intentionally narrower than the production loop and is suitable
+for showing the core integration before the remaining runtime requirements are
+implemented. The first slice uses one deterministic `respond` candidate and a
+fixed score; the real bundle feasibility gate is still exercised and asserted.
