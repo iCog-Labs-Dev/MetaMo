@@ -12,6 +12,35 @@
 ;; compact projections, not the raw RootFrame/current-frame cache, transcript,
 ;; command log, or vector-store records.
 ;;
+;; PUBLIC API AND USAGE GUIDE
+;; --------------------------
+;; The main public flow is:
+;;
+;;   (frameStateForMetaMo)
+;;       -> (frameStateForSlice <slice> $bundle)
+;;       -> (contextPolicyGate $bundle <candidate>)
+;;       -> (attentionDirectiveForDecision $bundle <candidate> <score>)
+;;
+;; Example:
+;;
+;;   (= (demoBundle) (frameStateForMetaMo))
+;;   (frameBundleCurrentId (demoBundle))
+;;   (frameStateForSlice CurrentFrameSummary (demoBundle))
+;;   (contextPolicyGate (demoBundle) respond)
+;;   (attentionDirectiveForDecision (demoBundle) respond 0.80)
+;;
+;; The predicates in this file are divided into four responsibilities:
+;;
+;;   1. Projection: build bounded Root/Current/Index/Runtime values.
+;;   2. Access: read fields from a FrameStateBundle without raw state access.
+;;   3. Policy: check frame, mode, and budget constraints for a candidate.
+;;   4. Output: create an AttentionDirective for the scheduler/reasoner.
+;;
+;; Constructors use tagged fields deliberately. For example, a budget is
+;; represented as `(ResourceBudget 10 7 units (status Open))`, and a resulting
+;; directive can be inspected with `(directiveSlice $directive)` or by matching
+;; its `(admission ...)` and `(reason ...)` fields.
+;;
 ;; Exact chronological data remains in the audit substrates owned by
 ;; OmegaClaw/ContextFrames: history.metta, frame notes, command-batch records,
 ;; STM/LTM memory, and runtime logs. Those substrates are deliberately not
@@ -155,6 +184,9 @@
                        (frameStateBoundRefs Completed) 1200)))))
 
 (= (frameStateBundle)
+   ;; Example: `(frameStateBundle)` returns one bounded snapshot of the current
+   ;; ContextFrames cache. It is safe to pass that snapshot to MetaMo modules;
+   ;; those modules should not read `&cfv2-*` or OmegaClaw runtime states.
    (let* (
       ($currentID (get-state &cfv2-current-frame-id))
       ($relations (if (== $currentID ()) ()
@@ -201,6 +233,11 @@
 ;; Explicit MetaMo boundary name. Callers should use this projection rather
 ;; than passing RootFrame, CurrentFrame, history, or audit records directly.
 (= (frameStateForMetaMo)
+   ;; Preferred boundary call:
+   ;;   (= (bundle) (frameStateForMetaMo))
+   ;;   (frameBundleCurrentId (bundle))
+   ;; This is intentionally equivalent to `(frameStateBundle)` but gives
+   ;; callers an explicit name for the ContextFrames -> MetaMo contract.
    (frameStateBundle))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -389,6 +426,8 @@
                            (get-state &cfv2-current-method) 500))))
 
 (= (frameStateForSlice Minimal $bundle)
+   ;; Example: `(frameStateForSlice Minimal (frameStateForMetaMo))` returns
+   ;; only root mode, current-frame identity/status/priority, and runtime facts.
    (FrameStateSlice
       (slice Minimal)
       (root (frameStateDirectRoot))
@@ -398,6 +437,9 @@
       (runtime ())))
 
 (= (frameStateForSlice CurrentFrameSummary $bundle)
+   ;; Example: `(frameStateForSlice CurrentFrameSummary $bundle)` exposes the
+   ;; current frame's bounded goal, history, deliverable, result, and budget
+   ;; summaries without exposing the full frame cache.
    (FrameStateSlice
       (slice CurrentFrameSummary)
       (root (frameStateDirectRoot))
@@ -407,6 +449,8 @@
       (runtime ())))
 
 (= (frameStateForSlice CurrentFrameTask $bundle)
+   ;; Example: use this slice when a candidate needs task-specific context:
+   ;;   `(frameStateForSlice CurrentFrameTask $bundle)`.
    (FrameStateSlice
       (slice CurrentFrameTask)
       (root (frameStateDirectRoot))
@@ -417,6 +461,9 @@
                    (frameBundleRuntime (frameStateBundle))))))
 
 (= (frameStateForSlice CurrentFrameAndRelations $bundle)
+   ;; Example: retrieval and search candidates may request:
+   ;;   `(frameStateForSlice CurrentFrameAndRelations $bundle)`.
+   ;; Relations are advisory evidence; they do not mutate frame topology.
    (FrameStateSlice
       (slice CurrentFrameAndRelations)
       (root (frameStateDirectRoot))
@@ -433,6 +480,8 @@
                    (frameBundleRuntime (frameStateBundle))))))
 
 (= (frameStateForSlice IndexOverview $bundle)
+   ;; Example: `(frameStateForSlice IndexOverview $bundle)` returns bounded
+   ;; active/completed frame references for overview or planning behavior.
    (FrameStateSlice
       (slice IndexOverview)
       (root (frameStateDirectRoot))
@@ -564,6 +613,8 @@
          (frameBundleRuntime $bundle) $value))
 
 (= (frameRuntimeText $value)
+   ;; Example: `(frameRuntimeText ())` returns the safe empty string `""`,
+   ;; while `(frameRuntimeText "result")` returns `"result"`.
    (if (== $value ()) "" $value))
 
 ;; Migration seam: keep raw OmegaClaw state reads in this adapter and expose
@@ -637,6 +688,12 @@
           ($otherBudget True))))
 
 (= (contextPolicyGate $bundle $candidate)
+   ;; Base policy example:
+   ;;   `(contextPolicyGate $bundle execute-skill)` returns either
+   ;;   `(GateDecision Admitted Feasible)` or a typed rejection such as
+   ;;   `(GateDecision Rejected BudgetExhausted)`.
+   ;; Candidates that do not require a frame, such as `respond`, may be
+   ;; admitted even when the current-frame requirement is false.
    (contextPolicyGateFacts
       (candidateRequiresFrame $candidate)
       (frameBundleHasCurrent $bundle)
@@ -648,12 +705,20 @@
 ;; otherwise feasible candidate, but they never admit a candidate rejected by
 ;; the base action-policy gate.
 (= (constitutionalModeGate $candidate)
+   ;; Constitutional policy is a tightening layer. Example:
+   ;;   `(constitutionalModeGate execute-skill)` rejects operational work in
+   ;;   Sleep mode with `SleepModeOperationalWork`; it never overrides a base
+   ;;   policy rejection.
    (if (and (== (constitutionalMode) Sleep)
             (candidateRequiresFrame $candidate))
        (GateDecision Rejected SleepModeOperationalWork)
        (GateDecision Admitted Feasible)))
 
 (= (feasibilityGate $bundle $candidate)
+   ;; Use this as the complete single-candidate admission check:
+   ;;   `(feasibilityGate $bundle respond)`.
+   ;; The base context gate runs first; constitutional mode can then further
+   ;; reject an otherwise feasible candidate.
    (let (GateDecision $baseAdmission $baseReason)
            (contextPolicyGate $bundle $candidate)
       (if (== $baseAdmission Rejected)
@@ -674,11 +739,18 @@
    (GateDecision Admitted Feasible))
 
 (= (candidateAdmitted $bundle $candidate)
+   ;; Boolean convenience form:
+   ;;   `(candidateAdmitted $bundle respond)` -> `True` or `False`.
+   ;; Use `feasibilityGate` instead when the rejection reason is needed.
    (let (GateDecision $admission $reason) (feasibilityGate $bundle $candidate)
       (== $admission Admitted)))
 
 (= (feasibilityGateActions $bundle ()) True)
 (= (feasibilityGateActions $bundle $actions)
+   ;; Example with adapter actions:
+   ;;   `(feasibilityGateActions $bundle (action-list))` returns `True` only
+   ;;   when every action in the list is admitted. This predicate checks all
+   ;;   actions; it does not remove rejected actions from the list.
    (let* (
       (($head $tail) (decons-atom $actions))
       ($gate (feasibilityGate $bundle (actionId $head)))
@@ -704,6 +776,10 @@
       (clampValue (+ (* 0.70 $score) (* 0.30 $framePriority)))))
 
 (= (makeAttentionDirective $bundle $candidate $score)
+   ;; Example:
+   ;;   `(makeAttentionDirective $bundle respond 0.80)` returns a typed
+   ;;   AttentionDirective containing target, slice, task, admission, reason,
+   ;;   bounded priority, and source fields.
    (let* (
       ($gate (feasibilityGate $bundle $candidate))
       ((GateDecision $admission $reason) $gate)
@@ -724,7 +800,13 @@
          (source MetaMo))))
 
 (= (attentionDirectiveForDecision $bundle $candidate $score)
+   ;; Public facade used by the bridge after candidate selection:
+   ;;   `(attentionDirectiveForDecision $bundle $candidate $score)`.
+   ;; Prefer this name at call sites so the decision-to-scheduler contract is
+   ;; clear even if directive construction changes internally.
    (makeAttentionDirective $bundle $candidate $score))
 
 (= (lastAttentionDirective)
+   ;; Example: `(lastAttentionDirective)` reads the most recently published
+   ;; directive. It is initialized to a rejected `none` directive at startup.
    (get-state &last-attention-directive))
