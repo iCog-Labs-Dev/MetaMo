@@ -200,11 +200,17 @@
         ($winner (qwestorCandidateScoreCandidate $best))
         ($remaining
             (qwestorRemoveCandidateScore $scores (candidateId $winner)))
-        ($runner (qwestorBestCandidateScore $remaining))
         ($margin
-            (-
-                (qwestorCandidateScoreValue $best)
-                (qwestorCandidateScoreValue $runner)))
+            (if (== $remaining ())
+                0.0
+                (let* (
+                    ($runner (qwestorBestCandidateScore $remaining))
+                )
+                    (-
+                        (qwestorCandidateScoreValue $best)
+                        (qwestorCandidateScoreValue $runner))
+                )
+            ))
     )
         (qwestorDecisionReportRecord $winner $scores $margin)
     )

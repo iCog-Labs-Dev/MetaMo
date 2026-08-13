@@ -17,19 +17,24 @@
             (complexity (clipUnit (featurePairsGet $pairs complexity 0.30)))
             (specificity (clipUnit (featurePairsGet $pairs specificity 0.50)))
             (ambiguity (clipUnit (featurePairsGet $pairs ambiguity 0.00)))
-            (requested_threshold (clipUnit (featurePairsGet $pairs requested_threshold 0.30)))
+            (requested_threshold (clipUnit (featurePairsGet $pairs requested_threshold 0.00)))
             (urgency (clipUnit (featurePairsGet $pairs urgency 0.00)))
             (user_expertise (clipUnit (featurePairsGet $pairs user_expertise 0.50)))
             (topic_familiarity (clipUnit (featurePairsGet $pairs topic_familiarity 0.50)))
-            (failure_pressure (clipUnit (featurePairsGet $pairs failure_pressure 0.30)))
+            (failure_pressure (clipUnit (featurePairsGet $pairs failure_pressure 0.00)))
             (verification (clipUnit (featurePairsGet $pairs verification 0.00)))
-            (reflective_intent (clipUnit (featurePairsGet $pairs reflective_intent 0.50)))
-            (external_evidence (clipUnit (featurePairsGet $pairs external_evidence 0.30)))
-            (task_plan (clipUnit (featurePairsGet $pairs task_plan 0.20)))
-            (multi_source (clipUnit (featurePairsGet $pairs multi_source 0.30)))
+            (reflective_intent (clipUnit (featurePairsGet $pairs reflective_intent 0.00)))
+            (external_evidence (clipUnit (featurePairsGet $pairs external_evidence 0.00)))
+            (evidence_available (clipUnit (featurePairsGet $pairs evidence_available 0.00)))
+            (primary_operation (featurePairsGet $pairs primary_operation unknown))
+            (final_deliverable (featurePairsGet $pairs final_deliverable unknown))
+            (task_plan (clipUnit (featurePairsGet $pairs task_plan 0.00)))
+            (multi_source (clipUnit (featurePairsGet $pairs multi_source 0.00)))
             (signed_valence (clipRange (featurePairsGet $pairs signed_valence 0.00) -1.0 1.0))
             (additional_information_expected
                 (clipUnit (featurePairsGet $pairs additional_information_expected 0.00)))
+            (missing_required_input
+                (clipUnit (featurePairsGet $pairs missing_required_input 0.00)))
             (intent_type (featurePairsGet $pairs intent_type mixed))
             (query_type (featurePairsGet $pairs query_type unknown))
         )
@@ -203,17 +208,13 @@
 (= (qwestorNovelty $context)
     (let* (
         ($weights (qwestorFeatureWeights))
-        ($thresholds (qwestorFeatureThresholds))
         ($familiarity (qwestorContextValue $context topic_familiarity 0.50))
         ($complexity (qwestorContextValue $context complexity 0.30))
-        ($reflection (qwestorContextValue $context reflective_intent 0.50))
-        ($externalEvidence (qwestorContextValue $context external_evidence 0.30))
+        ($reflection (qwestorContextValue $context reflective_intent 0.00))
+        ($externalEvidence (qwestorContextValue $context external_evidence 0.00))
         ($externalBonus
-            (if (> $externalEvidence
-                    (qwestorConfigGet $thresholds NOVELTY_BONUS_THRESHOLD 0.70))
-                (qwestorConfigGet $weights NOVELTY_EXTERNAL_BONUS 0.30)
-                0.0
-            ))
+            (* (qwestorConfigGet $weights NOVELTY_EXTERNAL_BONUS 0.30)
+               $externalEvidence))
     )
         (clipUnit
             (+
@@ -237,19 +238,15 @@
 (= (qwestorConduciveness $context)
     (let* (
         ($weights (qwestorFeatureWeights))
-        ($thresholds (qwestorFeatureThresholds))
         ($familiarity (qwestorContextValue $context topic_familiarity 0.50))
         ($ambiguity (qwestorContextValue $context ambiguity 0.00))
         ($valence (qwestorSignedValenceToUnit
             (qwestorContextValue $context signed_valence 0.00)))
-        ($failure (qwestorContextValue $context failure_pressure 0.30))
+        ($failure (qwestorContextValue $context failure_pressure 0.00))
         ($verification (qwestorContextValue $context verification 0.00))
         ($ambiguityPenalty
-            (if (> $ambiguity
-                    (qwestorConfigGet $thresholds AMBIGUITY_HIGH_THRESHOLD 0.70))
-                (qwestorConfigGet $weights CONDUCIVENESS_AMBIGUITY_PENALTY 0.30)
-                0.0
-            ))
+            (* (qwestorConfigGet $weights CONDUCIVENESS_AMBIGUITY_PENALTY 0.30)
+               $ambiguity))
     )
         (clipUnit
             (-
@@ -281,18 +278,14 @@
 (= (qwestorRisk $context)
     (let* (
         ($weights (qwestorFeatureWeights))
-        ($thresholds (qwestorFeatureThresholds))
-        ($requestedThreshold (qwestorContextValue $context requested_threshold 0.30))
-        ($failure (qwestorContextValue $context failure_pressure 0.30))
+        ($requestedThreshold (qwestorContextValue $context requested_threshold 0.00))
+        ($failure (qwestorContextValue $context failure_pressure 0.00))
         ($familiarity (qwestorContextValue $context topic_familiarity 0.50))
         ($verification (qwestorContextValue $context verification 0.00))
         ($ambiguity (qwestorContextValue $context ambiguity 0.00))
         ($ambiguityPenalty
-            (if (> $ambiguity
-                    (qwestorConfigGet $thresholds AMBIGUITY_HIGH_THRESHOLD 0.70))
-                (qwestorConfigGet $weights RISK_AMBIGUITY_PENALTY 0.30)
-                0.0
-            ))
+            (* (qwestorConfigGet $weights RISK_AMBIGUITY_PENALTY 0.30)
+               $ambiguity))
     )
         (clipUnit
             (+
@@ -320,22 +313,16 @@
 (= (qwestorEffort $context)
     (let* (
         ($weights (qwestorFeatureWeights))
-        ($thresholds (qwestorFeatureThresholds))
         ($complexity (qwestorContextValue $context complexity 0.30))
         ($ambiguity (qwestorContextValue $context ambiguity 0.00))
-        ($taskPlan (qwestorContextValue $context task_plan 0.20))
-        ($multiSource (qwestorContextValue $context multi_source 0.30))
+        ($taskPlan (qwestorContextValue $context task_plan 0.00))
+        ($multiSource (qwestorContextValue $context multi_source 0.00))
         ($planBonus
-            (if (> $taskPlan (qwestorConfigGet $thresholds PLAN_THRESHOLD 0.65))
-                (qwestorConfigGet $weights EFFORT_PLAN_BONUS 0.50)
-                0.0
-            ))
+            (* (qwestorConfigGet $weights EFFORT_PLAN_BONUS 0.50)
+               $taskPlan))
         ($multiSourceBonus
-            (if (> $multiSource
-                    (qwestorConfigGet $thresholds MULTI_SOURCE_THRESHOLD 0.65))
-                (qwestorConfigGet $weights EFFORT_MULTI_SOURCE_BONUS 0.40)
-                0.0
-            ))
+            (* (qwestorConfigGet $weights EFFORT_MULTI_SOURCE_BONUS 0.40)
+               $multiSource))
     )
         (clipUnit
             (+
@@ -351,6 +338,25 @@
     )
 )
 
+(= (qwestorSynthesisReadiness $context)
+    (let* (
+        ($multiSource (qwestorContextValue $context multi_source 0.00))
+        ($retrievalRequired
+            (qwestorContextValue $context external_evidence 0.00))
+        ($evidenceAvailable
+            (qwestorContextValue $context evidence_available 0.00))
+        ($missingInput
+            (qwestorContextValue $context missing_required_input 0.00))
+        ($availableWithoutRetrieval
+            (maxNumber $evidenceAvailable (- 1.0 $retrievalRequired)))
+    )
+        (clipUnit
+            (* $multiSource
+               (* (- 1.0 $retrievalRequired)
+                  (* $availableWithoutRetrieval (- 1.0 $missingInput)))))
+    )
+)
+
 ;; Convert a Qwestor context into generic and application feature pairs
 (= (qwestorStimulusFeatures $context)
     (stimulusFeatures
@@ -362,21 +368,27 @@
             (complexity (qwestorContextValue $context complexity 0.30))
             (specificity (qwestorContextValue $context specificity 0.50))
             (ambiguity (qwestorContextValue $context ambiguity 0.00))
-            (requested_threshold (qwestorContextValue $context requested_threshold 0.30))
+            (requested_threshold (qwestorContextValue $context requested_threshold 0.00))
             (urgency (qwestorContextValue $context urgency 0.00))
             (user_expertise (qwestorContextValue $context user_expertise 0.50))
             (topic_familiarity (qwestorContextValue $context topic_familiarity 0.50))
-            (failure_pressure (qwestorContextValue $context failure_pressure 0.30))
+            (failure_pressure (qwestorContextValue $context failure_pressure 0.00))
             (verification (qwestorContextValue $context verification 0.00))
-            (reflective_intent (qwestorContextValue $context reflective_intent 0.50))
-            (external_evidence (qwestorContextValue $context external_evidence 0.30))
-            (task_plan (qwestorContextValue $context task_plan 0.20))
-            (multi_source (qwestorContextValue $context multi_source 0.30))
+            (reflective_intent (qwestorContextValue $context reflective_intent 0.00))
+            (external_evidence (qwestorContextValue $context external_evidence 0.00))
+            (evidence_available (qwestorContextValue $context evidence_available 0.00))
+            (synthesis_ready (qwestorSynthesisReadiness $context))
+            (primary_operation (qwestorContextValue $context primary_operation unknown))
+            (final_deliverable (qwestorContextValue $context final_deliverable unknown))
+            (task_plan (qwestorContextValue $context task_plan 0.00))
+            (multi_source (qwestorContextValue $context multi_source 0.00))
             (signed_valence (qwestorContextValue $context signed_valence 0.00))
             (valence_unit (qwestorSignedValenceToUnit
                 (qwestorContextValue $context signed_valence 0.00)))
             (additional_information_expected
                 (qwestorContextValue $context additional_information_expected 0.00))
+            (missing_required_input
+                (qwestorContextValue $context missing_required_input 0.00))
             (intent_type (qwestorContextValue $context intent_type mixed))
             (query_type (qwestorContextValue $context query_type unknown))
         )

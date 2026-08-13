@@ -3,6 +3,10 @@
     (featureMapNumericUnit $features $name $default)
 )
 
+(= (qwestorPlanningValue $features $name $default)
+    (featureMapGet $features $name $default)
+)
+
 ;; Return sparse context adjustments for one registered action
 (= (qwestorContextAdjustments $actionId $features)
     (let* (
@@ -14,12 +18,13 @@
         ($urgency (qwestorPlanningFeature $features urgency 0.00))
         ($familiarity (qwestorPlanningFeature $features topic_familiarity 0.50))
         ($verification (qwestorPlanningFeature $features verification 0.00))
-        ($reflection (qwestorPlanningFeature $features reflective_intent 0.50))
-        ($externalEvidence (qwestorPlanningFeature $features external_evidence 0.30))
-        ($taskPlan (qwestorPlanningFeature $features task_plan 0.20))
-        ($multiSource (qwestorPlanningFeature $features multi_source 0.30))
+        ($reflection (qwestorPlanningFeature $features reflective_intent 0.00))
+        ($externalEvidence (qwestorPlanningFeature $features external_evidence 0.00))
+        ($synthesisReady (qwestorPlanningFeature $features synthesis_ready 0.00))
+        ($taskPlan (qwestorPlanningFeature $features task_plan 0.00))
+        ($multiSource (qwestorPlanningFeature $features multi_source 0.00))
         ($waiting (qwestorPlanningFeature $features additional_information_expected 0.00))
-        ($evidenceGate (if (> $externalEvidence 0.70) 1.0 0.0))
+        ($evidencePressure $externalEvidence)
     )
         (case $actionId (
             (act_clarify
@@ -46,41 +51,44 @@
                  (rabbit_hole (* 0.20 $effort))))
             (act_think
                 ((beneficial (* 0.10 $reflection))
-                 (help_short (* -0.20 $urgency))
+                 (help_short
+                    (- (* 0.75 $reflection) (* 0.20 $urgency)))
                  (help_long (* 0.20 $reflection))
                  (knowledge (* 0.20 $reflection))
                  (novelty (* 0.15 $novelty))
                  (originality (* 0.15 $reflection))
                  (success_breakthrough (* 0.10 $novelty))
                  (coherence (* 0.10 $reflection))
-                 (efficiency (* -0.15 $urgency))
+                 (efficiency
+                    (- (* 0.70 $reflection) (* 0.15 $urgency)))
                  (accuracy (* 0.10 $reflection))
                  (hallucinate (* 0.20 $risk))
                  (rabbit_hole
                     (- (* 0.25 $effort) (* 0.10 $reflection)))))
             (act_respond
-                ((honesty (- (* -0.15 $risk) (* 0.12 $evidenceGate)))
+                ((honesty (- (* -0.15 $risk) (* 0.12 $evidencePressure)))
                  (safety (* -0.15 $risk))
                  (help_short (- (* 0.20 $urgency) (* 0.35 $ambiguity)))
                  (efficiency (* 0.10 $urgency))
                  (accuracy
-                    (- (* 0.10 $familiarity) (* 0.10 $evidenceGate)))
+                    (- (* 0.10 $familiarity) (* 0.10 $evidencePressure)))
                  (hallucinate
                     (+
                         (+ (* 0.35 $risk) (* 0.20 $verification))
-                        (* 0.15 $evidenceGate)))
+                        (* 0.15 $evidencePressure)))
                  (premature
                     (+
                         (+ (* 0.35 $ambiguity) (* 0.20 $taskPlan))
-                        (* 0.08 $evidenceGate)))))
+                        (* 0.08 $evidencePressure)))))
             (act_decompose
-                ((help_short (* -0.35 $ambiguity))
+                ((help_short
+                    (- (* 0.25 $taskPlan) (* 0.35 $ambiguity)))
                  (help_long (* 0.10 $taskPlan))
                  (success_moderate (* 0.10 $complexity))
                  (coherence
                     (- (* 0.10 $complexity) (* 0.15 $ambiguity)))
                  (efficiency
-                    (- (* 0.10 $taskPlan) (* 0.20 $ambiguity)))
+                    (- (* 0.25 $taskPlan) (* 0.20 $ambiguity)))
                  (rabbit_hole (* -0.05 $taskPlan))
                  (premature
                     (+ (* -0.03 $taskPlan) (* 0.25 $ambiguity)))))
@@ -92,12 +100,14 @@
                  (hallucinate (* -0.01 $verification))
                  (premature (* -0.01 $verification))))
             (act_synthesize
-                ((help_long (* 0.10 $multiSource))
-                 (knowledge (* 0.10 $multiSource))
-                 (originality (* 0.08 $multiSource))
-                 (coherence (* 0.10 $multiSource))
+                ((help_long (* 0.10 $synthesisReady))
+                 (knowledge (* 0.10 $synthesisReady))
+                 (originality (* 0.08 $synthesisReady))
+                 (coherence (* 0.10 $synthesisReady))
                  (rabbit_hole (* 0.10 $effort))
-                 (premature (* -0.05 $multiSource))))
+                 (premature
+                    (+ (* -0.05 $synthesisReady)
+                       (* 0.25 (* $multiSource (- 1.0 $synthesisReady)))))))
             (act_wait
                 ((beneficial (* 0.35 $waiting))
                  (honesty (* 0.15 $waiting))
@@ -115,8 +125,73 @@
     )
 )
 
-;; Combine one base correlation with its contextual adjustment
-(= (qwestorCandidateCorrelationValue $basePairs $adjustments $goalName)
+;; Return continuous evidence that an action fits the current research operation
+(= (qwestorActionSupport $actionId $features)
+    (let* (
+        ($specificity (qwestorPlanningFeature $features specificity 0.50))
+        ($ambiguity (qwestorPlanningFeature $features ambiguity 0.00))
+        ($complexity (qwestorPlanningFeature $features complexity 0.30))
+        ($risk (qwestorPlanningFeature $features risk 0.00))
+        ($novelty (qwestorPlanningFeature $features novelty 0.00))
+        ($urgency (qwestorPlanningFeature $features urgency 0.00))
+        ($familiarity (qwestorPlanningFeature $features topic_familiarity 0.50))
+        ($failure (qwestorPlanningFeature $features failure_pressure 0.00))
+        ($verification (qwestorPlanningFeature $features verification 0.00))
+        ($reflection (qwestorPlanningFeature $features reflective_intent 0.00))
+        ($externalEvidence (qwestorPlanningFeature $features external_evidence 0.00))
+        ($synthesisReady (qwestorPlanningFeature $features synthesis_ready 0.00))
+        ($taskPlan (qwestorPlanningFeature $features task_plan 0.00))
+        ($multiSource (qwestorPlanningFeature $features multi_source 0.00))
+        ($waiting (qwestorPlanningFeature $features additional_information_expected 0.00))
+        ($missingInput (qwestorPlanningFeature $features missing_required_input 0.00))
+        ($researchFeasibility (- 1.0 $missingInput))
+        ($operationPressure
+            (maxNumber $externalEvidence
+                (maxNumber $reflection
+                    (maxNumber $taskPlan
+                        (maxNumber $multiSource $verification)))))
+    )
+        (case $actionId (
+            (act_clarify (clipUnit (maxNumber $ambiguity $missingInput)))
+            (act_search
+                (clipUnit
+                    (* $researchFeasibility
+                       (* (- 1.0 $verification)
+                          (+ (* 0.75 $externalEvidence)
+                             (* 0.15 (- 1.0 $familiarity)))))))
+            (act_think
+                (clipUnit
+                    (* $researchFeasibility
+                       (+ (* 0.65 $reflection)
+                          (+ (* 0.20 $complexity) (* 0.15 $novelty))))))
+            (act_respond
+                (clipUnit
+                    (- (+ (* 0.70 $specificity)
+                          (+ (* 0.20 $urgency) (* 0.10 $familiarity)))
+                       (* 0.65 $operationPressure))))
+            (act_decompose
+                (clipUnit
+                    (* $researchFeasibility
+                       (+ (* 0.80 $taskPlan) (* 0.20 $complexity)))))
+            (act_verify
+                (clipUnit
+                    (* $researchFeasibility
+                       (+ (* 0.65 $verification)
+                          (+ (* 0.20 $risk) (* 0.15 $failure))))))
+            (act_synthesize
+                (clipUnit
+                    (* (- 1.0 $reflection)
+                       (* $synthesisReady
+                          (+ (* 0.85 $multiSource) (* 0.15 $complexity))))))
+            (act_wait (clipUnit $waiting))
+            ($_ 0.0)
+        ))
+    )
+)
+
+;; Combine intrinsic utility, context adjustment, and graded action fit
+(= (qwestorCandidateCorrelationValue
+        $basePairs $adjustments $support $goalName)
     (let* (
         ($raw
             (+
@@ -125,27 +200,27 @@
             ))
     )
         (if (schemaIsAntiGoal (qwestorSchema) $goalName)
-            (clipUnit $raw)
-            (clipRange $raw -1.0 1.0)
+            (clipUnit (+ $raw (* 0.40 (- 1.0 $support))))
+            (clipRange (* $raw (+ 0.20 (* 0.80 $support))) -1.0 1.0)
         )
     )
 )
 
 ;; Build full-schema named correlations recursively
 (= (qwestorCandidateCorrelationPairsLoop
-        $goalNames $basePairs $adjustments)
+        $goalNames $basePairs $adjustments $support)
     (if (== $goalNames ())
         ()
         (let* (
             (($head $tail) (decons $goalNames))
             ($value
                 (qwestorCandidateCorrelationValue
-                    $basePairs $adjustments $head))
+                    $basePairs $adjustments $support $head))
         )
             (cons-atom
                 ($head $value)
                 (qwestorCandidateCorrelationPairsLoop
-                    $tail $basePairs $adjustments)
+                    $tail $basePairs $adjustments $support)
             )
         )
     )
@@ -157,6 +232,7 @@
         (qwestorGoalNames)
         (qwestorActionBaseCorrelationPairs $actionId)
         (qwestorContextAdjustments $actionId $features)
+        (qwestorActionSupport $actionId $features)
     )
 )
 
@@ -200,6 +276,16 @@
         (ambiguity (qwestorPlanningFeature $features ambiguity 0.00))
         (risk_feature (qwestorPlanningFeature $features risk 0.00))
         (effort (qwestorPlanningFeature $features effort 0.00))
+        (retrieval_required
+            (qwestorPlanningFeature $features external_evidence 0.00))
+        (evidence_available
+            (qwestorPlanningFeature $features evidence_available 0.00))
+        (synthesis_ready
+            (qwestorPlanningFeature $features synthesis_ready 0.00))
+        (primary_operation
+            (qwestorPlanningValue $features primary_operation unknown))
+        (final_deliverable
+            (qwestorPlanningValue $features final_deliverable unknown))
     )
 )
 
@@ -215,78 +301,16 @@
     )
 )
 
-;; Return the context-family action identifiers
+;; Exclude actions only when a genuine semantic precondition blocks useful work
 (= (qwestorAvailableActionIds $features)
     (let* (
-        ($config (qwestorDecisionConfig))
-        ($risk (qwestorPlanningFeature $features risk 0.00))
-        ($ambiguity (qwestorPlanningFeature $features ambiguity 0.00))
-        ($requestedThreshold
-            (qwestorPlanningFeature $features requested_threshold 0.30))
-        ($failure (qwestorPlanningFeature $features failure_pressure 0.00))
-        ($verification (qwestorPlanningFeature $features verification 0.00))
-        ($externalEvidence (qwestorPlanningFeature $features external_evidence 0.30))
-        ($taskPlan (qwestorPlanningFeature $features task_plan 0.20))
-        ($multiSource (qwestorPlanningFeature $features multi_source 0.30))
-        ($reflection (qwestorPlanningFeature $features reflective_intent 0.50))
-        ($complexity (qwestorPlanningFeature $features complexity 0.30))
         ($waiting
             (qwestorPlanningFeature $features additional_information_expected 0.00))
     )
-        (if (> $waiting (qwestorConfigGet $config WAIT_GATE_THRESHOLD 0.50))
+        (if (== $waiting 1.0)
             (act_wait act_clarify)
-            (if (or
-                    (> $verification
-                       (qwestorConfigGet $config VERIFY_GATE_THRESHOLD 0.50))
-                    (or
-                        (> $risk
-                           (qwestorConfigGet $config RISK_GATE_THRESHOLD 0.65))
-                        (or
-                            (> $failure
-                               (qwestorConfigGet $config FAILURE_GATE_THRESHOLD 0.65))
-                            (> $requestedThreshold
-                               (qwestorConfigGet $config REQUESTED_THRESHOLD_GATE 0.75))
-                        )))
-                (act_verify act_search act_respond)
-                (if (> $ambiguity
-                       (qwestorConfigGet $config AMBIGUITY_GATE_THRESHOLD 0.70))
-                    (act_clarify act_decompose)
-                    (if (> $taskPlan
-                           (qwestorConfigGet
-                               (qwestorFeatureThresholds) PLAN_THRESHOLD 0.65))
-                        (act_decompose act_think act_respond)
-                        (if (> $multiSource
-                               (qwestorConfigGet
-                                   (qwestorFeatureThresholds)
-                                   MULTI_SOURCE_THRESHOLD
-                                   0.65))
-                            (act_synthesize act_search act_verify act_respond)
-                            (if (> $reflection
-                                   (qwestorConfigGet
-                                       $config
-                                       REFLECTION_GATE_THRESHOLD
-                                       0.65))
-                                (act_think act_decompose act_respond)
-                                (if (> $complexity
-                                       (qwestorConfigGet
-                                           $config
-                                           COMPLEXITY_GATE_THRESHOLD
-                                           0.65))
-                                    (act_decompose act_think act_respond)
-                                    (if (> $externalEvidence
-                                           (qwestorConfigGet
-                                               (qwestorFeatureThresholds)
-                                               NOVELTY_BONUS_THRESHOLD
-                                               0.70))
-                                        (act_search act_verify act_respond)
-                                        (act_respond act_verify)
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-            )
+            (act_clarify act_search act_think act_respond act_decompose
+             act_verify act_synthesize)
         )
     )
 )
