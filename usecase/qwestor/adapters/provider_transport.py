@@ -10,12 +10,7 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-from applications.research_assistant.adapters.llm_provider import (
-    ProviderRequest,
-    ProviderResult,
-)
+from typing import Any, Protocol
 
 
 PROVIDER_ADAPTERS = {
@@ -41,6 +36,33 @@ RETRYABLE_HTTP_STATUS = {429, 500, 502, 503, 504}
 
 
 @dataclass(frozen=True)
+class ProviderRequest:
+    prompt: str
+    system_instruction: str | None = None
+    json_mode: bool = False
+    temperature: float = 0.2
+
+
+@dataclass(frozen=True)
+class ProviderResult:
+    ok: bool
+    text: str = ""
+    error_code: str = ""
+    retryable: bool = False
+    provider_name: str = ""
+    model_name: str = ""
+    latency_ms: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+class ProviderTransport(Protocol):
+    def generate(self, request: ProviderRequest) -> ProviderResult:
+        ...
+
+
+@dataclass(frozen=True)
 class ProviderConfig:
     providerName: str
     adapterName: str
@@ -49,6 +71,8 @@ class ProviderConfig:
     baseUrl: str | None
     requestTimeout: float
     maxAttempts: int
+    inputCostPerMillionTokens: float | None
+    outputCostPerMillionTokens: float | None
 
 
 def repositoryRoot() -> Path:
@@ -79,12 +103,18 @@ def environmentValues(
 def loadProviderConfig(
     supplied: Mapping[str, str] | None = None,
     envPath: str | os.PathLike[str] | None = None,
+    prefix: str = "",
 ) -> ProviderConfig:
     """Validate provider, model, credential, timeout, and retry configuration."""
     values = environmentValues(supplied, envPath)
-    providerName = values.get("PROVIDER_NAME", "").strip().lower()
-    modelName = values.get("MODEL_NAME", "").strip()
-    apiKey = values.get("API_KEY", "").strip().removeprefix("Bearer ").strip()
+    providerName = values.get(f"{prefix}PROVIDER_NAME", "").strip().lower()
+    modelName = values.get(f"{prefix}MODEL_NAME", "").strip()
+    apiKey = (
+        values.get(f"{prefix}API_KEY", "")
+        .strip()
+        .removeprefix("Bearer ")
+        .strip()
+    )
     if providerName in PLACEHOLDER_VALUES:
         raise RuntimeError("Set PROVIDER_NAME before executing a Qwestor LLM effect.")
     if modelName.lower() in PLACEHOLDER_VALUES:
@@ -94,15 +124,27 @@ def loadProviderConfig(
     adapterName = PROVIDER_ADAPTERS.get(providerName)
     if adapterName is None:
         raise ValueError(f"unknown Qwestor provider: {providerName}")
-    baseUrl = values.get("BASE_URL", "").strip() or DEFAULT_BASE_URLS.get(providerName)
+    baseUrl = values.get(f"{prefix}BASE_URL", "").strip() or DEFAULT_BASE_URLS.get(
+        providerName
+    )
     if adapterName == "openai_compatible" and not baseUrl:
         raise RuntimeError("BASE_URL is required for this OpenAI-compatible provider.")
-    requestTimeout = float(values.get("REQUEST_TIMEOUT", "90"))
-    maxAttempts = int(values.get("MAX_PROVIDER_ATTEMPTS", "3"))
+    requestTimeout = float(values.get(f"{prefix}REQUEST_TIMEOUT", "90"))
+    maxAttempts = int(values.get(f"{prefix}MAX_PROVIDER_ATTEMPTS", "3"))
+    inputCostText = values.get(f"{prefix}INPUT_COST_PER_MILLION_TOKENS", "").strip()
+    outputCostText = values.get(
+        f"{prefix}OUTPUT_COST_PER_MILLION_TOKENS", ""
+    ).strip()
+    inputCost = float(inputCostText) if inputCostText else None
+    outputCost = float(outputCostText) if outputCostText else None
     if requestTimeout <= 0.0:
         raise ValueError("REQUEST_TIMEOUT must be positive")
     if maxAttempts < 1 or maxAttempts > 5:
         raise ValueError("MAX_PROVIDER_ATTEMPTS must be between 1 and 5")
+    if inputCost is not None and inputCost < 0.0:
+        raise ValueError("INPUT_COST_PER_MILLION_TOKENS must be non-negative")
+    if outputCost is not None and outputCost < 0.0:
+        raise ValueError("OUTPUT_COST_PER_MILLION_TOKENS must be non-negative")
     return ProviderConfig(
         providerName=providerName,
         adapterName=adapterName,
@@ -111,7 +153,18 @@ def loadProviderConfig(
         baseUrl=baseUrl.rstrip("/") if baseUrl else None,
         requestTimeout=requestTimeout,
         maxAttempts=maxAttempts,
+        inputCostPerMillionTokens=inputCost,
+        outputCostPerMillionTokens=outputCost,
     )
+
+
+def hasProviderConfig(
+    prefix: str = "",
+    supplied: Mapping[str, str] | None = None,
+    envPath: str | os.PathLike[str] | None = None,
+) -> bool:
+    values = environmentValues(supplied, envPath)
+    return bool(values.get(f"{prefix}PROVIDER_NAME", "").strip())
 
 
 def retryableException(error: Exception) -> bool:
@@ -170,6 +223,33 @@ def responseText(payload: Mapping[str, Any], adapterName: str) -> str:
     raise ValueError("provider response did not contain generated text")
 
 
+def responseUsage(payload: Mapping[str, Any], adapterName: str) -> tuple[int, int]:
+    if adapterName == "google_genai":
+        usage = payload.get("usageMetadata", {})
+        if isinstance(usage, Mapping):
+            return (
+                int(usage.get("promptTokenCount", 0) or 0),
+                int(usage.get("candidatesTokenCount", 0) or 0),
+            )
+    if adapterName == "openai_compatible":
+        usage = payload.get("usage", {})
+        if isinstance(usage, Mapping):
+            return (
+                int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0),
+                int(
+                    usage.get("completion_tokens", usage.get("output_tokens", 0))
+                    or 0
+                ),
+            )
+    return (0, 0)
+
+
+def responseCost(config: ProviderConfig, inputTokens: int, outputTokens: int) -> float:
+    inputCost = config.inputCostPerMillionTokens or 0.0
+    outputCost = config.outputCostPerMillionTokens or 0.0
+    return (inputTokens * inputCost + outputTokens * outputCost) / 1_000_000.0
+
+
 class EnvironmentProviderTransport:
     """Execute provider requests using environment-backed Google or OpenAI APIs."""
 
@@ -178,10 +258,12 @@ class EnvironmentProviderTransport:
         config: ProviderConfig | None = None,
         opener: Callable[..., Any] | None = None,
         sleeper: Callable[[float], None] | None = None,
+        envPrefix: str = "",
     ) -> None:
         self.config = config
         self.opener = opener or urllib.request.urlopen
         self.sleeper = sleeper or time.sleep
+        self.envPrefix = envPrefix
 
     def buildHttpRequest(
         self,
@@ -242,10 +324,11 @@ class EnvironmentProviderTransport:
     def generate(self, request: ProviderRequest) -> ProviderResult:
         """Execute one logical provider call with bounded transient retries."""
         try:
-            config = self.config or loadProviderConfig()
+            config = self.config or loadProviderConfig(prefix=self.envPrefix)
         except Exception as error:
             return ProviderResult(ok=False, error_code=providerErrorCode(error))
         lastError: Exception | None = None
+        started = time.perf_counter()
         for attempt in range(config.maxAttempts):
             try:
                 httpRequest = self.buildHttpRequest(config, request)
@@ -253,9 +336,16 @@ class EnvironmentProviderTransport:
                     payload = json.loads(response.read().decode("utf-8"))
                 if not isinstance(payload, Mapping):
                     raise ValueError("provider response must be a JSON object")
+                inputTokens, outputTokens = responseUsage(payload, config.adapterName)
                 return ProviderResult(
                     ok=True,
                     text=responseText(payload, config.adapterName),
+                    provider_name=config.providerName,
+                    model_name=config.modelName,
+                    latency_ms=(time.perf_counter() - started) * 1000.0,
+                    input_tokens=inputTokens,
+                    output_tokens=outputTokens,
+                    cost_usd=responseCost(config, inputTokens, outputTokens),
                 )
             except Exception as error:
                 lastError = error
@@ -265,9 +355,15 @@ class EnvironmentProviderTransport:
                         ok=False,
                         error_code=providerErrorCode(error),
                         retryable=retryable,
+                        provider_name=config.providerName,
+                        model_name=config.modelName,
+                        latency_ms=(time.perf_counter() - started) * 1000.0,
                     )
                 self.sleeper(1.5 * (attempt + 1))
         return ProviderResult(
             ok=False,
             error_code=providerErrorCode(lastError or RuntimeError()),
+            provider_name=config.providerName,
+            model_name=config.modelName,
+            latency_ms=(time.perf_counter() - started) * 1000.0,
         )

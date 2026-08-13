@@ -33,6 +33,8 @@
 !(import! &self engine)
 !(import! &self "context_parser.py")
 !(import! &self "session_store.py")
+!(import! &self "adapters/provider_transport.py")
+!(import! &self "adapters/prompt_builder.py")
 !(import! &self "adapters/llm_adapter.py")
 !(import! &self session_helpers)
 
