@@ -201,3 +201,22 @@
         (qwestorSessionResultRecord $engine $results))
     $results
 )
+
+!(let* (
+    ($result
+        (qwestorRunLiveTurn
+            (qwestorNewEngineState)
+            "In five concise bullet points, explain the main causes of model collapse in recursive training."))
+)
+    (case $result (
+        ((validationOk $cycle)
+            (py-call
+                (llm_adapter.printLiveResult
+                    (qwestorDiagnosticsActionId
+                        (qwestorCycleDiagnostics $cycle))
+                    (qwestorEffectResultPayload
+                        (qwestorCycleEffectResult $cycle)))))
+        ((validationError $code $details)
+            (py-call (llm_adapter.printLiveFailure $code)))
+    ))
+)

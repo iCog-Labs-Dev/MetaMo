@@ -455,6 +455,20 @@ def runtimeSummaryPairs() -> list[list[Any]]:
     return [list(item) for item in defaultAdapter().runtimeSummary().items()]
 
 
+def printLiveResult(actionId: Any, response: Any) -> bool:
+    """Print the two user-relevant values from a completed live turn."""
+    print(f"Qwestor action: {atomText(actionId)}")
+    print("Response:")
+    print(atomText(response))
+    return True
+
+
+def printLiveFailure(code: Any) -> bool:
+    """Print a compact error when a live turn cannot be completed."""
+    print(f"Qwestor failed: {atomText(code)}")
+    return True
+
+
 def perceptionTracePairs() -> list[list[Any]]:
     return [list(item) for item in defaultAdapter().perceptionTrace().items()]
 
