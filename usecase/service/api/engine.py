@@ -1,4 +1,7 @@
-import os, re, json, subprocess, threading
+import json
+import os
+import subprocess
+import threading
 
 USECASE_DIR = os.environ.get("QWESTOR_USECASE_DIR", "/app/usecase")
 CYCLE_ENTRY_FILE = "service_cycle_entry.metta"
@@ -18,6 +21,24 @@ and parsing structured cycle results.
 class EngineError(RuntimeError):
     """Raised when the MeTTa engine execution fails."""
     pass
+
+
+def _extract_marked_json(output: str, marker: str) -> dict:
+    """Decode the JSON object following the final result marker."""
+
+    marker_index = output.rfind(marker)
+    if marker_index == -1:
+        raise EngineError(f"no parseable result from engine: {output[-2000:]}")
+
+    payload = output[marker_index + len(marker):].lstrip()
+    try:
+        value, _ = json.JSONDecoder().raw_decode(payload)
+    except json.JSONDecodeError as exc:
+        raise EngineError(f"invalid JSON result from engine: {output[-2000:]}") from exc
+
+    if not isinstance(value, dict):
+        raise EngineError(f"engine result must be a JSON object: {output[-2000:]}")
+    return value
 
 
 class MettaEngine:
@@ -52,11 +73,7 @@ class MettaEngine:
         if "(Error " in output:
             raise EngineError(f"engine reported a MeTTa error: {output[-2000:]}")
 
-        match = re.search(re.escape(marker) + r"(\{.*\})", output)
-        if not match:
-            raise EngineError(f"no parseable result from engine: {output[-2000:]}")
-
-        return json.loads(match.group(1))
+        return _extract_marked_json(output, marker)
 
     def load_defaults(self) -> dict:
         """Load and cache the canonical session defaults from config.metta."""
@@ -78,7 +95,7 @@ class MettaEngine:
         """
         env = os.environ.copy()
         env["QWESTOR_SESSION_ID"] = session_id
-        env["QWESTOR_QUERY"] = query  
+        env["QWESTOR_QUERY"] = query
 
         return self._run_entry(CYCLE_ENTRY_FILE, env, RESULT_MARKER)
 
