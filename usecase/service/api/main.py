@@ -6,8 +6,7 @@ from sqlalchemy import text
 
 from .db import engine as db_engine
 from .redis_client import redis_client, acquire_lock, release_lock
-from .engine import engine as metta_engine
-from .defaults import DEFAULT_GOALS, DEFAULT_MODS, DEFAULT_ANTI_GOALS
+from .engine import EngineError, engine as metta_engine
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import logging, time
@@ -55,6 +54,10 @@ class CycleRequest(BaseModel):
 def create_session():
     """Create a new Qwestor session with default reasoning state."""
 
+    try:
+        defaults = metta_engine.load_defaults()
+    except EngineError as exc:
+        raise HTTPException(503, f"unable to load Qwestor defaults: {exc}") from exc
     session_id = str(uuid.uuid4())
     now = datetime.utcnow()
     exp = now + timedelta(days=30)
@@ -63,8 +66,9 @@ def create_session():
             INSERT INTO sessions (session_id, goals, mods, anti_goals, state_version,
                                    status, created_at, updated_at, expires_at)
             VALUES (:sid, :g, :m, :a, 0, 'active', :now, :now, :exp)
-        """), {"sid": session_id, "g": json.dumps(DEFAULT_GOALS), "m": json.dumps(DEFAULT_MODS),
-                "a": json.dumps(DEFAULT_ANTI_GOALS), "now": now, "exp": exp})
+        """), {"sid": session_id, "g": json.dumps(defaults["goals"]),
+                "m": json.dumps(defaults["mods"]),
+                "a": json.dumps(defaults["anti_goals"]), "now": now, "exp": exp})
     return {"session_id": session_id, "state_version": 0, "config_version": "v1",
             "expires_at": exp.isoformat()}
 
@@ -193,8 +197,6 @@ def ready():
     except Exception:
         redis_ok = False
     return {"status": "ok", "redis": redis_ok}
-
-# added 
 
 @app.get("/metrics")
 def metrics():

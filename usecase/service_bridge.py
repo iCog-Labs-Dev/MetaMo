@@ -14,6 +14,23 @@ def get_query():
     """
     return os.environ["QWESTOR_QUERY"]
 
+
+def _pairs_to_dict(pairs):
+    """Convert a MeTTa list of key/value pairs to a JSON-compatible mapping."""
+
+    return {str(key): float(value) for key, value in pairs}
+
+
+def emit_defaults(goals, mods, anti_goals):
+    """Emit Qwestor's canonical MeTTa defaults for the API service."""
+
+    print("@@QWESTOR_DEFAULTS@@" + json.dumps({
+        "goals": _pairs_to_dict(goals),
+        "mods": _pairs_to_dict(mods),
+        "anti_goals": _pairs_to_dict(anti_goals),
+    }), flush=True)
+    return True
+
 def emit_result(action_name, answer):
     """
         Emit the final Qwestor response.
