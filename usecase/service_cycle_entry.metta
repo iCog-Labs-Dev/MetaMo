@@ -1,5 +1,5 @@
 !(import! &self main-loop)
-!(import! &self service_bridge)
+!(import! &self service_bridge_wrappers)
 
 !(let*
     (

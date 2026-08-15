@@ -1,7 +1,7 @@
 ; Expose the canonical Qwestor defaults from config.metta to the API service.
 
 !(import! &self config)
-!(import! &self service_bridge)
+!(import! &self service_bridge_wrappers)
 
 !(let*
     (

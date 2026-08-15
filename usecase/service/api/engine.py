@@ -1,5 +1,6 @@
 import json
 import os
+import signal
 import subprocess
 import threading
 
@@ -54,22 +55,37 @@ class MettaEngine:
         """Run a MeTTa service entry point and parse its marked JSON output."""
 
         with self._lock:
+            process = subprocess.Popen(
+                ["petta", entry_file],
+                cwd=USECASE_DIR,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
             try:
-                result = subprocess.run(
-                    ["petta", entry_file],
-                    cwd=USECASE_DIR,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=CYCLE_TIMEOUT_SECONDS,
-                )
+                stdout, stderr = process.communicate(timeout=CYCLE_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired as exc:
-                raise EngineError(f"engine timed out after {CYCLE_TIMEOUT_SECONDS}s") from exc
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    stdout, stderr = process.communicate()
 
-        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+                partial_output = "\n".join(
+                    part for part in (stdout, stderr) if part
+                )
+                detail = f": {partial_output[-2000:]}" if partial_output else ""
+                raise EngineError(
+                    f"engine timed out after {CYCLE_TIMEOUT_SECONDS}s{detail}"
+                ) from exc
 
-        if result.returncode != 0:
-            raise EngineError(f"petta exited {result.returncode}: {output[-2000:]}")
+        output = "\n".join(part for part in (stdout, stderr) if part)
+
+        if process.returncode != 0:
+            raise EngineError(f"petta exited {process.returncode}: {output[-2000:]}")
         if "(Error " in output:
             raise EngineError(f"engine reported a MeTTa error: {output[-2000:]}")
 
