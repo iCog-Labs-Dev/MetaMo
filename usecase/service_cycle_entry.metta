@@ -1,7 +1,8 @@
 !(import! &self main-loop)
 !(import! &self service_bridge_wrappers)
 
-!(let*
+(= (runServiceCycle)
+  (let*
     (
       ($session-id   (serviceSessionId))
       ($query        (serviceQuery))
@@ -21,4 +22,7 @@
       ($_emit        (emitServiceResult $action-name $answer))
     )
     done
+  )
 )
+
+!(runServiceCycle)
