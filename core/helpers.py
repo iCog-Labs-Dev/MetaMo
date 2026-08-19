@@ -11,7 +11,7 @@ def list_difference(arr1, arr2):
     return (a - b).tolist()
 
 
-def norm(arr):
+def vector_norm(arr):
     return float(np.linalg.norm(arr))
 
 

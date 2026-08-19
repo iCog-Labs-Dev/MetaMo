@@ -204,7 +204,7 @@
 (= (qwestorValidateStabilityPolicy $policy)
     (let* (
         ($floorNorm
-            (eval (norm
+            (eval (vectorNorm
                 (
                     (qwestorStabilityIndividuationFloor $policy)
                     (qwestorStabilityBeneficialFloor $policy)

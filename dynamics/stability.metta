@@ -65,7 +65,7 @@
             ((validationOk $idx)
                 (and
                     (>= (index-atom (stateGoals $state) $idx) (stabilityThetaSafe $policy))
-                    (<= (eval (norm (stateGoals $state))) (stabilityGMax $policy))
+                    (<= (eval (vectorNorm (stateGoals $state))) (stabilityGMax $policy))
                 )
             )
             ($_ False)
@@ -84,7 +84,7 @@
             ((validationOk $idx)
                 (let* (
                     ($gInd (index-atom (stateGoals $state) $idx))
-                    ($gNorm (eval (norm (stateGoals $state))))
+                    ($gNorm (eval (vectorNorm (stateGoals $state))))
                     ($distTheta (positivePart (- $gInd (stabilityThetaSafe $policy))))
                     ($distGMax (positivePart (- (stabilityGMax $policy) $gNorm)))
                 )

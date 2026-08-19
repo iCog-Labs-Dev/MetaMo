@@ -219,8 +219,8 @@
 ;; Example: (stateDistance (motivationState schema (0.0) (0.0)) (motivationState schema (1.0) (0.0))) -> 1.0
 (= (stateDistance $left $right)
     (if (== (stateSchema $left) (stateSchema $right))
-        (+ (eval (norm (listDifference (stateGoals $left) (stateGoals $right))))
-           (eval (norm (listDifference (stateModulators $left) (stateModulators $right)))))
+        (+ (eval (vectorNorm (listDifference (stateGoals $left) (stateGoals $right))))
+           (eval (vectorNorm (listDifference (stateModulators $left) (stateModulators $right)))))
         (validationError state-schema-mismatch ((stateSchema $left) (stateSchema $right)))
     )
 )

@@ -3,9 +3,11 @@
 (= (listDifference $arr1 $arr2)
     (py-call (helpers.list_difference $arr1 $arr2))
 )
-(= (norm $arr)
-    (py-call (helpers.norm $arr))
+
+(= (vectorNorm $arr)
+    (py-call (helpers.vector_norm $arr))
 )
+
 (= (calculateNormDifference $arr1 $arr2)
     (py-call (helpers.calculate_norm_difference $arr1 $arr2))
 )

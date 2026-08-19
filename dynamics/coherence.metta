@@ -101,7 +101,7 @@
 (= (summaryVector $values)
     (if (== $values ())
         (0.0 0.0 0.0)
-        ((eval (mean $values)) (listMax $values) (eval (norm $values)))
+        ((eval (mean $values)) (listMax $values) (eval (vectorNorm $values)))
     )
 )
 
@@ -215,7 +215,7 @@
 ;; Measure distance between two self-models.
 ;; Example: (selfModelDistance (selfModel (0.0)) (selfModel (1.0))) -> 1.0
 (= (selfModelDistance $left $right)
-    (eval (norm (listDifference (selfModelVector $left) (selfModelVector $right))))
+    (eval (vectorNorm (listDifference (selfModelVector $left) (selfModelVector $right))))
 )
 
 ;; Calculate the policy blend factor for a canonical state.

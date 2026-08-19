@@ -6,8 +6,8 @@
 !(test (listDifference (7 6 13) (4 5 6)) (3.0 1.0 7.0))
 !(test (listDifference () ()) ())
 
-!(test (norm (3 4)) 5.0)
-!(test (norm ()) 0.0)
+!(test (vectorNorm (3 4)) 5.0)
+!(test (vectorNorm ()) 0.0)
 
 !(test (calculateNormDifference (1 2 3) (4 5 6)) 27.0)
 !(test (calculateNormDifference () ()) 0.0)
