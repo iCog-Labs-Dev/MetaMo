@@ -15,9 +15,13 @@
 ;; other fields are explanatory/provenance data and never become commands.
 
 (: ReasonerMotivationalProposalType Type)
-(: ReasonerMotivationalProposal (-> Symbol Symbol Symbol  Symbol Symbol Symbol Symbol Symbol ReasonerMotivationalProposalType))
+(: ReasonerMotivationalProposal
+   (-> Symbol Symbol Symbol Expression Symbol Expression Expression
+       Number Expression Expression ReasonerMotivationalProposalType))
 
 (= (reasonerProposalSources) (nars pln llm rule-engine human-adapter))
+(= (reasonerInferenceSources) (nars pln))
+(= (reasonerOptionalProposalSources) (llm))
 (= (reasonerProposalKinds)
    (propose-candidate request-frame-switch request-mode-change request-attention))
 
@@ -56,6 +60,38 @@
 
 (= (reasonerProposalIdValid $id)
    (not (== $id ())))
+
+;; ---------------------------------------------------------------------------
+;; Inference adapters
+;; ---------------------------------------------------------------------------
+;; NARS and PLN are first-class inference sources. Their engines only need to
+;; provide a conclusion, normalized confidence, evidence references, the
+;; registered candidate they recommend, and an expected outcome. The adapter
+;; adds provenance without exposing engine-specific terms to MetaMo.
+
+(= (narsInferenceToProposal
+      $id $conclusion $confidence $evidence $candidate $prediction)
+   (ReasonerMotivationalProposal
+      $id nars propose-candidate current-frame $candidate
+      (NARSConclusion $conclusion) (NARSSupport $conclusion)
+      $confidence $evidence $prediction))
+
+(= (plnInferenceToProposal
+      $id $conclusion $confidence $evidence $candidate $prediction)
+   (ReasonerMotivationalProposal
+      $id pln propose-candidate current-frame $candidate
+      (PLNConclusion $conclusion) (PLNSupport $conclusion)
+      $confidence $evidence $prediction))
+
+;; LLM reasoning is deliberately an optional adapter. If it is not wired by
+;; the host, no proposals are produced; if wired, its output is still subject
+;; to the identical source, schema, candidate, and feasibility checks.
+(= (llmReasoningToProposal
+      $id $claim $confidence $evidence $candidate $prediction)
+   (ReasonerMotivationalProposal
+      $id llm propose-candidate current-frame $candidate
+      (LLMClaim $claim) (LLMSupport $claim)
+      $confidence $evidence $prediction))
 
 (= (reasonerProposalValid $proposal)
    ;; Keep the public predicate single-arity and read the positional fields

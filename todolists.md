@@ -13,8 +13,8 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
   - [x] Add transition tests for collisions, preemption, and default Engaged behavior.
 
 - [ ] Add the reasoner proposal channel (R3/S3 migration seam).
-  - [ ] Define a source-neutral typed `reasoner-motivational-proposal` boundary.
-  - [ ] Accept proposals derived by NARS/PLN inference, with LLM-supported reasoning treated as an optional proposal source.
+  - [x] Define a source-neutral typed `reasoner-motivational-proposal` boundary.
+  - [x] Accept proposals derived by NARS/PLN inference, with LLM-supported reasoning treated as an optional proposal source.
   - [ ] Keep reasoner proposals advisory: MetaMo validates and scores them, while ContextFrames or the scheduler performs approved state changes.
   - [ ] Support proposals such as switching frame or entering Slow mode without obeying them automatically.
   - [ ] Convert validated proposals into the existing typed candidate/action representation without exposing arbitrary executable commands.
