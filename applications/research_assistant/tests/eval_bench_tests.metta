@@ -1,3 +1,7 @@
+;; Purpose: verify that the deterministic eval-bench adapters exercise the same
+;; Research Assistant cycle, response, session-threading, and diagnostics paths
+;; used by batch evaluation, without making a live provider request.
+
 !(import! &self ../../../core/validation)
 !(import! &self ../../../core/schema)
 !(import! &self ../../../core/features)
@@ -38,6 +42,7 @@
 !(import! &self ../main)
 !(import! &self ../eval_bench)
 
+;; Deterministic fixtures isolate orchestration from provider variability.
 (= (evalBenchAnswerPerception)
     (researchAssistantPerception
         (makeResearchAssistantStimulus 0.2 0.8 0.1 0.2)
@@ -78,6 +83,7 @@
     ))
 )
 
+;; Intent mappings must remain compatible with dataset task labels.
 !(test
     (researchAssistantEvalIntentSymbol compare)
     compare
@@ -98,6 +104,7 @@
     safe_answer
 )
 
+;; Prepared eval responses must preserve provider text exactly.
 !(test
     (eval (researchAssistantResponseText
         (evalBenchResponse)
@@ -105,6 +112,8 @@
     deterministic_eval_response
 )
 
+;; A subsequent command must consume the prior session and retain the selected
+;; safe action while extending the same engine history.
 !(test
     (eval (researchAssistantResponseActionId
         (researchAssistantCommandOutput
@@ -121,6 +130,8 @@
     safe_answer
 )
 
+;; The first prepared cycle and the dispatched second cycle each contribute one
+;; diagnostics record, proving state is threaded rather than recreated.
 !(test
     (eval (diagnosticsCount
         (researchAssistantEngineDiagnosticsHistory

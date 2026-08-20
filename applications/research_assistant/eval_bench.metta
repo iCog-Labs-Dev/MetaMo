@@ -40,6 +40,7 @@
 !(import! &self engine)
 !(import! &self main)
 !(import! &self "adapters/cli_bridge.py")
+!(import! &self "adapters/eval_protocol.py")
 !(import! &self "adapters/eval_bridge.py")
 
 (: ResearchAssistantEvalCaseResult Type)
@@ -216,51 +217,41 @@
             $calibrated
         )
             (py-call (eval_bridge.emit_case_result
-                $caseId
-                $taskType
-                $riskLabel
-                $paperPath
-                $query
-                $expectedAction
-                $acceptableActions
-                $actionId
-                $curiosityAction
-                $ethicsAction
-                $individuation
-                $transcendence
-                $simulationError
-                $laxError
-                $selfModelDrift
-                $calibrationAdjustments
-                $text
-                (eval (researchAssistantEvalSnapshotValue $raw stimulus_novelty))
-                (eval (researchAssistantEvalSnapshotValue $raw stimulus_conduciveness))
-                (eval (researchAssistantEvalSnapshotValue $raw stimulus_risk))
-                (eval (researchAssistantEvalSnapshotValue $raw stimulus_effort))
-                (eval (researchAssistantEvalSnapshotValue $raw task_intent))
-                (eval (researchAssistantEvalSnapshotValue $raw ambiguity))
-                (eval (researchAssistantEvalSnapshotValue $raw citation_need))
-                (eval (researchAssistantEvalSnapshotValue $raw comparison_need))
-                (eval (researchAssistantEvalSnapshotValue $raw summary_need))
-                (eval (researchAssistantEvalSnapshotValue $raw exploration_need))
-                (eval (researchAssistantEvalSnapshotValue $raw unsafe_pressure))
-                (eval (researchAssistantEvalSnapshotValue $raw privacy_pressure))
-                (eval (researchAssistantEvalSnapshotValue $raw unsupported_claim_pressure))
-                (eval (researchAssistantEvalSnapshotValue $raw context_loss_pressure))
-                (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_novelty))
-                (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_conduciveness))
-                (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_risk))
-                (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_effort))
-                (eval (researchAssistantEvalSnapshotValue $calibrated task_intent))
-                (eval (researchAssistantEvalSnapshotValue $calibrated ambiguity))
-                (eval (researchAssistantEvalSnapshotValue $calibrated citation_need))
-                (eval (researchAssistantEvalSnapshotValue $calibrated comparison_need))
-                (eval (researchAssistantEvalSnapshotValue $calibrated summary_need))
-                (eval (researchAssistantEvalSnapshotValue $calibrated exploration_need))
-                (eval (researchAssistantEvalSnapshotValue $calibrated unsafe_pressure))
-                (eval (researchAssistantEvalSnapshotValue $calibrated privacy_pressure))
-                (eval (researchAssistantEvalSnapshotValue $calibrated unsupported_claim_pressure))
-                (eval (researchAssistantEvalSnapshotValue $calibrated context_loss_pressure))
+                ($caseId $taskType $riskLabel $paperPath $query $expectedAction $acceptableActions)
+                ($actionId $curiosityAction $ethicsAction $individuation $transcendence
+                    $simulationError $laxError $selfModelDrift $calibrationAdjustments $text)
+                (
+                    (eval (researchAssistantEvalSnapshotValue $raw stimulus_novelty))
+                    (eval (researchAssistantEvalSnapshotValue $raw stimulus_conduciveness))
+                    (eval (researchAssistantEvalSnapshotValue $raw stimulus_risk))
+                    (eval (researchAssistantEvalSnapshotValue $raw stimulus_effort))
+                    (eval (researchAssistantEvalSnapshotValue $raw task_intent))
+                    (eval (researchAssistantEvalSnapshotValue $raw ambiguity))
+                    (eval (researchAssistantEvalSnapshotValue $raw citation_need))
+                    (eval (researchAssistantEvalSnapshotValue $raw comparison_need))
+                    (eval (researchAssistantEvalSnapshotValue $raw summary_need))
+                    (eval (researchAssistantEvalSnapshotValue $raw exploration_need))
+                    (eval (researchAssistantEvalSnapshotValue $raw unsafe_pressure))
+                    (eval (researchAssistantEvalSnapshotValue $raw privacy_pressure))
+                    (eval (researchAssistantEvalSnapshotValue $raw unsupported_claim_pressure))
+                    (eval (researchAssistantEvalSnapshotValue $raw context_loss_pressure))
+                )
+                (
+                    (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_novelty))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_conduciveness))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_risk))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated stimulus_effort))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated task_intent))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated ambiguity))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated citation_need))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated comparison_need))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated summary_need))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated exploration_need))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated unsafe_pressure))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated privacy_pressure))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated unsupported_claim_pressure))
+                    (eval (researchAssistantEvalSnapshotValue $calibrated context_loss_pressure))
+                )
             ))
         )
         ($_ False)
