@@ -17,6 +17,7 @@
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/mode_layer)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/signals)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/context_integration)
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/reasoner_proposals)
 
 ;; Minimal runtime state normally initialized by the full OmegaClaw loop.
 !(bind! &prevmsg (new-state ""))
