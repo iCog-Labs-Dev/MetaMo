@@ -17,7 +17,7 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
   - [x] Accept proposals derived by NARS/PLN inference, with LLM-supported reasoning treated as an optional proposal source.
   - [x] Keep reasoner proposals advisory: MetaMo validates and scores them, while ContextFrames or the scheduler performs approved state changes.
   - [x] Support proposals such as switching frame or entering Slow mode without obeying them automatically.
-  - [ ] Convert validated proposals into the existing typed candidate/action representation without exposing arbitrary executable commands.
+  - [x] Convert validated proposals into the existing typed candidate/action representation without exposing arbitrary executable commands.
   - [ ] Score proposals with the same candidate-scoring path as other candidates.
   - [ ] Record each accepted, rejected, deferred, or malformed proposal as a prediction or decision event.
   - [ ] Record and grade the resulting outcome using observed execution and frame-state evidence.

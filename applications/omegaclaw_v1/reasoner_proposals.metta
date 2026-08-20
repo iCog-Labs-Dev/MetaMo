@@ -154,18 +154,36 @@
               (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate 0.0)
               (ReasonerMotivationalDecision Rejected $reason $proposal $candidate 0.0)))))
 
+;; Convert only an admitted, registered candidate into MetaMo's existing
+;; typed `action` representation. The proposal's claim, support, evidence,
+;; target, and prediction are never interpreted as executable instructions.
+;; A rejected/malformed proposal produces a typed no-op action.
+(= (reasonerProposalToAction $bundle $proposal)
+   (let* (
+      ($admission (reasonerProposalAdmission $bundle $proposal))
+      ($status (index-atom $admission 1))
+      ($reason (index-atom $admission 2))
+      ($candidate (index-atom $admission 4)))
+      (if (== $status Accepted)
+          (ReasonerProposalActionResult Accepted Feasible $candidate
+             (candidateToAction $candidate))
+          (ReasonerProposalActionResult $status $reason none
+             (action none () 0.0 ())))))
+
 ;; Score an accepted proposal as the corresponding registered MetaMo action.
 ;; This is the only proposal-to-action conversion performed by MetaMo; the
 ;; returned action is data for the scheduler and is never executed here.
 (= (reasonerProposalDecision $bundle $state $proposal)
-   (let ((ReasonerMotivationalDecision $status $reason $_proposal $candidate $_score)
-            (reasonerProposalAdmission $bundle $proposal))
+   (let* (
+      ($conversion (reasonerProposalToAction $bundle $proposal))
+      ($status (index-atom $conversion 1))
+      ($reason (index-atom $conversion 2))
+      ($candidate (index-atom $conversion 3))
+      ($action (index-atom $conversion 4)))
       (if (== $status Accepted)
-          (let* (
-             ($action (candidateToAction $candidate))
-             ($score (omegaclawScoreForBundle $bundle $state $action)))
-             (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate $score))
-          (ReasonerMotivationalDecision $status $reason $proposal $candidate 0.0))))
+          (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
+             (omegaclawScoreForBundle $bundle $state $action))
+          (ReasonerMotivationalDecision $status $reason $proposal none 0.0))))
 
 ;; The proposal remains available to the scheduler as data. Only the approved
 ;; candidate is converted to the existing directive path by the caller.
