@@ -12,7 +12,8 @@
 ;;    <confidence> <evidence-refs> <prediction>)
 ;;
 ;; `candidate` is the only field that can enter MetaMo's scoring path. The
-;; other fields are explanatory/provenance data and never become commands.
+;; other fields are explanatory/provenance data or scheduler intents; they
+;; never become commands inside MetaMo.
 
 (: ReasonerMotivationalProposalType Type)
 (: ReasonerMotivationalProposal
@@ -61,6 +62,19 @@
 (= (reasonerProposalIdValid $id)
    (not (== $id ())))
 
+;; A proposal may ask the scheduler to consider a frame/mode transition. The
+;; target is deliberately data-shaped and is never passed to a ContextFrames
+;; mutation function by MetaMo.
+(= (reasonerProposalTargetValid propose-candidate $target)
+   (not (== $target ())))
+(= (reasonerProposalTargetValid request-attention $target)
+   (not (== $target ())))
+(= (reasonerProposalTargetValid request-frame-switch (FrameTarget $frame))
+   (not (== $frame ())))
+(= (reasonerProposalTargetValid request-mode-change (ModeTarget Fast)) True)
+(= (reasonerProposalTargetValid request-mode-change (ModeTarget Slow)) True)
+(= (reasonerProposalTargetValid $_ $_) False)
+
 ;; ---------------------------------------------------------------------------
 ;; Inference adapters
 ;; ---------------------------------------------------------------------------
@@ -93,6 +107,20 @@
       (LLMClaim $claim) (LLMSupport $claim)
       $confidence $evidence $prediction))
 
+(= (requestFrameSwitchProposal
+      $id $frame-id $confidence $evidence $prediction)
+   (ReasonerMotivationalProposal
+      $id nars request-frame-switch (FrameTarget $frame-id) defer
+      (SwitchFrameClaim $frame-id) (SwitchFrameSupport $frame-id)
+      $confidence $evidence $prediction))
+
+(= (requestSlowModeProposal
+      $id $confidence $evidence $prediction)
+   (ReasonerMotivationalProposal
+      $id pln request-mode-change (ModeTarget Slow) defer
+      request-slow-mode (ModeChangeSupport Slow)
+      $confidence $evidence $prediction))
+
 (= (reasonerProposalValid $proposal)
    ;; Keep the public predicate single-arity and read the positional fields
    ;; only after checking the constructor tag. Unknown shapes fail closed.
@@ -101,6 +129,7 @@
           ($id (index-atom $proposal 1))
           ($source (index-atom $proposal 2))
           ($kind (index-atom $proposal 3))
+          ($target (index-atom $proposal 4))
           ($candidate (index-atom $proposal 5))
           ($claim (index-atom $proposal 6))
           ($confidence (index-atom $proposal 8))
@@ -108,6 +137,7 @@
           (and (reasonerProposalIdValid $id)
                (reasonerProposalSourceValid $source)
                (reasonerProposalKindValid $kind)
+               (reasonerProposalTargetValid $kind $target)
                (reasonerProposalCandidateValid $candidate)
                (reasonerProposalConfidenceValid $confidence)
                (not (== $claim ()))
@@ -118,20 +148,29 @@
    (if (not (reasonerProposalValid $proposal))
        (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none)
        (let* (
-          ((ReasonerMotivationalProposal
-             (id $id) (source $source) (kind $kind) (target $target)
-             (candidate $candidate) (claim $claim) (support $support)
-             (confidence $confidence) (evidence $evidence) (prediction $prediction))
-            $proposal)
+          ($candidate (index-atom $proposal 5))
           ((GateDecision $admission $reason) (feasibilityGate $bundle $candidate)))
           (if (== $admission Admitted)
-              (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate)
-              (ReasonerMotivationalDecision Rejected $reason $proposal $candidate)))))
+              (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate 0.0)
+              (ReasonerMotivationalDecision Rejected $reason $proposal $candidate 0.0)))))
+
+;; Score an accepted proposal as the corresponding registered MetaMo action.
+;; This is the only proposal-to-action conversion performed by MetaMo; the
+;; returned action is data for the scheduler and is never executed here.
+(= (reasonerProposalDecision $bundle $state $proposal)
+   (let ((ReasonerMotivationalDecision $status $reason $_proposal $candidate $_score)
+            (reasonerProposalAdmission $bundle $proposal))
+      (if (== $status Accepted)
+          (let* (
+             ($action (candidateToAction $candidate))
+             ($score (omegaclawScoreForBundle $bundle $state $action)))
+             (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate $score))
+          (ReasonerMotivationalDecision $status $reason $proposal $candidate 0.0))))
 
 ;; The proposal remains available to the scheduler as data. Only the approved
 ;; candidate is converted to the existing directive path by the caller.
 (= (reasonerProposalToDirective $bundle $proposal $score)
-   (let (ReasonerMotivationalDecision $status $reason $_proposal $candidate)
+   (let (ReasonerMotivationalDecision $status $reason $_proposal $candidate $_score)
           (reasonerProposalAdmission $bundle $proposal)
       (if (== $status Accepted)
           (attentionDirectiveForDecision $bundle $candidate $score)
@@ -143,3 +182,26 @@
              (reason $reason)
              (priority 0)
              (source MetaMo)))))
+
+;; Scheduler-facing result. `operation` and `target` are explicit advisory
+;; fields, so a scheduler can require its own authorization/availability check
+;; before applying a frame switch or mode change. This function does not call
+;; switch-frame, switch-mode, change-state!, or any other mutator.
+(= (reasonerProposalToSchedulerDirective $bundle $state $proposal)
+   (let* (
+      ($decision (reasonerProposalDecision $bundle $state $proposal))
+      ($status (index-atom $decision 1))
+      ($reason (index-atom $decision 2))
+      ($candidate (index-atom $decision 4))
+      ($score (index-atom $decision 5))
+      ($kind (index-atom $proposal 3))
+      ($target (index-atom $proposal 4)))
+      (ReasonerMotivationalDirective
+         (proposal $proposal)
+         (status $status)
+         (reason $reason)
+         (operation $kind)
+         (target $target)
+         (candidate $candidate)
+         (score $score)
+         (source MetaMo))))
