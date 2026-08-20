@@ -4,21 +4,25 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
 
 ## Highest priority
 
-- [ ] Implement the finite mode regulator.
+- [x] Implement the finite mode regulator.
 - [x] Add the constitutional mode set: `Engaged`, `Threat`, `Rumination`, and `Sleep` for the MVP.
   - [x] Add the preemption order: Threat-remediation > Recovery > Interactive > Orienting > Engaged > Rumination > Sleep.
   - [x] Consume existing signals rather than introducing a parallel salience substrate.
   - [x] Enforce mode monotonicity: modes may tighten gates but never relax the policy floor.
   - [x] Keep trigger thresholds registry-resident and mark them as seed values.
-  - [ ] Add transition tests for collisions, preemption, and default Engaged behavior.
+  - [x] Add transition tests for collisions, preemption, and default Engaged behavior.
 
 - [ ] Add the reasoner proposal channel (R3/S3 migration seam).
-  - [ ] Add a typed `llm-motivational-proposal` candidate.
+  - [ ] Define a source-neutral typed `reasoner-motivational-proposal` boundary.
+  - [ ] Accept proposals derived by NARS/PLN inference, with LLM-supported reasoning treated as an optional proposal source.
+  - [ ] Keep reasoner proposals advisory: MetaMo validates and scores them, while ContextFrames or the scheduler performs approved state changes.
   - [ ] Support proposals such as switching frame or entering Slow mode without obeying them automatically.
+  - [ ] Convert validated proposals into the existing typed candidate/action representation without exposing arbitrary executable commands.
   - [ ] Score proposals with the same candidate-scoring path as other candidates.
-  - [ ] Record each accepted or rejected proposal as a prediction.
-  - [ ] Record and grade the resulting outcome.
-  - [ ] Increase or decrease proposal influence from graded performance.
+  - [ ] Record each accepted, rejected, deferred, or malformed proposal as a prediction or decision event.
+  - [ ] Record and grade the resulting outcome using observed execution and frame-state evidence.
+  - [ ] Increase or decrease proposal influence from graded performance and source reliability.
+  - [ ] Add an explicit NARS/PLN-to-proposal adapter for typed facts, inferred conclusions, support, confidence, and evidence references.
   - [ ] Define the retirement criteria for the interim operation-class dispatcher.
 
 - [ ] Complete relation evidence lifecycle (R7).
@@ -95,6 +99,8 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
 
 - [ ] Add complete mode-layer integration tests.
 - [ ] Add reasoner-proposal acceptance, rejection, prediction, and grading tests.
+  - [ ] Add NARS/PLN inference-to-proposal adapter tests.
+  - [ ] Add tests proving proposals cannot bypass feasibility, budget, mode, permission, or frame constraints.
 - [ ] Add relation verification write-back tests.
 - [ ] Add safety-pruning tests for constraints, permissions, egress, and skills.
 - [ ] Add commitment lifecycle and starvation-prevention tests.
