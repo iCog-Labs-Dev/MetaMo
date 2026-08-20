@@ -170,6 +170,18 @@
           (ReasonerProposalActionResult $status $reason none
              (action none () 0.0 ())))))
 
+;; Proposal scoring deliberately delegates to the same bundle-aware scorer used
+;; by ordinary candidates. No separate reasoner-specific weighting path is
+;; applied here; provenance and confidence remain proposal metadata.
+(= (reasonerProposalScore $bundle $state $proposal)
+   (let* (
+      ($conversion (reasonerProposalToAction $bundle $proposal))
+      ($status (index-atom $conversion 1))
+      ($action (index-atom $conversion 4)))
+      (if (== $status Accepted)
+          (omegaclawScoreForBundle $bundle $state $action)
+          0.0)))
+
 ;; Score an accepted proposal as the corresponding registered MetaMo action.
 ;; This is the only proposal-to-action conversion performed by MetaMo; the
 ;; returned action is data for the scheduler and is never executed here.
@@ -182,7 +194,7 @@
       ($action (index-atom $conversion 4)))
       (if (== $status Accepted)
           (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
-             (omegaclawScoreForBundle $bundle $state $action))
+             (reasonerProposalScore $bundle $state $proposal))
           (ReasonerMotivationalDecision $status $reason $proposal none 0.0))))
 
 ;; The proposal remains available to the scheduler as data. Only the approved
