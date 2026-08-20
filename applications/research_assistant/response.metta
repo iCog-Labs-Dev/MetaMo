@@ -326,7 +326,6 @@
             (eval (researchAssistantExecutionInstruction $actionId))
             (eval (stateGoal $state individuation))
             (eval (stateGoal $state transcendence))
-            (researchAssistantSystemInstruction)
         )
     )
 )
