@@ -18,12 +18,36 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
   - [x] Keep reasoner proposals advisory: MetaMo validates and scores them, while ContextFrames or the scheduler performs approved state changes.
   - [x] Support proposals such as switching frame or entering Slow mode without obeying them automatically.
   - [x] Convert validated proposals into the existing typed candidate/action representation without exposing arbitrary executable commands.
-  - [ ] Score proposals with the same candidate-scoring path as other candidates.
-  - [ ] Record each accepted, rejected, deferred, or malformed proposal as a prediction or decision event.
-  - [ ] Record and grade the resulting outcome using observed execution and frame-state evidence.
-  - [ ] Increase or decrease proposal influence from graded performance and source reliability.
-  - [ ] Add an explicit NARS/PLN-to-proposal adapter for typed facts, inferred conclusions, support, confidence, and evidence references.
-  - [ ] Define the retirement criteria for the interim operation-class dispatcher.
+  - [x] Score proposals with the same candidate-scoring path as other candidates.
+  - [x] Record each accepted, rejected, deferred, or malformed proposal as a prediction or decision event.
+  - [x] Record and grade the resulting outcome using observed execution and frame-state evidence.
+  - [x] Increase or decrease proposal influence from graded performance and source reliability.
+  - [x] Add an explicit NARS/PLN-to-proposal adapter for typed facts, inferred conclusions, support, confidence, and evidence references.
+  - [x] Define the retirement criteria for the interim operation-class dispatcher.
+
+### Interim operation-class dispatcher retirement criteria
+
+The dispatcher may be retired only when every condition below is demonstrated
+in the integration test suite and in one end-to-end OmegaClaw run:
+
+- Every dispatcher operation class has a typed proposal representation and a
+  scheduler-owned handler; no class depends on a free-form command string.
+- NARS/PLN proposals can reach the same candidate/action conversion,
+  feasibility gates, and scoring path as native candidates.
+- Frame-switch and mode-change proposals are emitted as advisory directives;
+  MetaMo or a reasoner cannot call a ContextFrames mutator directly.
+- Accepted, rejected, deferred, and malformed proposals produce decision
+  events, and post-execution outcomes are recorded with execution and
+  frame-state evidence.
+- Proposal source reliability and influence are updated from graded outcomes,
+  with an auditable source/proposal identifier on every update.
+- Safety-parity tests prove that proposal-originated actions cannot bypass
+  frame, mode, budget, permission, skill, or egress constraints.
+- The scheduler consumes proposal directives for a complete vertical slice,
+  including transition proposals, and the dispatcher fallback remains unused
+  for that slice.
+- A rollback path exists for rejected or unavailable proposals, so retiring the
+  dispatcher does not turn a missing reasoner proposal into an implicit action.
 
 - [ ] Complete relation evidence lifecycle (R7).
   - [ ] Route same-frame judgments to an explicit `verify-frame-state` operation or suspension state.

@@ -20,6 +20,21 @@
    (-> Symbol Symbol Symbol Expression Symbol Expression Expression
        Number Expression Expression ReasonerMotivationalProposalType))
 
+;; Typed inference payloads accepted by the NARS/PLN adapters. These are
+;; provenance records, not executable terms.
+(: ReasonerInferenceFactType Type)
+(: NARSFact (-> Expression Expression Expression ReasonerInferenceFactType))
+(: PLNFact (-> Expression Expression Expression ReasonerInferenceFactType))
+(: InferredConclusion (-> Symbol Expression ReasonerInferenceFactType))
+(: InferenceSupport (-> Symbol Expression Expression ReasonerInferenceFactType))
+(: EvidenceReferences (-> Expression ReasonerInferenceFactType))
+
+;; Append-only local audit substrate. The scheduler/ContextFrames integration
+;; may additionally persist these records in its durable event log.
+!(bind! &reasoner-proposal-events (new-space))
+!(bind! &reasoner-proposal-outcomes (new-space))
+!(bind! &reasoner-source-reliability (new-space))
+
 (= (reasonerProposalSources) (nars pln llm rule-engine human-adapter))
 (= (reasonerInferenceSources) (nars pln))
 (= (reasonerOptionalProposalSources) (llm))
@@ -79,23 +94,44 @@
 ;; Inference adapters
 ;; ---------------------------------------------------------------------------
 ;; NARS and PLN are first-class inference sources. Their engines only need to
-;; provide a conclusion, normalized confidence, evidence references, the
-;; registered candidate they recommend, and an expected outcome. The adapter
-;; adds provenance without exposing engine-specific terms to MetaMo.
+;; provide typed facts, an inferred conclusion, typed support, normalized
+;; confidence, evidence references, the registered candidate they recommend,
+;; and an expected outcome. The adapter adds provenance without exposing
+;; engine-specific execution terms to MetaMo.
+
+(= (narsFactsToProposal
+      $id $facts $conclusion $support $confidence $evidence
+      $candidate $prediction)
+   (ReasonerMotivationalProposal
+      $id nars propose-candidate current-frame $candidate
+      (InferredConclusion nars $conclusion)
+      (InferenceSupport nars $facts $support)
+      $confidence
+      (EvidenceReferences $evidence)
+      $prediction))
+
+(= (plnFactsToProposal
+      $id $facts $conclusion $support $confidence $evidence
+      $candidate $prediction)
+   (ReasonerMotivationalProposal
+      $id pln propose-candidate current-frame $candidate
+      (InferredConclusion pln $conclusion)
+      (InferenceSupport pln $facts $support)
+      $confidence
+      (EvidenceReferences $evidence)
+      $prediction))
 
 (= (narsInferenceToProposal
       $id $conclusion $confidence $evidence $candidate $prediction)
-   (ReasonerMotivationalProposal
-      $id nars propose-candidate current-frame $candidate
-      (NARSConclusion $conclusion) (NARSSupport $conclusion)
-      $confidence $evidence $prediction))
+   (narsFactsToProposal
+      $id () $conclusion (NARSSupport $conclusion) $confidence $evidence
+      $candidate $prediction))
 
 (= (plnInferenceToProposal
       $id $conclusion $confidence $evidence $candidate $prediction)
-   (ReasonerMotivationalProposal
-      $id pln propose-candidate current-frame $candidate
-      (PLNConclusion $conclusion) (PLNSupport $conclusion)
-      $confidence $evidence $prediction))
+   (plnFactsToProposal
+      $id () $conclusion (PLNSupport $conclusion) $confidence $evidence
+      $candidate $prediction))
 
 ;; LLM reasoning is deliberately an optional adapter. If it is not wired by
 ;; the host, no proposals are produced; if wired, its output is still subject
@@ -182,6 +218,157 @@
           (omegaclawScoreForBundle $bundle $state $action)
           0.0)))
 
+;; Reliability priors are deliberately conservative and source-specific. They
+;; are not MetaMo candidate scores; they only influence how much a proposal
+;; source's recommendation affects the final proposal score.
+(= (reasonerSourceReliabilityPrior nars) 0.80)
+(= (reasonerSourceReliabilityPrior pln) 0.80)
+(= (reasonerSourceReliabilityPrior llm) 0.50)
+(= (reasonerSourceReliabilityPrior rule-engine) 0.75)
+(= (reasonerSourceReliabilityPrior human-adapter) 0.70)
+(= (reasonerSourceReliabilityPrior $_) 0.0)
+
+(= (reasonerSourceReliability $source)
+   (let $rows (collapse (match &reasoner-source-reliability
+      (ReasonerSourceReliability $source $value)
+      (ReasonerSourceReliability $source $value)))
+      (if (== $rows ())
+          (reasonerSourceReliabilityPrior $source)
+          (index-atom (car-atom $rows) 2))))
+
+;; The learned reliability uses a 20% update step so one noisy outcome cannot
+;; dominate the source prior. Grades come only from observed outcomes.
+(= (reasonerSourceReliabilityAfterGrade $source $grade)
+   (clampValue (+ (* 0.80 (reasonerSourceReliability $source))
+                  (* 0.20 $grade))))
+
+(= (updateReasonerSourceReliability $source $grade)
+   (let* (
+      ($oldRows (collapse (match &reasoner-source-reliability
+         (ReasonerSourceReliability $source $old)
+         (ReasonerSourceReliability $source $old))))
+      ($_ (if (== $oldRows ())
+              ()
+              (remove-atom &reasoner-source-reliability
+                 (car-atom $oldRows))))
+      ($new (reasonerSourceReliabilityAfterGrade $source $grade))
+      ($_ (add-atom &reasoner-source-reliability
+             (ReasonerSourceReliability $source $new))))
+      $new))
+
+;; Influence is bounded by both source reliability and the proposal's own
+;; confidence. It never bypasses feasibility and never creates an action.
+(= (reasonerProposalInfluence $proposal)
+   (let* (
+      ($source (index-atom $proposal 2))
+      ($confidence (index-atom $proposal 8)))
+      (clampValue (* $confidence (reasonerSourceReliability $source)))))
+
+(= (reasonerProposalEffectiveScore $bundle $state $proposal)
+   (* (reasonerProposalScore $bundle $state $proposal)
+      (reasonerProposalInfluence $proposal)))
+
+;; A transition proposal can be valid, feasible, and scored while still being
+;; deferred until the scheduler performs its own authorization/availability
+;; check. This is distinct from rejection and malformed input.
+(= (reasonerProposalDisposition $proposal Accepted)
+   (let $kind (index-atom $proposal 3)
+      (if (or (== $kind request-frame-switch)
+              (== $kind request-mode-change))
+          Deferred
+          Accepted)))
+(= (reasonerProposalDisposition $_ $status) $status)
+
+(= (recordReasonerProposalEvent $proposal $decision)
+   (let* (
+      ($status (index-atom $decision 1))
+      ($disposition (reasonerProposalDisposition $proposal $status))
+      ($event (ReasonerProposalEvent
+         (proposal $proposal)
+         (decision $decision)
+         (disposition $disposition)))
+      ($_ (add-atom &reasoner-proposal-events $event)))
+      $event))
+
+(= (reasonerProposalEvents)
+   (collapse (match &reasoner-proposal-events
+      (ReasonerProposalEvent
+         (proposal $proposal) (decision $decision) (disposition $disposition))
+      (ReasonerProposalEvent
+         (proposal $proposal) (decision $decision) (disposition $disposition)))))
+
+;; ---------------------------------------------------------------------------
+;; Outcome grading
+;; ---------------------------------------------------------------------------
+;; Outcome evidence is supplied after the scheduler/ContextFrames layer has
+;; observed execution. MetaMo never infers execution from the proposal itself.
+;;
+;; Execution status: Completed | Failed | Blocked | Unobserved
+;; Frame evidence:   Confirmed | Refuted | Unresolved
+
+(= (reasonerProposalOutcomeGrade Completed Confirmed) 1.0)
+(= (reasonerProposalOutcomeGrade Completed Unresolved) 0.75)
+(= (reasonerProposalOutcomeGrade Completed Refuted) 0.0)
+(= (reasonerProposalOutcomeGrade Failed Confirmed) 0.25)
+(= (reasonerProposalOutcomeGrade Failed Unresolved) 0.0)
+(= (reasonerProposalOutcomeGrade Failed Refuted) 0.0)
+(= (reasonerProposalOutcomeGrade Blocked Confirmed) 0.25)
+(= (reasonerProposalOutcomeGrade Blocked Unresolved) 0.25)
+(= (reasonerProposalOutcomeGrade Blocked Refuted) 0.0)
+(= (reasonerProposalOutcomeGrade Unobserved Confirmed) 0.5)
+(= (reasonerProposalOutcomeGrade Unobserved Unresolved) 0.5)
+(= (reasonerProposalOutcomeGrade Unobserved Refuted) 0.0)
+
+(= (reasonerProposalOutcomeClass Completed Confirmed) Confirmed)
+(= (reasonerProposalOutcomeClass Completed Unresolved) Unresolved)
+(= (reasonerProposalOutcomeClass Completed Refuted) Refuted)
+(= (reasonerProposalOutcomeClass Failed $_) Refuted)
+(= (reasonerProposalOutcomeClass Blocked $_) Unresolved)
+(= (reasonerProposalOutcomeClass Unobserved $_) Unresolved)
+
+;; `execution-evidence` and `frame-state-evidence` are bounded observations
+;; supplied by the host. They are retained verbatim for audit/grading and are
+;; not treated as executable instructions.
+(= (recordReasonerProposalOutcome
+      $proposal-event $execution-status $execution-evidence
+      $frame-evidence-status $frame-state-evidence)
+   (let* (
+      ($grade (reasonerProposalOutcomeGrade
+         $execution-status $frame-evidence-status))
+      ($outcome (reasonerProposalOutcomeClass
+         $execution-status $frame-evidence-status))
+      ($event (ReasonerProposalOutcomeEvent
+         (proposal-event $proposal-event)
+         (execution-status $execution-status)
+         (execution-evidence $execution-evidence)
+         (frame-evidence-status $frame-evidence-status)
+         (frame-state-evidence $frame-state-evidence)
+         (outcome $outcome)
+         (grade $grade)))
+      ($_ (add-atom &reasoner-proposal-outcomes $event))
+      ($proposal-field (index-atom $proposal-event 1))
+      ($proposal (index-atom $proposal-field 1))
+      ($source (index-atom $proposal 2))
+      ($_ (updateReasonerSourceReliability $source $grade)))
+      $event))
+
+(= (reasonerProposalOutcomes)
+   (collapse (match &reasoner-proposal-outcomes
+      (ReasonerProposalOutcomeEvent
+         (proposal-event $proposal-event)
+         (execution-status $execution-status)
+         (execution-evidence $execution-evidence)
+         (frame-evidence-status $frame-evidence-status)
+         (frame-state-evidence $frame-state-evidence)
+         (outcome $outcome) (grade $grade))
+      (ReasonerProposalOutcomeEvent
+         (proposal-event $proposal-event)
+         (execution-status $execution-status)
+         (execution-evidence $execution-evidence)
+         (frame-evidence-status $frame-evidence-status)
+         (frame-state-evidence $frame-state-evidence)
+         (outcome $outcome) (grade $grade)))))
+
 ;; Score an accepted proposal as the corresponding registered MetaMo action.
 ;; This is the only proposal-to-action conversion performed by MetaMo; the
 ;; returned action is data for the scheduler and is never executed here.
@@ -192,10 +379,13 @@
       ($reason (index-atom $conversion 2))
       ($candidate (index-atom $conversion 3))
       ($action (index-atom $conversion 4)))
-      (if (== $status Accepted)
-          (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
-             (reasonerProposalScore $bundle $state $proposal))
-          (ReasonerMotivationalDecision $status $reason $proposal none 0.0))))
+      ($decision
+         (if (== $status Accepted)
+             (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
+                (reasonerProposalEffectiveScore $bundle $state $proposal))
+             (ReasonerMotivationalDecision $status $reason $proposal none 0.0))))
+      ($_ (recordReasonerProposalEvent $proposal $decision)))
+      $decision))
 
 ;; The proposal remains available to the scheduler as data. Only the approved
 ;; candidate is converted to the existing directive path by the caller.
