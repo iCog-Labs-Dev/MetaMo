@@ -40,6 +40,14 @@ The decision report is printed by `printQwestorResult`, so the terminal shows
 the selected action, candidate list, stimulus values, and the next motivation
 state after the cycle completes.
 
+## API Service
+
+The Qwestor usecase now includes a FastAPI service for creating and retrieving
+sessions, running a single reasoning cycle, and deleting sessions. PostgreSQL
+stores session state and cycle decisions, Redis provides caching and per-session
+locking, and Alembic manages the database schema. Docker Compose runs the API
+and its supporting services together.
+
 ## Environment Setup
 
 For the usecase folder, define the following variables:
@@ -47,8 +55,34 @@ For the usecase folder, define the following variables:
 ```env
 GEMINI_API_KEY=your_api_key_here
 GEMINI_MODEL=your_model_name_here
+POSTGRES_DB=your_postgres_db
+POSTGRES_USER=your_postgres_user
+POSTGRES_PASSWORD=your_postgres_password
+DATABASE_URL=postgresql+psycopg2://metamo:your_postgres_password@postgres:5432/metamo
+REDIS_URL=redis://redis:6379/0
 ```
 
+
+## Run and Test the API
+
+From the repository root, apply the migration and start the service:
+
+```bash
+docker compose build
+docker compose run --rm migrate
+docker compose up api
+```
+
+Open Swagger UI at [http://localhost:8000/docs](http://localhost:8000/docs).
+Create a session with `POST /v1/sessions`, then use its `session_id` and
+`state_version` with `POST /v1/sessions/{session_id}/cycles`. The cycle endpoint
+also requires a unique `Idempotency-Key` header. Use
+`GET /v1/sessions/{session_id}` to verify the updated session state.
+
+To inspect the persisted data in DBeaver, create a PostgreSQL connection to
+`localhost:5432` using the database, username, and password from `.env`. The
+`sessions`, `cycle_decisions`, and `idempotency_keys` tables are under the
+`public` schema.
 
 ## References
 

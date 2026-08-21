@@ -235,6 +235,7 @@
             ($old-state (match $space ($g $m $a) ($g $m $a)))
             ($_ (remove-atom $space $old-state))
             ($_ (initializeSessionSpace $space))
+            ($_ (saveCurrentSession $space))
             ($_ (qwestorLoopFromList $space (sessionQueries)))
             ($_ (println! ("========== Finished session: " $session-id " ==========\n")))
         )
@@ -243,22 +244,10 @@
 )
 
 ; TEST 1: Session Replay from Stored Queries
-; Replays all queries 
-
-!(qwestorLoopFromAllSessions &space (sessionIds))
+; (qwestorLoopFromAllSessions &space (sessionIds))
 
 ; TEST 2: Interactive Qwestor loop
-; Starts the interactive conversation loop with an initial query.
-; After each response, the system prompts for additional user input.
-;   - Motivation state updates persist across turns
-;   - Session state and logs are saved on exit/quit
-
 ; (qwestorLoop &space "Decompose this into a 6-step plan to compare two algorithms")
 
 ; TEST 3: Single-turn Qwestor execution
-; Executes exactly one Qwestor cycle and returns the selected
-; action and generated response.
-; Intended for rapid testing/debugging of the reasoning pipeline
-; without entering the conversation loop.
-
 ; (runQwestor &space "Can I rely on this exact statistic without checking sources?")
