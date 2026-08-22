@@ -1,5 +1,5 @@
-!(import! &self ../anti_goal_helpers)
-!(import! &self ../utils)
+!(import! &self ../helper/anti_goal_helpers)
+!(import! &self ../helper/utils)
 !(import! &self ../config)
 
 !(bind! &space (new-space))

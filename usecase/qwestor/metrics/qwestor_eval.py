@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-USECASE_DIR = Path(__file__).resolve().parents[1]
-LOGS_DIR = USECASE_DIR / "eval"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+QWESTOR_DIR = Path(__file__).resolve().parents[1]
+LOGS_DIR = QWESTOR_DIR / "eval"
 RAW_RESULTS_PATH = LOGS_DIR / "raw_runs.json"
 EVALUATION_RESULTS_PATH = LOGS_DIR / "evaluation_results.json"
 
@@ -151,7 +151,7 @@ def normalize_stimulus(stimulus: Any) -> dict[str, float]:
 
 
 def _load_session_specs() -> list[dict[str, Any]]:
-    session_file = USECASE_DIR / "tests" / "session_short.py"
+    session_file = QWESTOR_DIR / "tests" / "session_short.py"
     if not session_file.exists():
         return []
 

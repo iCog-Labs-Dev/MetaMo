@@ -1,5 +1,5 @@
 !(import! &self ../../config)
-!(import! &self ../../utils)
+!(import! &self ../../helper/utils)
 !(import! &self ../state_bridge)
 
 !(bind! &space (new-space))

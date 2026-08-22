@@ -118,7 +118,7 @@ Defines everything the system starts with when there is no prior session:
 - **`alpha`** — learning rates and thresholds used elsewhere in MetaMo (e.g. `goal_alpha 0.18`, `decompose_min_complexity 0.60`, `intent_margin 0.12`). These tune *how fast* the state moves and *where the boundaries* between actions sit.
 - **`default-mods`** — the 13 Qwestor modulators (`m_urgency`, `m_resolution`, `m_user_expertise`, `m_threshold`, `m_topic_familiarity`, `m_failure_wariness`, `m_securing`, `m_approach`, `m_arousal`, `m_risk_aversion`, `m_error_tolerance`, `m_creativity`, `m_valence`).
 - **`default-goals`** — the 14 Qwestor goals (`efficiency`, `accuracy`, `success_moderate`, `knowledge`, `novelty`, `success_breakthrough`, `coherence`, `originality`, `social`, `help_short`, `help_long`, `over_beneficial`, `over_safety`, `over_honesty`).
-- **`default-anti-goals`** — 4 values (`hallucinate`, `redundant`, `rabbit_hole`, `premature`) that penalize risky actions dynamically (see §3.2).
+- **`default-anti-goals`** — 4 values (`hallucinate`, `redundant`, `rabbit_hole`, `premature`) that penalize risky actions dynamically (see 3.2).
 
 ### 3.2 `adapters/qwestor_actions.metta`
 Declares Qwestor's **7 cognitive actions**, each as a MetaMo `(action $id $goalCorrelations $riskEstimate $deltaG)` atom:
@@ -161,14 +161,14 @@ Each "family" is a short list, e.g. `qwestorVerifyCandidates = (act_verify, act_
 ### 3.3 `adapters/state_bridge.metta`
 Converts between Qwestor's 14-goal and 13-modulator internal state into MetaMo's 8-goaland 6-modulator `(motivation goals modulators)` atom, in both directions:
 
-- **`projectToMotivation`** (Qwestor → MetaMo), using averages/means as documented in §4.2 below.
+- **`projectToMotivation`** (Qwestor → MetaMo), using averages/means as documented in 4.2 below.
 - **`injectMotivation`** (MetaMo → Qwestor), the inverse it writes MetaMo's updated goals/modulators back into Qwestor's larger state, while preserving the Qwestor-only fields.
 - **`motivationSummary`** — turns a motivation atom into a human-readable pair-list for logging.
 
 This round-trip (`projectToMotivation` → MetaMo cycle → `injectMotivation`) gives Qwestor **motivational continuity across turns**: the state a session ends turn N in is the state it starts turn N+1 from.
 
 ### 3.4 `adapters/stimulus_adapter.metta`
-Converts the 14-signal context list from `context_parser.py` into MetaMo's 4-value `(stimulus novelty conduciveness risk effort)` atom. Exact formulas are in §4.3.
+Converts the 14-signal context list from `context_parser.py` into MetaMo's 4-value `(stimulus novelty conduciveness risk effort)` atom. Exact formulas are in 4.3.
 
 ### 3.5 `context_parser.py`
 Calls an LLM (Gemini) with a fixed system prompt/schema and asks it to classify the raw user query into 14 numeric/boolean/categorical signals:
@@ -180,7 +180,7 @@ Key features:
 - Retries up to 3 times with a 10s backoff (`wrap_parser`), and falls back to the static `context` defaults, if all attempts fail — the pipeline never crashes on a parser outage, it just runs with a neutral context.
 
 ### 3.6 `main-loop.metta`
-The orchestrator. Its centerpiece is `runQwestor`, an 11-step pipeline (detailed in §4 with a live example). It also provides:
+The orchestrator. Its centerpiece is `runQwestor`, an 11-step pipeline (detailed in 4 with a live example). It also provides:
 
 - **`qwestorLoop`** — an interactive REPL: keeps calling `runQwestor` on new user input until `quit`/`exit`, then persists the session.
 - **`qwestorLoopFromList`** — replays a fixed list of queries (used for the canned test sessions in `tests/session_short.py`).
@@ -285,7 +285,7 @@ effort          = C(0.20×complexity + 0.10×ambiguity + task_boost + ms_boost)
 ```
 
 ### 4.4 Step 5 — Candidate filtering
-See §3.2. Serves as deterministic gate, it happens *before* MetaMo runs, so MAGUS is scoring a short, relevant list, not all 7 actions every time.
+See 3.2. Serves as deterministic gate, it happens *before* MetaMo runs, so MAGUS is scoring a short, relevant list, not all 7 actions every time.
 
 ### 4.5 Step 6 — Inside the MetaMo cycle
 1. **Merge subsystem states** — if only one subsystem is active , the merged state is just that subsystem's state; with more than one it uses a weighted `parallelMerge`.
@@ -378,13 +378,13 @@ This whole turn (query, selected action, answer, all four candidate scores, the 
 Set `(= (sessionId) "your_new_id")` in `main-loop.metta`. On first run there will be no file under `sessions/your_new_id.json`, so `main-loop.metta` will fall back to `(default-goals) (default-mods) (default-anti-goals)` from `config.metta`. Every subsequent run from that point resumes from whatever was last saved.
 
 ### 6.3 Adding a new cognitive action
-1. Add a `(QwestorAction act_yourname (action act_yourname (goalCorrelations) riskEstimate (deltaG)))` block to `qwestor_actions.metta`, following the 8-slot goal-correlation ordering in §4.2 (`gInd gTrans gHelp gCurio gNovel gSelf gEthic gSoc`).
+1. Add a `(QwestorAction act_yourname (action act_yourname (goalCorrelations) riskEstimate (deltaG)))` block to `qwestor_actions.metta`, following the 8-slot goal-correlation ordering in 4.2 (`gInd gTrans gHelp gCurio gNovel gSelf gEthic gSoc`).
 2. Add a matching `(QwestorAntiGoalExposure act_yourname (hallucinate redundant rabbit_hole premature))` line.
-3. Add it to `qwestorCandidates` and to whichever context-family list(s) in §3.2 it should be considered under.
+3. Add it to `qwestorCandidates` and to whichever context-family list(s) in 3.2 it should be considered under.
 4. Add test queries and expected action to `tests/session_short.py` so `qwestor_eval.py` can immediately tell you whether your new action is winning or losing against the existing ones in the situations you intended it for.
 
 ### 6.4 Tuning candidate-selection thresholds
-All the numbers that decide which family of actions gets considered (`ambiguity > 0.65`, `threshold > 0.75`, etc. in §3.2, and the stimulus boost thresholds in §4.3) are meant to be tuned, not treated as fixed constants.  
+All the numbers that decide which family of actions gets considered (`ambiguity > 0.65`, `threshold > 0.75`, etc. in 3.2, and the stimulus boost thresholds in 4.3) are meant to be tuned, not treated as fixed constants.  
 
 ### 6.5 Evaluating changes
 After any change to actions, thresholds, or projection formulas:
