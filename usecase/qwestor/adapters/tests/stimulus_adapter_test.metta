@@ -1,4 +1,4 @@
-!(import! &self ../../utils)  
+!(import! &self ../../helper/utils)  
 !(import! &self ../stimulus_adapter)
 
 

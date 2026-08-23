@@ -1,6 +1,6 @@
-!(import! &self ../utils)
+!(import! &self ../helper/utils)
 !(import! &self ../config)
-!(import! &self ../session_helpers)
+!(import! &self ../helper/session_helpers)
 
 ; updateState: replace the entire goals/modulators/anti-goals triple in a space.
 !(bind! &testSpace (new-space))
