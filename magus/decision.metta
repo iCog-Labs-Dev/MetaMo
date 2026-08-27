@@ -1,176 +1,97 @@
-;; MAGUS Hierarchical Decision Layer
+;; Canonical profile-aware MAGUS decision wrapper.
 
-;; Goal-to-Modulator Relevance Mapping
-;; Maps each goal to its most relevant modulator(s) for scoring.
-(goalModulatorRelevance gHelp (resolution))
-(goalModulatorRelevance gCurio (arousal))
-(goalModulatorRelevance gNovel (approach))
-(goalModulatorRelevance gEthic (threshold securing))
-(goalModulatorRelevance gSoc (valence approach))
-(goalModulatorRelevance gSelf (approach resolution))
+(: MagusDecision Type)
+(: magusDecision (-> DecisionProfile Symbol Number Number MagusDecision))
 
-;; Goal Category Atoms for Overgoal Support
-(goalMetaDrive gHelp individuation)
-(goalMetaDrive gEthic individuation)
-(goalMetaDrive gCurio transcendence)
-(goalMetaDrive gNovel transcendence)
-(goalMetaDrive gSelf dual)
-(goalMetaDrive gSoc dual)
-
-;; Exploratory Growth Goal Set
-(growthGoal gCurio)
-(growthGoal gNovel)
-(growthGoal gSelf)
-
-;; Calculates the average modulator value for a list of modulators relevant to a goal.
-(= (sumModulators $mods $state)
-    (if (== $mods ())
-        0.0
-        (let* (
-            (($head $tail) (decons $mods))
-            ($val (eval (getModulator $state $head)))
-        )
-            (+ $val (sumModulators $tail $state))
-        )
-    )
+;; Return the profile from a canonical MAGUS decision wrapper.
+;; Example: (magusDecisionProfile (magusDecision profile defaultGoalChangeDeltaG 0.5 0.5)) -> profile
+(= (magusDecisionProfile (magusDecision $profile $goalChangeFn $lambdaInd $lambdaTrans))
+    $profile
 )
 
-;; Retrieve the relevant modulator weight for a goal (average of relevant modulators).
-;; Example: (magusRelevantModulator $state gEthic) → average of threshold and securing
-(= (magusRelevantModulator $state $goalName)
-    (let $result (match &self (goalModulatorRelevance $goalName $mods) $mods)
-        (if (== $result ())
-            0.0
-            (/ (sumModulators $result $state) (size-atom $result))
-        )
-    )
+;; Return the goal-change function from a canonical MAGUS decision wrapper.
+;; Example: (magusDecisionGoalChangeFn (magusDecision profile defaultGoalChangeDeltaG 0.5 0.5)) -> defaultGoalChangeDeltaG
+(= (magusDecisionGoalChangeFn (magusDecision $profile $goalChangeFn $lambdaInd $lambdaTrans))
+    $goalChangeFn
 )
 
-;; Compute overgoal support for a goal based on individuation and transcendence meta-drives.
-(= (magusOvergoalSupport $goalName $indSignal $transSignal)
-    (let $drive (match &self (goalMetaDrive $goalName $d) $d)
-        (case $drive (
-            (individuation (+ 0.5 (* 0.5 $indSignal)))
-            (transcendence (+ 0.5 (* 0.5 $transSignal)))
-            (dual (+ 0.5 (* 0.25 (+ $indSignal $transSignal))))
-            ($_ 1.0)
-        ))
-    )
+;; Return the individuation lambda.
+;; Example: (magusDecisionLambdaInd (magusDecision profile fn 0.5 0.5)) -> 0.5
+(= (magusDecisionLambdaInd (magusDecision $profile $goalChangeFn $lambdaInd $lambdaTrans))
+    $lambdaInd
 )
 
-;; Retrieve indices for growth goals to eliminate hardcoded (3 4 5).
-(= (getGrowthIndices)
-    (collapse (match &self (growthGoal $name) (match &self (GoalIndex $name $idx) $idx)))
+;; Return the transcendence lambda.
+;; Example: (magusDecisionLambdaTrans (magusDecision profile fn 0.5 0.5)) -> 0.5
+(= (magusDecisionLambdaTrans (magusDecision $profile $goalChangeFn $lambdaInd $lambdaTrans))
+    $lambdaTrans
 )
 
-;; Compute the normalized growth signal for a candidate action.
-(= (magusNormalizedGrowthSignal $candidate)
-    (let* (
-        ($growthIndices (getGrowthIndices))
-        ($corrs (actionGoalCorrelations $candidate))
-        ($deltaG (actionDeltaG $candidate))
-        ($exploratoryAlignment (meanAtIndices $corrs $growthIndices))
-        ;; Measure shift normalized by typical step size
-        ($growthShift (meanAtIndices (clipVector (scaleArray $deltaG 10.0) 0.0 1.0) $growthIndices))
-    )
-        (+ (* 0.7 (positivePart $exploratoryAlignment))
-           (* 0.3 $growthShift))
-    )
+;; Construct the default canonical MAGUS decision wrapper.
+;; Example: (makeMagusDecision profile) -> (magusDecision profile defaultGoalChangeDeltaG 0.5 0.5)
+(= (makeMagusDecision $profile)
+    (magusDecision $profile defaultGoalChangeDeltaG 0.5 0.5)
 )
 
-;; Compute the weighted contribution of a specific goal to the total score.
-(= (goalScoreContribution $state $candidate $goalName $indSignal $transSignal)
-    (let* (
-        ($weight (eval (getGoal $state $goalName)))
-        ($modWeight (magusRelevantModulator $state $goalName))
-        ($metaSupport (magusOvergoalSupport $goalName $indSignal $transSignal))
-        ($idx (match &self (GoalIndex $goalName $i) $i))
-        ($corr (index-atom (eval (actionGoalCorrelations $candidate)) $idx))
-    )
-        (* (* (* $weight $modWeight) $metaSupport) $corr)
-    )
+;; Canonical monadic unit.
+;; Example: (profiledMagusUnit state) -> state
+(= (profiledMagusUnit $state)
+    $state
 )
 
-;; Recursively sum contributions for a list of goal names.
-(= (sumGoalContributions $goals $state $candidate $indSignal $transSignal)
-    (if (== $goals ())
-        0.0
-        (let* (
-                (($head $tail) (decons $goals))
-                ($headScore (goalScoreContribution $state $candidate $head $indSignal $transSignal))
-                ($tailScore (sumGoalContributions $tail $state $candidate $indSignal $transSignal))
-            )
-            (+ $headScore $tailScore)
-        )
-    )
+;; Score a candidate with explicit profile and lambdas.
+;; Example: (profiledMagusScore profile state candidate 0.5 0.5) -> score
+(= (profiledMagusScore $profile $state $candidate $lambdaInd $lambdaTrans)
+    (decisionProfileScoreCandidate $profile $state $candidate $lambdaInd $lambdaTrans)
 )
 
-(= (getGoalIndex $goalName)
-    (match &self (GoalIndex $goalName $idx) $idx)
+;; Propose Delta G through an explicit goal-change function.
+;; Example: (profiledMagusProposeDeltaG defaultGoalChangeDeltaG profile state candidate feedback 0.5 0.5) -> delta-vector
+(= (profiledMagusProposeDeltaG $goalChangeFn $profile $state $candidate $feedback $lambdaInd $lambdaTrans)
+    (eval ($goalChangeFn $profile $state $candidate $feedback $lambdaInd $lambdaTrans))
 )
 
-;; MAGUS Score Candidate
-(= (magusScore $state $candidate)
-    (let* (
-        ($gInd (eval (getGoal $state gInd)))
-        ($gTrans (eval (getGoal $state gTrans)))
-        ($indSignal (eval (sigmoidNum (* (- $gInd 0.5) 6.0))))
-        ($transSignal (eval (sigmoidNum (* (- $gTrans 0.5) 6.0))))
-        ($cautionSignal (/ (+ (eval (getModulator $state threshold)) (eval (getModulator $state securing))) 2.0))
-        ($growthSignal (/ (+ (eval (getModulator $state arousal)) (eval (getModulator $state approach))) 2.0))
-
-        ;; Dynamic list of primary goals to score (those with modulator mappings)
-        ($primaryGoals (collapse (match &self (goalModulatorRelevance $g $m) $g)))
-        ($baseScore (sumGoalContributions $primaryGoals $state $candidate $indSignal $transSignal))
-
-        ;; Conflict penalty: curiosity-ethics conflict
-        ($ethicIdx (getGoalIndex gEthic))
-        ($curioIdx (getGoalIndex gCurio))
-
-        ($corrs (eval (actionGoalCorrelations $candidate)))
-        ($curioEthicConflict (* (index-atom $corrs $curioIdx) (index-atom $corrs $ethicIdx)))
-        ($conflictPenalty (if (< $curioEthicConflict -0.2)
-                            (eval (expNum (* (absNumber $curioEthicConflict) 3.0)))
-                            0.0))
-
-        ($riskPenalty (* (* (* (eval (LAMBDA_IND)) $gInd) $cautionSignal) (eval (actionRiskEstimate $candidate))))
-        ($growthReward (* (* (* (eval (LAMBDA_TRANS)) $gTrans) $growthSignal)
-                        (magusNormalizedGrowthSignal $candidate)))
-    )
-        (+ (- $baseScore (+ $riskPenalty $conflictPenalty)) $growthReward)
-    )
-)
-
-;; Recursive Best Candidate Search
-(= (magusBestLoop $state $currentBest $currentScore $remaining)
+;; Find the best candidate, preserving first candidate on score ties.
+;; Example: (profiledMagusBestLoop profile state best 1.0 rest feedback 0.5 0.5) -> best
+(= (profiledMagusBestLoop $profile $state $currentBest $currentScore $remaining $feedback $lambdaInd $lambdaTrans)
     (if (== $remaining ())
         $currentBest
         (let* (
             (($head $rest) (decons $remaining))
-            ($headScore (magusScore $state $head))
+            ($headScore (profiledMagusScore $profile $state $head $lambdaInd $lambdaTrans))
         )
             (if (> $headScore $currentScore)
-                (magusBestLoop $state $head $headScore $rest)
-                (magusBestLoop $state $currentBest $currentScore $rest)
+                (profiledMagusBestLoop $profile $state $head $headScore $rest $feedback $lambdaInd $lambdaTrans)
+                (profiledMagusBestLoop $profile $state $currentBest $currentScore $rest $feedback $lambdaInd $lambdaTrans)
             )
         )
     )
 )
 
-;; MAGUS Decision Functions (DecisionMonad interface)
-
-(= (magusUnit $state) $state)
-
-(= (magusDecide $state $candidates)
-    (let* (
-        (($first $rest) (decons $candidates))
-        ($firstScore (magusScore $state $first))
-        ($best (magusBestLoop $state $first $firstScore $rest))
-    )
-        (decisionResult $best (actionDeltaG $best))
+;; Decide with an explicit profile and goal-change callback.
+;; Example: (profiledMagusDecide profile defaultGoalChangeDeltaG state candidates feedback 0.5 0.5) -> decisionResult
+(= (profiledMagusDecide $profile $goalChangeFn $state $candidates $feedback $lambdaInd $lambdaTrans)
+    (if (== $candidates ())
+        (validationError empty-candidates $profile)
+        (let* (
+            (($first $rest) (decons $candidates))
+            ($firstScore (profiledMagusScore $profile $state $first $lambdaInd $lambdaTrans))
+            ($best (profiledMagusBestLoop $profile $state $first $firstScore $rest $feedback $lambdaInd $lambdaTrans))
+            ($delta (profiledMagusProposeDeltaG $goalChangeFn $profile $state $best $feedback $lambdaInd $lambdaTrans))
+        )
+            (decisionResult $best $delta)
+        )
     )
 )
 
-(= (magusDecision)
-    (decisionMonad magusUnit magusDecide magusScore)
+;; Decide through a canonical MAGUS decision wrapper.
+;; Example: (magusDecide decision state candidates feedback) -> decisionResult
+(= (magusDecide (magusDecision $profile $goalChangeFn $lambdaInd $lambdaTrans) $state $candidates $feedback)
+    (profiledMagusDecide $profile $goalChangeFn $state $candidates $feedback $lambdaInd $lambdaTrans)
+)
+
+;; Score through a canonical MAGUS decision wrapper.
+;; Example: (magusScore decision state candidate) -> score
+(= (magusScore (magusDecision $profile $goalChangeFn $lambdaInd $lambdaTrans) $state $candidate)
+    (profiledMagusScore $profile $state $candidate $lambdaInd $lambdaTrans)
 )

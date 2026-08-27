@@ -1,68 +1,30 @@
-;; MetaMo Registry
-
-;; Reads module declarations from config and wires them
-;; into a MetaMoPseudoBimonad.  
-
-;;   Internal readers    
-
-;; Read the appraisal constructor symbol from config.
-(= (metaMoAppraisalModuleSymbol)
-    (match &self (MetaMoAppraisalModule $sym) $sym)
+;; Build a canonical bimonad from the provided application bundle only.
+;; Example: (buildMetaMoFromBundle bundle) -> metaMoPseudoBimonad
+(= (buildMetaMoFromBundle $bundle)
+    (bundleBimonad $bundle)
 )
 
-;; Read the decision constructor symbol from config
-(= (metaMoDecisionModuleSymbol)
-    (match &self (MetaMoDecisionModule $sym) $sym)
-)
-
-;; Read each dynamics / safety function symbol from config
-(= (metaMoDampingSymbol)
-    (match &self (MetaMoDampingFn $sym) $sym)
-)
-(= (metaMoBoundarySymbol)
-    (match &self (MetaMoBoundaryFn $sym) $sym)
-)
-(= (metaMoProjectSymbol)
-    (match &self (MetaMoProjectFn $sym) $sym)
-)
-(= (metaMoContractiveSymbol)
-    (match &self (MetaMoContractiveFn $sym) $sym)
-)
-(= (metaMoSafeRegionSymbol)
-    (match &self (MetaMoSafeRegionFn $sym) $sym)
-)
-
-;;   Assembly  
-
-;; buildMetaMo
-;;
-;; Constructs a MetaMoPseudoBimonad by calling the zero-argument
-;; constructor functions named in config
-;;
-;; To override individual slots at call-site can
-;; call metaMoPseudoBimonad directly; this function is the
-;; config-driven convenience path.
-;;
-;; Example: (buildMetaMo)
-(= (buildMetaMo)
-    (metaMoPseudoBimonad
-        (eval ((metaMoAppraisalModuleSymbol)))   ;; AppraisalComonad
-        (eval ((metaMoDecisionModuleSymbol)))     ;; DecisionMonad
-        (metaMoDampingSymbol)                    ;; damping fn symbol
-        (metaMoBoundarySymbol)                   ;; boundary fn symbol
-        (metaMoProjectSymbol)                    ;; projection fn symbol
-        (metaMoContractiveSymbol)                ;; contractivity fn symbol
-        (metaMoSafeRegionSymbol)                 ;; safe-region fn symbol
+;; Validate and build a canonical bimonad from a bundle.
+;; Example: (buildValidatedMetaMoFromBundle bundle) -> metaMoPseudoBimonad
+(= (buildValidatedMetaMoFromBundle $bundle)
+    (let* (
+        ($validation (validateApplicationBundle $bundle))
+    )
+        (if (validationIsOk $validation)
+            (buildMetaMoFromBundle $bundle)
+            $validation
+        )
     )
 )
 
-;; defaultMetaMo
-;;
-;; Cached-style accessor: builds a bimonad from the current config.
-;; Call this instead of (buildMetaMo) when a single shared
-;; instance per run is wanted.   .
-;;
-;; Example: (step (defaultMetaMo) currState stimulus candidates)
-(= (defaultMetaMo)
-    (buildMetaMo)
+;; Run one bundle-scoped step through the registry facade.
+;; Example: (runRegisteredBundleStep bundle state stimulus) -> transitionResult
+(= (runRegisteredBundleStep $bundle $state $rawStimulus)
+    (runBundleStep $bundle $state $rawStimulus)
+)
+
+;; Run one diagnosed bundle-scoped step through the registry facade.
+;; Example: (runRegisteredBundleStepWithDiagnostics bundle state stimulus True) -> diagnosed-transition
+(= (runRegisteredBundleStepWithDiagnostics $bundle $state $rawStimulus $embody)
+    (runBundleStepWithDiagnostics $bundle $state $rawStimulus $embody)
 )

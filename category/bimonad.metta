@@ -1,272 +1,329 @@
 
 (: TransitionResult Type)
-(: transitionResult (-> ActionType MotivationalState TransitionResult))
+(: transitionResult (-> Expression MotivationState TransitionResult))
 
-(: BestCandidateResult Type)
-(: bestCandidateResult (-> Number ActionType BestCandidateResult))
-
-(: MetaMoPseudoBimonad Type)
-(: metaMoPseudoBimonad
-   (-> AppraisalComonad DecisionMonad Symbol Symbol Symbol Symbol Symbol MetaMoPseudoBimonad))
-
-;; Extract the action from a TransitionResult.
-;; Example: (transitionAction (transitionResult MOVE (motivation g m))) -> MOVE
+;; Return the action from a canonical transition result.
+;; Example: (transitionAction (transitionResult action state)) -> action
 (= (transitionAction (transitionResult $action $nextState))
     $action
 )
 
-;; Extract the next motivational state from a TransitionResult.
-;; Example: (transitionState (transitionResult MOVE (motivation g m))) -> (motivation g m)
+;; Return the next state from a canonical transition result.
+;; Example: (transitionState (transitionResult action state)) -> state
 (= (transitionState (transitionResult $action $nextState))
     $nextState
 )
 
-;; Extract the score from a BestCandidateResult.
-;; Example: (bestCandidateScore (bestCandidateResult 0.85 MOVE)) -> 0.85
-(= (bestCandidateScore (bestCandidateResult $score $action))
-    $score
-)
 
-;; Extract the optimal action from a BestCandidateResult.
-;; Example: (bestCandidateAction (bestCandidateResult 0.85 MOVE)) -> MOVE
-(= (bestCandidateAction (bestCandidateResult $score $action))
+;; Canonical bimonad with explicit policies.
+
+(: TransitionComputation Type)
+(: transitionComputation (-> Expression MotivationState Number GoalChangeFeedback TransitionComputation))
+
+(: MetaMoPseudoBimonad Type)
+(: metaMoPseudoBimonad (-> OpenPsiAppraisal MagusDecision StabilityPolicy CoherencePolicy Expression Expression MetaMoPseudoBimonad))
+
+;; Return action from a canonical transition computation.
+;; Example: (transitionComputationAction (transitionComputation action state 0.0 feedback)) -> action
+(= (transitionComputationAction (transitionComputation $action $state $projectionDelta $feedback))
     $action
 )
 
-;; Extract the appraisal comonad from a MetaMoPseudoBimonad.
-;; Example: (bimonadAppraisal myBimonad)
-(= (bimonadAppraisal (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
+;; Return state from a canonical transition computation.
+;; Example: (transitionComputationState (transitionComputation action state 0.0 feedback)) -> state
+(= (transitionComputationState (transitionComputation $action $state $projectionDelta $feedback))
+    $state
+)
+
+;; Return projection delta from a canonical transition computation.
+;; Example: (transitionComputationProjectionDelta (transitionComputation action state 0.1 feedback)) -> 0.1
+(= (transitionComputationProjectionDelta (transitionComputation $action $state $projectionDelta $feedback))
+    $projectionDelta
+)
+
+;; Return feedback from a canonical transition computation.
+;; Example: (transitionComputationFeedback (transitionComputation action state 0.0 feedback)) -> feedback
+(= (transitionComputationFeedback (transitionComputation $action $state $projectionDelta $feedback))
+    $feedback
+)
+
+;; Return the canonical appraisal object.
+;; Example: (bimonadAppraisal bimonad) -> appraisal
+(= (bimonadAppraisal (metaMoPseudoBimonad $appraisal $decision $stability $coherence $merge $history))
     $appraisal
 )
 
-;; Extract the decision monad from a MetaMoPseudoBimonad.
-;; Example: (bimonadDecision myBimonad)
-(= (bimonadDecision (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
+;; Return the canonical decision object.
+;; Example: (bimonadDecision bimonad) -> decision
+(= (bimonadDecision (metaMoPseudoBimonad $appraisal $decision $stability $coherence $merge $history))
     $decision
 )
 
-;; Extract the damping function symbol from a MetaMoPseudoBimonad.
-;; Example: (bimonadDampingSymbol myBimonad)
-(= (bimonadDampingSymbol (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
-    $dampingFn
+;; Return the canonical stability policy.
+;; Example: (bimonadStability bimonad) -> policy
+(= (bimonadStability (metaMoPseudoBimonad $appraisal $decision $stability $coherence $merge $history))
+    $stability
 )
 
-;; Extract the boundary stabilization function symbol from a MetaMoPseudoBimonad.
-;; Example: (bimonadBoundarySymbol myBimonad)
-(= (bimonadBoundarySymbol (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
-    $boundaryFn
+;; Return the canonical coherence policy.
+;; Example: (bimonadCoherence bimonad) -> policy
+(= (bimonadCoherence (metaMoPseudoBimonad $appraisal $decision $stability $coherence $merge $history))
+    $coherence
 )
 
-;; Extract the projection function symbol from a MetaMoPseudoBimonad.
-;; Example: (bimonadProjectSymbol myBimonad)
-(= (bimonadProjectSymbol (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
-    $projectFn
+;; Return the canonical merge policy.
+;; Example: (bimonadMerge bimonad) -> merge-policy
+(= (bimonadMerge (metaMoPseudoBimonad $appraisal $decision $stability $coherence $merge $history))
+    $merge
 )
 
-;; Extract the contractivity verification function symbol from a MetaMoPseudoBimonad.
-;; Example: (bimonadContractiveSymbol myBimonad)
-(= (bimonadContractiveSymbol (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
-    $contractiveFn
+;; Return diagnostics history data.
+;; Example: (bimonadHistory bimonad) -> ()
+(= (bimonadHistory (metaMoPseudoBimonad $appraisal $decision $stability $coherence $merge $history))
+    $history
 )
 
-;; Extract the safe region check function symbol from a MetaMoPseudoBimonad.
-;; Example: (bimonadSafeRegionSymbol myBimonad)
-(= (bimonadSafeRegionSymbol (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
-    $safeFn
+;; Compute a single feature/feedback snapshot for a stimulus.
+;; Example: (bimonadFeedback bimonad state stimulus) -> (goalChangeFeedback ())
+(= (bimonadFeedback $bimonad $state $stimulus)
+    (openPsiGoalChangeFeedback (bimonadAppraisal $bimonad) $state $stimulus)
 )
 
-;; Build the post-appraisal state that the decision monad should score by appraising a stimulus and applying boundary stabilization.
-;; Example: (decisionContext myBimonad currState stimulus)
-(= (decisionContext
-        (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn)
-        $state
-        $stimulus
-   )
-    (eval ($boundaryFn (appraise $appraisal $state $stimulus)))
+;; Build the canonical post-appraisal decision context.
+;; Example: (decisionContext bimonad state stimulus) -> appraised-state
+(= (decisionContext $bimonad $state $stimulus)
+    (raiseBoundaryCaution
+        (bimonadStability $bimonad)
+        (openPsiAppraise (bimonadAppraisal $bimonad) $state $stimulus)
+    )
 )
 
-;; Apply a proposed goal update (DeltaG) inside the stabilization path, including damping, clipping, and projection.
-;; Example: (stateFromDelta myBimonad myDecisionState (0.05 -0.01))
-(= (stateFromDelta
-        (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn)
-        $decisionState
-        $proposedDeltaG
-   )
+;; Apply a proposed canonical Delta G and return projection telemetry.
+;; Example: (stateFromDeltaComputation bimonad state delta feedback) -> transition-computation
+(= (stateFromDeltaComputation $bimonad $decisionState $proposedDeltaG $feedback)
     (let* (
-        ($dampedDeltaG (eval ($dampingFn $decisionState $proposedDeltaG)))
-        ($nextGoals (eval (clipVector (vectorAdd (motivationGoals $decisionState) $dampedDeltaG) 0.0 1.0)))
-        ($nextState (motivation $nextGoals (motivationModulators $decisionState)))
+        ($stability (bimonadStability $bimonad))
+        ($dampedDeltaG (eval (applyHomeostaticDamping $stability $decisionState $proposedDeltaG)))
+        ($addedGoals (eval (vectorAdd (stateGoals $decisionState) $dampedDeltaG)))
+        ($nextGoals (eval (clipVector $addedGoals 0.0 1.0)))
+        ($rawNext (motivationState (stateSchema $decisionState) $nextGoals (stateModulators $decisionState)))
+        ($projected (eval (projectToSafeRegion $stability $rawNext)))
+        ($projectionDelta (eval (stateDistance $rawNext $projected)))
     )
-        (eval ($projectFn $nextState))
+        (transitionComputation none $projected $projectionDelta $feedback)
     )
 )
 
-;; Compute one appraisal/decision transition (action and next state) before runtime validation.
-;; Example: (computeTransition myBimonad currState stimulus (ACTION_A ACTION_B))
+;; Compute one canonical transition before runtime fallback checks.
+;; Example: (computeTransition bimonad state stimulus candidates) -> transition-computation
 (= (computeTransition $bimonad $state $stimulus $candidates)
     (let* (
-        ($decisionState (decisionContext $bimonad $state $stimulus))
-        ($decisionResult (eval (decide (bimonadDecision $bimonad) $decisionState $candidates)))
-        ($action (decisionAction $decisionResult))
-        ($nextState (stateFromDelta $bimonad $decisionState (decisionDeltaG $decisionResult)))
+        ($feedback (eval (bimonadFeedback $bimonad $state $stimulus)))
+        ($decisionState (eval (decisionContext $bimonad $state $stimulus)))
+        ($decisionResult (eval (magusDecide (bimonadDecision $bimonad) $decisionState $candidates $feedback)))
+        ($action (eval (decisionAction $decisionResult)))
+        ($deltaG (eval (decisionDeltaG $decisionResult)))
+        ($stateComputation (eval (stateFromDeltaComputation $bimonad $decisionState $deltaG $feedback)))
+        ($computedState (eval (transitionComputationState $stateComputation)))
+        ($computedProjectionDelta (eval (transitionComputationProjectionDelta $stateComputation)))
     )
-        (transitionResult $action $nextState)
+        (transitionComputation
+            $action
+            $computedState
+            $computedProjectionDelta
+            $feedback
+        )
     )
 )
 
-;; Build a nearby state to probe local contractivity by adding a small perturbation toward $nextState.
-;; Example: (localReferenceState state1 state2)
+;; Build a local canonical reference state for contractivity probing.
+;; Example: (localReferenceState state next) -> nearby-state
 (= (localReferenceState $state $nextState)
     (let* (
-        ($goalProbe (probeVector (listDifference (motivationGoals $nextState) (motivationGoals $state)) 0.01 1e-6))
-        ($modProbe (probeVector (listDifference (motivationModulators $nextState) (motivationModulators $state)) 0.01 1e-6))
-        ($probeGoals (clipVector (vectorAdd (motivationGoals $state) $goalProbe) 0.0 1.0))
-        ($probeMods (clipVector (vectorAdd (motivationModulators $state) $modProbe) 0.0 1.0))
+        ($goalDifference (eval (listDifference (stateGoals $nextState) (stateGoals $state))))
+        ($modulatorDifference (eval (listDifference (stateModulators $nextState) (stateModulators $state))))
+        ($goalProbe (eval (probeVector $goalDifference 0.01 1e-6)))
+        ($modProbe (eval (probeVector $modulatorDifference 0.01 1e-6)))
+        ($probeGoalsAdded (eval (vectorAdd (stateGoals $state) $goalProbe)))
+        ($probeModsAdded (eval (vectorAdd (stateModulators $state) $modProbe)))
+        ($probeGoals (eval (clipVector $probeGoalsAdded 0.0 1.0)))
+        ($probeMods (eval (clipVector $probeModsAdded 0.0 1.0)))
     )
-        (motivation $probeGoals $probeMods)
-    )
-)
-
-;; Shrink the transition toward the current state by averaging when runtime checks fail.
-;; Example: (applyConservativeFallback currentState proposedNextState)
-(= (applyConservativeFallback $currentState $nextState)
-    (motivation
-        (eval (clipVector (averageArrays (motivationGoals $currentState) (motivationGoals $nextState)) 0.0 1.0))
-        (eval (clipVector (averageArrays (motivationModulators $currentState) (motivationModulators $nextState)) 0.0 1.0))
-    )
-)
-
-;; Calculate a consensus score from two subsystem evaluations, penalized by their difference.
-;; Example: (candidateConsensusScore 0.8 0.9)
-(= (candidateConsensusScore $scoreA $scoreB)
-    (- (/ (+ $scoreA $scoreB) 2.0)
-       (* 0.25 (absNumber (- $scoreA $scoreB))))
-)
-
-;; Compute the consensus value for a candidate given two separate decision contexts.
-;; Example: (candidateConsensusValue myBimonad contextA contextB MOVE)
-(= (candidateConsensusValue $bimonad $context1 $context2 $candidate)
-    (candidateConsensusScore
-        (eval (scoreCandidate (bimonadDecision $bimonad) $context1 $candidate))
-        (eval (scoreCandidate (bimonadDecision $bimonad) $context2 $candidate))
-    )
-)
-
-;; Recursive loop to find the candidate with the highest consensus score.
-;; Example: (bestCandidateLoop ctx1 ctx2 MOVE 0.8 (STAY EAT) myBimonad)
-(= (bestCandidateLoop $context1 $context2 $currentBest $currentScore $remaining $bimonad)
-    (if (== $remaining ())
-        (bestCandidateResult $currentScore $currentBest)
-        (let* (
-            (($head $rest) (decons $remaining))
-            ($headScore (candidateConsensusValue $bimonad $context1 $context2 $head))
+        (motivationState
+            (stateSchema $state)
+            $probeGoals
+            $probeMods
         )
-            (if (> $headScore $currentScore)
-                (bestCandidateLoop $context1 $context2 $head $headScore $rest $bimonad)
-                (bestCandidateLoop $context1 $context2 $currentBest $currentScore $rest $bimonad)
+    )
+)
+
+;; Apply and project conservative canonical fallback.
+;; Example: (applyConservativeFallback bimonad current next) -> fallback-state
+(= (applyConservativeFallback $bimonad $currentState $nextState)
+    (let* (
+        ($averageGoals (eval (averageArrays (stateGoals $currentState) (stateGoals $nextState))))
+        ($averageMods (eval (averageArrays (stateModulators $currentState) (stateModulators $nextState))))
+        ($fallbackGoals (eval (clipVector $averageGoals 0.0 1.0)))
+        ($fallbackMods (eval (clipVector $averageMods 0.0 1.0)))
+        ($fallbackState (motivationState
+            (stateSchema $currentState)
+            $fallbackGoals
+            $fallbackMods
+        ))
+    )
+        (eval
+            (projectToSafeRegion
+                (bimonadStability $bimonad)
+                $fallbackState
             )
         )
     )
 )
 
-;; Find the best candidate based on consensus between two decision contexts.
-;; Example: (bestCandidate ctx1 ctx2 (MOVE STAY) myBimonad)
-(= (bestCandidate $context1 $context2 $candidates $bimonad)
+;; Build fallback transition details after law/safety guard failure.
+;; Example: (targetTransitionFallbackComputation bimonad current next computation) -> transition-computation
+(= (targetTransitionFallbackComputation $bimonad $state $nextState $computation)
     (let* (
-        (($head $rest) (decons $candidates))
-        ($headScore (candidateConsensusValue $bimonad $context1 $context2 $head))
+        ($fallback (eval (applyConservativeFallback $bimonad $state $nextState)))
+        ($extraDelta (eval (stateDistance $nextState $fallback)))
+        ($action (eval (transitionComputationAction $computation)))
+        ($projectionDelta (eval (transitionComputationProjectionDelta $computation)))
+        ($combinedProjectionDelta (eval (+ $projectionDelta $extraDelta)))
+        ($feedback (eval (transitionComputationFeedback $computation)))
     )
-        (bestCandidateLoop $context1 $context2 $head $headScore $rest $bimonad)
+        (transitionComputation
+            $action
+            $fallback
+            $combinedProjectionDelta
+            $feedback
+        )
     )
 )
 
-;; Select a shared action by combining evaluations from two states over the same candidate set.
-;; Example: (consensusAction myBimonad stateA stateB stimulus (A B))
-(= (consensusAction $bimonad $stateA $stateB $stimulus $candidates)
+;; Dispatch target transition result by an already-reduced guard.
+;; Example: (targetTransitionFromGuard True bimonad state next computation) -> computation
+(= (targetTransitionFromGuard True $bimonad $state $nextState $computation)
+    $computation
+)
+
+(= (targetTransitionFromGuard False $bimonad $state $nextState $computation)
+    (targetTransitionFallbackComputation $bimonad $state $nextState $computation)
+)
+
+;; Measure the canonical lax distributive law.
+;; Example: (measureLaxDistributiveLaw bimonad state stimulus candidates 0.01) -> law-check
+(= (measureLaxDistributiveLaw $bimonad $state $stimulus $candidates $tolerance)
     (let* (
-        ($contextA (decisionContext $bimonad $stateA $stimulus))
-        ($contextB (decisionContext $bimonad $stateB $stimulus))
-        ($bestResult (bestCandidate $contextA $contextB $candidates $bimonad))
+        ($feedback (bimonadFeedback $bimonad $state $stimulus))
+        ($decisionState1 (decisionContext $bimonad $state $stimulus))
+        ($decisionResult1 (magusDecide (bimonadDecision $bimonad) $decisionState1 $candidates $feedback))
+        ($final1 (transitionComputationState (stateFromDeltaComputation $bimonad $decisionState1 (decisionDeltaG $decisionResult1) $feedback)))
+        ($decisionResult2 (magusDecide (bimonadDecision $bimonad) $state $candidates $feedback))
+        ($decidedState2 (transitionComputationState (stateFromDeltaComputation $bimonad $state (decisionDeltaG $decisionResult2) $feedback)))
+        ($final2 (decisionContext $bimonad $decidedState2 $stimulus))
+        ($error (stateDistance $final1 $final2))
     )
-        (bestCandidateAction $bestResult)
+        (lawCheckResult modular-appraisal-decision-interface $final1 $final2 $error $tolerance (<= $error $tolerance))
     )
 )
 
-
-;; Compute the consensus target state by merging the results of an action applied to two different states.
-;; Example: (consensusTargetState myBimonad stateA stateB stimulus MOVE 0.05)
-(= (consensusTargetState $bimonad $stateA $stateB $stimulus $action $coherenceCorrection)
+;; Compute the stabilized target transition with fallback checks.
+;; Example: (targetTransitionDetails bimonad state stimulus candidates) -> transition-computation
+(= (targetTransitionDetails $bimonad $state $stimulus $candidates)
     (let* (
-        ($contextA (decisionContext $bimonad $stateA $stimulus))
-        ($contextB (decisionContext $bimonad $stateB $stimulus))
-        ($targetA (stateFromDelta $bimonad $contextA (actionDeltaG $action)))
-        ($targetB (stateFromDelta $bimonad $contextB (actionDeltaG $action)))
+        ($computation (eval (computeTransition $bimonad $state $stimulus $candidates)))
+        ($nextState (eval (transitionComputationState $computation)))
+        ($referenceState (eval (localReferenceState $state $nextState)))
+        ($lax (eval (measureLaxDistributiveLaw $bimonad $state $stimulus $candidates 0.01)))
+        ($contractive (eval (checkContractiveUpdateLaw (bimonadStability $bimonad) $bimonad $state $referenceState $stimulus $candidates)))
+        ($safe (eval (isInSafeRegion (bimonadStability $bimonad) $nextState)))
+        ($guard (eval (and (eval (lawCheckHolds $lax)) (and $contractive $safe))))
     )
-        (eval (parallelMerge $targetA $targetB $coherenceCorrection))
+        (targetTransitionFromGuard $guard $bimonad $state $nextState $computation)
     )
 )
 
-;; Build a coupled consensus action and consensus target state from a shared candidate set.
-;; Example: (consensusTransition myBimonad stateA stateB stimulus (MOVE STAY) 0.05)
-(= (consensusTransition $bimonad $stateA $stateB $stimulus $candidates $coherenceCorrection)
+;; Return the target-only transition result.
+;; Example: (stepTargetOnly bimonad state stimulus candidates) -> transitionResult
+(= (stepTargetOnly $bimonad $state $stimulus $candidates)
     (let* (
-        ($action  (eval (consensusAction $bimonad $stateA $stateB $stimulus $candidates)))
-        ($targetState (eval (consensusTargetState $bimonad $stateA $stateB $stimulus $action $coherenceCorrection)))
+        ($target (eval (targetTransitionDetails $bimonad $state $stimulus $candidates)))
+        ($action (eval (transitionComputationAction $target)))
+        ($targetState (eval (transitionComputationState $target)))
     )
         (transitionResult $action $targetState)
     )
 )
 
-;; Wrapper for consensusTransition with a default coherence correction of 0.05.
-;; Example: (consensusTransitionDefault myBimonad stateA stateB stimulus candidates)
-(= (consensusTransitionDefault $bimonad $stateA $stateB $stimulus $candidates)
-    (consensusTransition $bimonad $stateA $stateB $stimulus $candidates 0.05)
-)
-
-
-;; Validates the First Principle: Modular Appraisal-Decision Interface (commutation of paths).
-;; Example: (checkLaxDistributiveLaw myBimonad currState stimulus (A B))
-(= (checkLaxDistributiveLaw $bimonad $state $stimulus $candidates)
+;; Return the embodied canonical transition result.
+;; Example: (stepEmbodied bimonad state stimulus candidates) -> transitionResult
+(= (stepEmbodied $bimonad $state $stimulus $candidates)
     (let* (
-        ;; Path 1: Appraise then Decide -> stabilized D(Psi(X))
-        ($decisionState1 (decisionContext $bimonad $state $stimulus))
-        ($decisionResult1 (decide (bimonadDecision $bimonad) $decisionState1 $candidates))
-        ($finalState1 (stateFromDelta $bimonad $decisionState1 (decisionDeltaG $decisionResult1)))
-
-        ;; Path 2: Decide then Appraise -> stabilized Psi(D(X))
-        ($decisionResult2 (decide (bimonadDecision $bimonad) $state $candidates))
-        ($decidedState2 (stateFromDelta $bimonad $state (decisionDeltaG $decisionResult2)))
-        ($finalState2 (decisionContext $bimonad $decidedState2 $stimulus))
-        
-        ;; Calculate the controlled distortion distance
-        ($distortion (motivationStateDistance $finalState1 $finalState2))
+        ($target (eval (targetTransitionDetails $bimonad $state $stimulus $candidates)))
+        ($action (eval (transitionComputationAction $target)))
+        ($targetState (eval (transitionComputationState $target)))
+        ($blend (eval (measureBlend (bimonadCoherence $bimonad) $state $targetState)))
+        ($nextState (eval (blendResultState $blend)))
     )
-        (if (<= $distortion (eval (LAX_DISTRIBUTIVE_DELTA)))
-            True
-            False
-        )
+        (transitionResult $action $nextState)
     )
 )
 
-;; Execute one complete step of the MetaMo bimonad, including transition, validation, and fallback.
-;; Example: (step myBimonad currState stimulus (MOVE STAY))
-(= (step $bimonad $state $stimulus $candidates)
+;; Execute a diagnosed canonical step.
+;; Example: (stepWithDiagnostics bimonad state stimulus candidates True) -> diagnosed-transition
+(= (stepWithDiagnostics $bimonad $state $stimulus $candidates $embody)
     (let* (
-        ($transition (computeTransition $bimonad $state $stimulus $candidates))
-        ($action (transitionAction $transition))
-        ($nextState (transitionState $transition))
-        ($referenceState (localReferenceState $state $nextState))
-        
-        ($laxOk (checkLaxDistributiveLaw $bimonad $state $stimulus $candidates))
-        ($contractiveOk (eval ((bimonadContractiveSymbol $bimonad) $bimonad $state $referenceState $stimulus $candidates)))
-        ($safeOk (eval ((bimonadSafeRegionSymbol $bimonad) $nextState)))
-        ($stableState
-            (if (and $laxOk (and $contractiveOk $safeOk))
-                $nextState
-                (applyConservativeFallback $state $nextState)
+        ($stability (bimonadStability $bimonad))
+        ($target (eval (targetTransitionDetails $bimonad $state $stimulus $candidates)))
+        ($action (eval (transitionComputationAction $target)))
+        ($targetState (eval (transitionComputationState $target)))
+        ($blend (eval (if $embody
+            (eval (measureBlend (bimonadCoherence $bimonad) $state $targetState))
+            (let* (
+                ($driftForNoEmbodiment (eval (measureSelfModelDrift (bimonadCoherence $bimonad) $state $targetState)))
+            )
+                (blendResult
+                    $targetState
+                    1.0
+                    1.0
+                    $driftForNoEmbodiment
+                )
+            )
+        )))
+        ($nextState (eval (blendResultState $blend)))
+        ($lax (eval (measureLaxDistributiveLaw $bimonad $state $stimulus $candidates 0.01)))
+        ($referenceState (eval (localReferenceState $state $targetState)))
+        ($contractive (eval (checkContractiveUpdateLaw $stability $bimonad $state $referenceState $stimulus $candidates)))
+        ($drift (eval (blendResultDrift $blend)))
+        ($diagnostics
+            (metaMoDiagnostics
+                (candidateId $action)
+                (eval (lawCheckError $lax))
+                (eval (lawCheckTolerance $lax))
+                (eval (lawCheckHolds $lax))
+                $contractive
+                (eval (isInSafeRegion $stability $targetState))
+                (eval (isInSafeRegion $stability $nextState))
+                (eval (boundaryPressure $stability $state))
+                (eval (boundaryPressure $stability $targetState))
+                (eval (boundaryPressure $stability $nextState))
+                (eval (transitionComputationProjectionDelta $target))
+                (eval (stateDistance $state $targetState))
+                (eval (selfModelStateDistance $drift))
+                (eval (selfModelDistanceMeasured $drift))
+                (eval (selfModelCombinedDrift $drift))
+                (eval (selfModelDriftHolds $drift))
+                (eval (blendResultAlpha $blend))
+                (eval (blendResultBaseAlpha $blend))
             )
         )
     )
-        (transitionResult $action $stableState)
+        (diagnosedTransition $action $nextState $diagnostics)
     )
+)
+
+;; Compatibility alias for the embodied canonical step.
+;; Example: (step bimonad state stimulus candidates) -> transitionResult
+(= (step $bimonad $state $stimulus $candidates)
+    (stepEmbodied $bimonad $state $stimulus $candidates)
 )

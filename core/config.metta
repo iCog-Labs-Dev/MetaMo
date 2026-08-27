@@ -9,26 +9,7 @@
 
 (= (LAX_DISTRIBUTIVE_DELTA) 1e-3)
 
-;; MetaMo Configuration
-;;  
-;; This is the only file downstream teams need to modify.
-;; Change the module atoms to swap cognitive components.
-;; Change the constants to tune behavior.
- 
-;; Module declarations  
-;; Each atom names the zero-argument constructor function that
-;; returns the relevant structure.  
-;;
-;; Appraisal comonad constructor (must return an AppraisalComonad)
-(MetaMoAppraisalModule  openPsiAppraisal)
-
-;; Decision monad constructor (must return a DecisionMonad)
-(MetaMoDecisionModule   magusDecision)
-
-;; Dynamics function symbols, each is called as (sym ...)
-(MetaMoDampingFn        defaultDamping)
-(MetaMoBoundaryFn       defaultBoundaryStabilize)
-(MetaMoProjectFn        defaultProject)
-(MetaMoContractiveFn    defaultContractiveCheck)
-(MetaMoSafeRegionFn     defaultSafeRegionCheck)
+;; Core config intentionally contains only framework constants.
+;; Applications now provide schema, profiles, policies, and callbacks through
+;; ApplicationBundle records instead of global constructor atoms.
 

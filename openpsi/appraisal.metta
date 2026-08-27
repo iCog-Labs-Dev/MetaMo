@@ -1,75 +1,48 @@
+(: OpenPsiAppraisal Type)
+(: openPsiAppraisal (-> AppraisalProfile OpenPsiAppraisal))
 
-
-;; Creates an OpenPSI appraisal comonad using a custom appraisal function.
-;; Example: (openPsiAppraisalWith customAppraiseFn)
-(= (openPsiAppraisalWith $appraiseFn)
-    (appraisalComonad openPsiExtract $appraiseFn)
+;; Return the profile from a canonical OpenPsi appraisal wrapper.
+;; Example: (openPsiAppraisalProfile (openPsiAppraisal profile)) -> profile
+(= (openPsiAppraisalProfile (openPsiAppraisal $profile))
+    $profile
 )
 
-;; Creates a default OpenPSI appraisal comonad using the standard openPsiAppraise function.
-;; Example: (openPsiAppraisal)
-(= (openPsiAppraisal)
-    (openPsiAppraisalWith openPsiAppraise)
+;; Construct a canonical OpenPsi appraisal wrapper.
+;; Example: (openPsiAppraisalWithProfile profile) -> (openPsiAppraisal profile)
+(= (openPsiAppraisalWithProfile $profile)
+    (openPsiAppraisal $profile)
 )
 
-;; Extracts the current motivation state from the comonad.
-;; Example: (openPsiExtract (motivation (goals) (modulators)))
-(= (openPsiExtract $state)
+;; Extract the current schema-aware state.
+;; Example: (openPsiExtract (openPsiAppraisal profile) state) -> state
+(= (openPsiExtract (openPsiAppraisal $profile) $state)
     $state
 )
 
-;; Performs the core OpenPSI appraisal by updating the motivation state based on a stimulus.
-;; Example:
-;;   (openPsiAppraise
-;;     (motivation (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5) (0.5 0.5 0.5 0.5 0.5 0.5))
-;;     (stimulus (0.2 0.8 0.1 0.2))
-;;   )
-(= (openPsiAppraise $state $stimulus)
+;; Appraise a state with an explicit profile.
+;; Example: (openPsiAppraiseWithProfile profile state stimulus) -> updated-state
+(= (openPsiAppraiseWithProfile $profile $state $stimulus)
+    (appraisalProfileAppraise $profile $state $stimulus)
+)
+
+;; Appraise a state through the canonical wrapper.
+;; Example: (openPsiAppraise (openPsiAppraisal profile) state stimulus) -> updated-state
+(= (openPsiAppraise (openPsiAppraisal $profile) $state $stimulus)
+    (openPsiAppraiseWithProfile $profile $state $stimulus)
+)
+
+;; Produce goal-change feedback with an explicit profile.
+;; Example: (openPsiGoalChangeFeedbackWithProfile profile state stimulus) -> (goalChangeFeedback ())
+(= (openPsiGoalChangeFeedbackWithProfile $profile $state $stimulus)
     (let* (
-        ;; Extract goal values by name
-        ($gInd   (getGoal $state gInd))
-        ($gTrans (getGoal $state gTrans))
-
-        ;; Extract modulator values by name
-        ($valence    (getModulator $state valence))
-        ($arousal    (getModulator $state arousal))
-        ($approach   (getModulator $state approach))
-        ($resolution (getModulator $state resolution))
-        ($threshold  (getModulator $state threshold))
-        ($securing   (getModulator $state securing))
-
-        ;; Extract stimulus values by name
-        ($novelty       (getStimulus $stimulus novelty))
-        ($conduciveness (getStimulus $stimulus conduciveness))
-        ($risk          (getStimulus $stimulus risk))
-        ($effort        (getStimulus $stimulus effort))
-
-        ;; Intermediate values
-        ($arousalFeedback  (eval (openPsiArousalFeedback $arousal)))
-        ($transScale       (eval (openPsiTransScale $gTrans)))
-        ($indScale         (eval (openPsiIndScale $gInd)))
-        ($benignNovelty    (eval (openPsiBenignNovelty $novelty $risk)))
-        ($demandingContext (eval (openPsiDemandingContext $effort $risk)))
-
-        ;; Delta calculations
-        ($deltaValence    (eval (openPsiDeltaValence $conduciveness $benignNovelty $risk $effort)))
-        ($deltaArousal    (eval (openPsiDeltaArousal $novelty $arousalFeedback $risk $effort)))
-        ($deltaApproach   (eval (openPsiDeltaApproach $benignNovelty $conduciveness $risk)))
-        ($deltaResolution (eval (openPsiDeltaResolution $conduciveness $effort $risk)))
-        ($deltaThreshold  (eval (openPsiDeltaThreshold $risk $demandingContext $conduciveness)))
-        ($deltaSecuring   (eval (openPsiDeltaSecuring $risk $effort $benignNovelty $conduciveness)))
-
-        ;; Next modulator values
-        ($nextValence    (eval (openPsiNextValence $valence $deltaValence)))
-        ($nextArousal    (eval (openPsiNextArousal $arousal $deltaArousal $transScale)))
-        ($nextApproach   (eval (openPsiNextApproach $approach $deltaApproach $transScale)))
-        ($nextResolution (eval (openPsiNextResolution $resolution $deltaResolution)))
-        ($nextThreshold  (eval (openPsiNextThreshold $threshold $deltaThreshold $indScale)))
-        ($nextSecuring   (eval (openPsiNextSecuring $securing $deltaSecuring $indScale)))
+        ($features (appraisalProfileStimulusFeatures $profile $state $stimulus))
     )
-        (motivation
-            (motivationGoals $state)
-            ($nextValence $nextArousal $nextApproach $nextResolution $nextThreshold $nextSecuring)
-        )
+        (appraisalProfileGoalChangeFeedback $profile $state $stimulus $features)
     )
+)
+
+;; Produce goal-change feedback through the canonical wrapper.
+;; Example: (openPsiGoalChangeFeedback appraisal state stimulus) -> (goalChangeFeedback ())
+(= (openPsiGoalChangeFeedback (openPsiAppraisal $profile) $state $stimulus)
+    (openPsiGoalChangeFeedbackWithProfile $profile $state $stimulus)
 )
