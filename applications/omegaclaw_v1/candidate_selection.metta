@@ -106,10 +106,11 @@
                                                       True)))))))))))))))
 
 ;; A possible same-frame relation is advisory evidence, but it must route the
-;; cycle through the verification/defer candidate before other work.
+;; cycle through the explicit frame-state verification operation before other
+;; work. It must never be treated as permission to merge or act on a frame.
 (= (candidateIsAvailable $bundle $name)
    (if (bundleNeedsRelationVerification $bundle)
-       (== $name defer)
+       (== $name verify-frame-state)
        (candidateIsAvailableRaw $bundle $name)))
 
 (= (generateCandidates $bundle)

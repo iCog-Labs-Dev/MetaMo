@@ -46,6 +46,11 @@
 ;; STM/LTM memory, and runtime logs. Those substrates are deliberately not
 ;; fields of FrameStateBundle.
 
+;; Verification results are append-only observations. They are kept separate
+;; from the bounded input bundle so a verification cycle can be audited before
+;; a later ContextFrames-owned write-back updates the originating relation.
+!(bind! &frame-verification-evidence (new-space))
+
 (= (frameStateGoalSummary)
    (let $goalNamespace (get-state &cfv2-current-goal-namespace)
       (if (== $goalNamespace ())
@@ -117,10 +122,12 @@
 
 ;; A same-frame relation is evidence requiring verification, never permission
 ;; to merge or rewrite either frame.
+;; Keep this as one structural rule. A broad fallback rule would overlap the
+;; VerificationRequired pattern in MeTTa and produce both True and False,
+;; allowing an unsafe same-frame branch to survive nondeterministic matching.
 (= (relationNeedsVerification
-      (FrameStateRelation $_ $_ $_ $_ $_ (evidence-status VerificationRequired)))
-   True)
-(= (relationNeedsVerification $relation) False)
+      (FrameStateRelation $_ $_ $_ $_ $_ (evidence-status $status)))
+   (== $status VerificationRequired))
 (= (relationsNeedVerification ()) False)
 (= (relationsNeedVerification $relations)
    (let* ((($head $tail) (decons-atom $relations)))
@@ -129,6 +136,65 @@
           (relationsNeedVerification $tail))))
 (= (bundleNeedsRelationVerification $bundle)
    (relationsNeedVerification (frameBundleRelations $bundle)))
+
+;; ---------------------------------------------------------------------------
+;; Frame-state verification evidence
+;; ---------------------------------------------------------------------------
+;; The scheduler/ContextFrames layer supplies the result of the explicit
+;; verify-frame-state operation. Unknown results are conservative and remain
+;; unresolved; they can never be mistaken for confirmation.
+(= (verificationEvidenceStatus $result)
+   (case $result
+      ((Confirmed Confirmed)
+       (Refuted Refuted)
+       (Unresolved Unresolved)
+       ($_ Unresolved))))
+
+(= (makeFrameVerificationEvidence
+      (FrameStateRelation
+         (source-frame $source)
+         (target-frame $target)
+         (relation-type $type)
+         (reason $reason)
+         (confidence $confidence)
+         (evidence-status $_))
+      $result)
+   (FrameVerificationEvidence
+      (source-frame $source)
+      (target-frame $target)
+      (relation-type $type)
+      (reason $reason)
+      (prior-confidence $confidence)
+      (evidence-status (verificationEvidenceStatus $result))))
+
+(= (frameVerificationStatus
+      (FrameVerificationEvidence $_ $_ $_ $_ $_ (evidence-status $status)))
+   $status)
+
+;; Capture a typed observation without mutating the input relation. The
+;; returned evidence is suitable for a scheduler audit event and is also
+;; stored for later relation write-back.
+(= (captureFrameVerificationOutcome $relation $result)
+   (let $evidence (makeFrameVerificationEvidence $relation $result)
+      (let $_ (add-atom &frame-verification-evidence $evidence)
+         $evidence)))
+
+(= (frameVerificationEvidence)
+   (collapse (match &frame-verification-evidence
+      (FrameVerificationEvidence
+         (source-frame $source)
+         (target-frame $target)
+         (relation-type $type)
+         (reason $reason)
+         (prior-confidence $confidence)
+         (evidence-status $status))
+      (FrameVerificationEvidence
+         (source-frame $source)
+         (target-frame $target)
+         (relation-type $type)
+         (reason $reason)
+         (prior-confidence $confidence)
+         (evidence-status $status)))))
 
 (= (frameStateBoundRefs $status)
    (if (== (get-state &cfv2-frame-indexspace) ())
@@ -668,6 +734,7 @@
        (invent-goal True)
        (plan-goal True)
        (repair-failure True)
+       (verify-frame-state True)
        ($_ False))))
 
 (= (frameBundleHasCurrent $bundle)
@@ -682,10 +749,13 @@
 
 (= (frameBundleBudgetOpen $bundle)
    (let $budget (bundle-current-budget-state $bundle)
-      (case $budget
-         ((ResourceBudget $maximum $remaining $unit (status Closed)) False)
-          ((ResourceBudget $maximum $remaining $unit (status Exhausted)) False)
-          ($otherBudget True))))
+      (frameBundleBudgetOpenValue $budget)))
+
+(= (frameBundleBudgetOpenValue
+      (ResourceBudget $_ $_ $_ (status $status)))
+   (and (not (== $status Closed))
+        (not (== $status Exhausted))))
+(= (frameBundleBudgetOpenValue open-budget) True)
 
 (= (contextPolicyGate $bundle $candidate)
    ;; Base policy example:
@@ -762,11 +832,17 @@
    (case $candidate
       ((retrieve-memory CurrentFrameAndRelations)
        (search-knowledge CurrentFrameAndRelations)
+       (verify-frame-state CurrentFrameAndRelations)
        (background-work CurrentFrameTask)
        (execute-skill CurrentFrameTask)
        (learn CurrentFrameSummary)
        (self-improve CurrentFrameSummary)
        ($_ CurrentFrameSummary))))
+
+;; Explicit scheduler operation for relation evidence that could imply a
+;; same-frame judgment. Verification must publish evidence before any merge,
+;; rewrite, switch, or action is allowed to rely on the relation.
+(= (frameStateVerificationOperation) verify-frame-state)
 
 ;; Directive priority is deliberately separate from frame priority and
 ;; candidate score. It is a bounded scheduler hint derived from both inputs;
@@ -805,6 +881,49 @@
    ;; Prefer this name at call sites so the decision-to-scheduler contract is
    ;; clear even if directive construction changes internally.
    (makeAttentionDirective $bundle $candidate $score))
+
+;; Public MetaMo -> scheduler contract. Internal decision/action structures
+;; remain available to the motivational dynamics, but this is the only policy
+;; result exposed across the integration boundary.
+(= (metaMoPolicyOutput $bundle $candidate $score)
+   (let* (
+      ($directive (attentionDirectiveForDecision $bundle $candidate $score))
+      ((AttentionDirective $_ $_ $_ (admission $admission) $_
+          (priority $priority) $_) $directive))
+      (MetaMoPolicyOutput
+         (mode (constitutionalMode))
+         (operation-class $candidate)
+         (feasibility $admission)
+         (priority $priority))))
+
+(= (policyOutputOperation
+      (MetaMoPolicyOutput $_ (operation-class $operation) $_ $_))
+   $operation)
+(= (policyOutputMode
+      (MetaMoPolicyOutput (mode $mode) $_ $_ $_))
+   $mode)
+(= (policyOutputFeasibility
+      (MetaMoPolicyOutput $_ $_ (feasibility $feasibility) $_))
+   $feasibility)
+(= (policyOutputPriority
+      (MetaMoPolicyOutput $_ $_ $_ (priority $priority)))
+   $priority)
+
+;; Scheduler-facing adapter. MetaMo supplies policy fields; the scheduler
+;; receives a typed AttentionDirective and remains responsible for resolving
+;; the operation class into a concrete handler.
+(= (schedulerAttentionDirective
+      $bundle
+      (MetaMoPolicyOutput $_ (operation-class $operation)
+         (feasibility $feasibility) (priority $priority)))
+   (AttentionDirective
+      (target (frameBundleCurrentId $bundle))
+      (slice (directiveSlice $operation))
+      (task $operation)
+      (admission $feasibility)
+      (reason (if (== $feasibility Admitted) Feasible PolicyRejected))
+      (priority $priority)
+      (source MetaMo)))
 
 (= (lastAttentionDirective)
    ;; Example: `(lastAttentionDirective)` reads the most recently published

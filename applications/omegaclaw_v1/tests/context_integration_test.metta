@@ -17,6 +17,7 @@
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/mode_layer)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/signals)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/context_integration)
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/candidate_selection)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/reasoner_proposals)
 
 ;; Minimal runtime state normally initialized by the full OmegaClaw loop.
@@ -205,6 +206,96 @@
          (reason (cfv2-compact-limited "same" 240))
          (confidence 0.90)
          (evidence-status VerificationRequired)))
+
+;; Same-frame evidence selects the explicit verification operation rather than
+;; the generic defer action. The operation remains subject to the normal frame
+;; feasibility gate.
+(= (sameFrameBundle)
+   (FrameStateBundle
+      (root (FrameStateRoot root-id frame-a (mode Fast)
+             (ResourceBudget 10 10 units (status Open)) root-constraints))
+      (current (FrameStateCurrent
+         (id frame-a) (parent ()) UserDirective (status Active) (frame-mode Fast)
+         (priority 0.8) (goal-summary goal) (history-summary history)
+         (deliverable-summary deliverable) (results-summary results)
+         (budget (ResourceBudget 10 10 units (status Open)))
+         (constraints constraints) (certified-method method)))
+      (index (active ()) (completed ()))
+      (relations
+         ((FrameStateRelation
+            (source-frame frame-a) (target-frame frame-a)
+            (relation-type SameFrame) (reason same-frame) (confidence 0.90)
+            (evidence-status VerificationRequired))))
+      (runtime (FrameStateRuntime
+         (new-message False) (message-present False) (message-summary "")
+         (task-open True) (task-execution-observed "") (active-task-summary task)
+         (last-results-summary "") (error "") (wake-loops 0) (next-wake-at 0)
+         (budget-state (ResourceBudget 10 10 units (status Open)))))))
+!(test (eval (frameStateVerificationOperation)) verify-frame-state)
+!(test (eval (metaMoPolicyOutput (sameFrameBundle) verify-frame-state 0.80))
+      (MetaMoPolicyOutput
+         (mode Engaged)
+         (operation-class verify-frame-state)
+         (feasibility Admitted)
+         (priority (clampValue 0.7999999999999999))))
+!(test (eval (policyOutputOperation
+               (metaMoPolicyOutput (sameFrameBundle) verify-frame-state 0.80)))
+      verify-frame-state)
+!(test (eval (policyOutputMode
+               (metaMoPolicyOutput (sameFrameBundle) verify-frame-state 0.80)))
+      Engaged)
+!(test (eval (policyOutputFeasibility
+               (metaMoPolicyOutput (sameFrameBundle) verify-frame-state 0.80)))
+      Admitted)
+!(test (eval (schedulerAttentionDirective
+               (sameFrameBundle)
+               (metaMoPolicyOutput (sameFrameBundle) verify-frame-state 0.80)))
+      (AttentionDirective
+         (target frame-a)
+         (slice CurrentFrameAndRelations)
+         (task verify-frame-state)
+         (admission Admitted)
+         (reason Feasible)
+         (priority (clampValue 0.7999999999999999))
+         (source MetaMo)))
+!(test (eval (bundleNeedsRelationVerification (sameFrameBundle))) True)
+!(test (eval (frameVerificationStatus
+               (captureFrameVerificationOutcome
+                  (car-atom (frameBundleRelations (sameFrameBundle)))
+                  Confirmed)))
+      Confirmed)
+!(test (eval (frameVerificationStatus
+               (captureFrameVerificationOutcome
+                  (car-atom (frameBundleRelations (sameFrameBundle)))
+                  Refuted)))
+      Refuted)
+!(test (eval (frameVerificationStatus
+               (captureFrameVerificationOutcome
+                  (car-atom (frameBundleRelations (sameFrameBundle)))
+                  UnknownVerificationResult)))
+      Unresolved)
+!(test (eval (candidateIsAvailable (sameFrameBundle) verify-frame-state)) True)
+!(test (eval (candidateIsAvailable (sameFrameBundle) defer)) False)
+!(test (eval (candidateIsAvailable (sameFrameBundle) execute-skill)) False)
+!(test (eval (generateCandidates (sameFrameBundle))) True)
+!(test (eval (candidateRequiresFrame verify-frame-state)) True)
+!(test (eval (frameBundleHasCurrent (sameFrameBundle))) True)
+!(test (eval (frameBundleActive (sameFrameBundle))) True)
+!(test (eval (frameBundleModeCompatible (sameFrameBundle))) True)
+!(test (eval (frameBundleBudgetOpen (sameFrameBundle))) True)
+!(test (eval (contextPolicyGate (sameFrameBundle) verify-frame-state))
+      (GateDecision Admitted Feasible))
+!(test (eval (candidateAdmitted (sameFrameBundle) verify-frame-state)) True)
+!(test (eval (attentionDirectiveForDecision
+               (sameFrameBundle) verify-frame-state 0.80))
+      (AttentionDirective
+         (target frame-a)
+         (slice CurrentFrameAndRelations)
+         (task verify-frame-state)
+         (admission Admitted)
+         (reason Feasible)
+         (priority (clampValue 0.7999999999999999))
+         (source MetaMo)))
 
 ;; Verify that a typed rejected directive is emitted with separate target,
 ;; slice, admission, priority, task, and source fields.

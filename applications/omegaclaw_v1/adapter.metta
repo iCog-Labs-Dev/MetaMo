@@ -281,3 +281,24 @@
         (decision $candName $mode $dir $score)
     )
 )
+
+;; Resolve only the policy-level directive for a candidate. Concrete tool
+;; selection is intentionally outside MetaMo and belongs to the scheduler.
+(= (operationDirectiveForCandidate $candidate)
+   (case $candidate
+      ((respond (execute execute))
+       (retrieve-memory (orient inspect))
+       (search-knowledge (orient inspect))
+       (execute-skill (execute execute))
+       (learn (learn learn))
+       (self-improve (recover recover))
+       (background-work (orient inspect))
+       (recall-goals (orient inspect))
+       (invent-goal (orient inspect))
+       (plan-goal (orient inspect))
+       (repair-failure (recover recover))
+       (defer (verify verify))
+       (verify-frame-state (verify verify))
+       (ask-clarification (orient inspect))
+       (none (execute execute))
+       ($_ ()))))

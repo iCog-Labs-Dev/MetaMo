@@ -55,8 +55,12 @@
          (eval (metamoActionToDecision $finalAction $score)))
       ((decision $selectedCandidate $_mode $_directive $_score)
          $decisionResult)
+      ;; Expose only the bounded policy contract to the scheduler/reasoner.
+      ($policyOutput
+         (metaMoPolicyOutput $bundle $selectedCandidate $score))
+      ($_ (change-state! &last-meta-mo-policy-output $policyOutput))
       ($attentionDirective
-         (attentionDirectiveForDecision $bundle $selectedCandidate $score))
+         (schedulerAttentionDirective $bundle $policyOutput))
       ($_ (change-state! &last-attention-directive $attentionDirective))
 
       ($_ (advanceAutonomyPhase $selectedCandidate))
@@ -66,7 +70,7 @@
       ($_ (maybeSaveMotivationalState))
       ($_ (collapse (clearSignals)))
    )
-      $decisionResult))
+      $policyOutput))
 
 
 ;; Map the selected candidate to an imperative instruction for the LLM.
@@ -96,6 +100,8 @@
          "REQUIRED: Repair the previous failed command or formatting issue now. If the failed command was send, output one corrected send. If it was a file command, output the smallest corrective read-file, write-file, or append-file. Do not merely say you will fix it.")
       (defer
          "REQUIRED: Do not take irreversible action this cycle. Verify the situation first before acting.")
+      (verify-frame-state
+         "REQUIRED: Verify the current frame-state relation before taking any action. Compare the source and target frame state, then publish confirmed, refuted, or unresolved evidence. Do not merge, rewrite, switch, or execute against the frames in this cycle.")
       (ask-clarification
          "REQUIRED: Ask the user a clarifying question. Your primary output MUST include a send command with a question.")
       (none
@@ -113,11 +119,15 @@
 ;; Build the standard OmegaClaw prompt with the current MetaMo decision.
 (= (getContext)
    (let* (
-      ($decisionResult (motivationContextBlock))
+      ($policyOutput (motivationContextBlock))
       ($bundle (activeFrameBundle))
-      ($_ (println! (MOTIVATION-CONTEXT-BLOCK: $decisionResult)))
-      ((decision $selectedCandidate $_mode $directive $_score)
-         $decisionResult)
+      ($_ (println! (MOTIVATION-CONTEXT-BLOCK: $policyOutput)))
+      ($selectedCandidate (policyOutputOperation $policyOutput))
+      ($operationMapping (operationDirectiveForCandidate $selectedCandidate))
+      (($policyMode $directive)
+         (if (== $operationMapping ())
+             (execute execute)
+             $operationMapping))
       ($guidance (directiveGuidance $directive))
       ($instruction (candidateInstruction $selectedCandidate))
       ($activeTask (frameRuntimeActiveTask $bundle))
@@ -156,10 +166,8 @@
          " STEP_POLICY: " $guidance
          " CONSTITUTIONAL_MODE: " (eval (constitutionalMode))
          " MOTIVATION_INSTRUCTION: " $instruction
-         " MOTIVATION_DECISION: "
-            (eval (string-safe (repr $decisionResult)))
-         " ATTENTION_DIRECTIVE: "
-            (eval (string-safe (repr (lastAttentionDirective))))
+         " META_MO_POLICY_OUTPUT: "
+            (eval (string-safe (repr (get-state &last-meta-mo-policy-output))))
       )))))))
 
 
@@ -221,6 +229,12 @@
       ($_ (collapse (clearSignals)))
       ($_ (change-state! &new-msg-flag False))
       ($_ (change-state! &last-results-seen ""))
+      ($_ (change-state! &last-meta-mo-policy-output
+              (MetaMoPolicyOutput
+                 (mode (constitutionalModeDefault))
+                 (operation-class none)
+                 (feasibility Rejected)
+                 (priority 0))))
       ($_ (change-state! &active-task ""))
       ($_ (change-state! &task-open False))
       ($_ (change-state! &task-execution-observed ""))

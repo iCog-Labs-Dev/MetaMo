@@ -228,6 +228,7 @@
 (CandidateDeltaG repair-failure    reliability  0.04)
 (CandidateDeltaG repair-failure    adaptivity   0.03)
 (CandidateDeltaG defer             gInd_over    0.03)
+(CandidateDeltaG verify-frame-state reliability 0.03)
 (CandidateDeltaG ask-clarification gInd_over    0.02)
 (CandidateDeltaG ask-clarification help_user    0.02)
 
@@ -314,6 +315,7 @@
 (CandidateSpec plan-goal         knowledge)
 (CandidateSpec repair-failure    safety)
 (CandidateSpec defer             safety)
+(CandidateSpec verify-frame-state safety)
 (CandidateSpec ask-clarification safety)
 
 ;; Candidate → Goal/Motive alignment weights
@@ -357,6 +359,8 @@
 (CandidateGoalAlignment repair-failure    clarity         0.50)
 (CandidateGoalAlignment defer             gInd_over       0.80)
 (CandidateGoalAlignment defer             reliability     0.60)
+(CandidateGoalAlignment verify-frame-state reliability  0.90)
+(CandidateGoalAlignment verify-frame-state clarity      0.70)
 (CandidateGoalAlignment ask-clarification clarity         0.85)
 (CandidateGoalAlignment ask-clarification help_user       0.60)
 (CandidateGoalAlignment ask-clarification coherence       0.50)
@@ -375,6 +379,7 @@
 (CandidateRiskFactor plan-goal         0.05)
 (CandidateRiskFactor repair-failure    0.03)
 (CandidateRiskFactor defer             0.02)
+(CandidateRiskFactor verify-frame-state 0.01)
 (CandidateRiskFactor ask-clarification 0.02)
 
 ;; Candidate type → modulator weight links
@@ -406,6 +411,7 @@
 (CandidateDecisionMap plan-goal         orient   inspect)
 (CandidateDecisionMap repair-failure    recover  recover)
 (CandidateDecisionMap defer             verify   verify)
+(CandidateDecisionMap verify-frame-state verify verify)
 (CandidateDecisionMap ask-clarification orient   inspect)
 
 

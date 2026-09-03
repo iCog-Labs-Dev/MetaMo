@@ -71,6 +71,7 @@
 (= (reasonerProposalCandidateValid plan-goal) True)
 (= (reasonerProposalCandidateValid repair-failure) True)
 (= (reasonerProposalCandidateValid defer) True)
+(= (reasonerProposalCandidateValid verify-frame-state) True)
 (= (reasonerProposalCandidateValid ask-clarification) True)
 (= (reasonerProposalCandidateValid $_) False)
 

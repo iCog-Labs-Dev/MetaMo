@@ -13,7 +13,7 @@ rg -q '\$bundle.*frameStateForMetaMo|frameStateForMetaMo.*\$bundle' "$bridge"
 rg -q 'refreshSignals \$bundle' "$bridge"
 rg -q 'generateCandidates \$bundle' "$bridge"
 rg -q 'feasibilityGateActions \$bundle' "$bridge"
-rg -q 'attentionDirectiveForDecision \$bundle' "$bridge"
+rg -q 'schedulerAttentionDirective \$bundle' "$bridge"
 rg -q 'omegaclawScoreForBundle \$bundle' "$bridge"
 rg -q 'omegaclawScoreForBundle \$bundle' "$decision"
 rg -q 'setActiveFrameBundle \$bundle' "$bridge"
@@ -52,7 +52,7 @@ steps = [
     "refreshSignals $bundle",
     "computeAllDimensions",
     "feasibilityGateActions $bundle",
-    "attentionDirectiveForDecision $bundle",
+    "schedulerAttentionDirective $bundle",
 ]
 positions = [source.index(step) for step in steps]
 assert positions == sorted(positions), positions
