@@ -56,20 +56,12 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
-def is_ignored(path: pathlib.Path) -> bool:
-    return any(part in IGNORED_DIRS for part in path.parts)
-
-
-def is_metta_test(path: pathlib.Path) -> bool:
-    return path.suffix == ".metta" and path.stem.endswith(TEST_SUFFIXES)
-
-
 def discover_tests(root: pathlib.Path) -> list[pathlib.Path]:
     tests = [
         path
         for path in root.rglob("*.metta")
-        if not is_ignored(path) and is_metta_test(path)
+        if not (lambda p: any(part in IGNORED_DIRS for part in p.parts))(path) and (lambda p: p.suffix == ".metta" and p.stem.endswith(TEST_SUFFIXES))(path)
+
     ]
     return sorted(tests)
 
@@ -134,12 +126,6 @@ def run_test_file(
         timeout=timeout,
         check=False,
     )
-
-
-def output_tail(output: str, max_lines: int = 80) -> str:
-    lines = output.strip().splitlines()
-    return "\n".join(lines[-max_lines:])
-
 
 def summarize_result(
     path: pathlib.Path,
@@ -234,7 +220,8 @@ def main() -> int:
             print(f"\n--- {test.relative_to(root)} ---")
             print(message)
             if output.strip():
-                print(output_tail(output))
+                print((lambda out, max_l=80: "\n".join(out.strip().splitlines()[-max_l:]))(output))
+
         return 1
 
     print(f"\nAll {len(tests)} MeTTa test file(s) passed.")

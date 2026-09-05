@@ -3,7 +3,8 @@ import time
 from google import genai
 from google.genai import types
 from llm.state_types import Action, MotivationalState
-from llm.action_schema import execution_instruction, normalize_action_id
+from llm.action_schema import normalize_action_id, ACTION_SPECS
+
 
 class MetaMoChatAssistant:
     """
@@ -30,17 +31,18 @@ class MetaMoChatAssistant:
         """
         Execute the chosen action by mapping it to an explicit behavioral instruction.
         """
-        action_id = normalize_action_id(chosen_action.id)
+
         execution_prompt = f"""
         USER MESSAGE: "{user_text}"
 
         INTERNAL METAMO DIRECTIVE:
-        Selected action: "{action_id}"
+        Selected action: "{chosen_action.id}"
         Current Individuation (Caution) level: {current_state.G[0]:.2f}
         Current Transcendence (Curiosity) level: {current_state.G[1]:.2f}
 
         ACTION INSTRUCTION:
-        {execution_instruction(action_id)}
+        {ACTION_SPECS[normalize_action_id(chosen_action.id)]["execution"]}
+
 
         INSTRUCTION:
         Respond naturally to the USER MESSAGE, but follow the ACTION INSTRUCTION exactly.
