@@ -50,13 +50,6 @@ def normalize_action_id(action_id: str) -> str:
     return ACTION_ID_ALIASES.get(normalized, DEFAULT_ACTION_ID)
 
 
-def planning_catalog_text() -> str:
-    return "\n".join(
-        f'- "{action_id}": {spec["planning"]}'
-        for action_id, spec in ACTION_SPECS.items()
-    )
 
 
-def execution_instruction(action_id: str) -> str:
-    normalized = normalize_action_id(action_id)
-    return ACTION_SPECS[normalized]["execution"]
+

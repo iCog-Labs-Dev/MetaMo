@@ -1,5 +1,5 @@
 import json
-from llm.action_schema import planning_catalog_text
+from llm.action_schema import ACTION_SPECS
 
 def get_appraisal_prompt(document_text: str) -> str:
     """Prompt to generate a Stimulus object from text."""
@@ -26,7 +26,7 @@ Current Emotional Modulators: {json.dumps(current_mood)}
 Document: "{document_text}"
 
 Choose 2 to 3 candidate actions only from this fixed action vocabulary:
-{planning_catalog_text()}
+{"\n".join(f'- "{aid}": {spec["planning"]}' for aid, spec in ACTION_SPECS.items())}
 
 For each action, provide:
 1. id: One of the allowed action ids above.

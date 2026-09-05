@@ -80,16 +80,11 @@ def evaluateAgent(agentText):
     return scenarios
 
 
-def evaluateBaseline(baselineText):
-    """Reads the baseline finals from its atoms."""
-    return {m.group(1): float(m.group(2))
-            for m in BASELINE_FINAL_RE.finditer(baselineText)}
-
-
 def buildResults(agentText, baselineText, source):
     """Puts both evaluations together with a summary."""
     agent = evaluateAgent(agentText)
-    baseline = evaluateBaseline(baselineText)
+    baseline = (lambda text: {m.group(1): float(m.group(2)) for m in BASELINE_FINAL_RE.finditer(text)})(baselineText)
+
     summary = {"agentTotal": 0.0, "baselineTotal": 0.0, "wins": {}}
     for scenario, data in agent.items():
         agentFinal = data.get("finalValue", 0.0)

@@ -12,11 +12,6 @@ def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
-def _clamp11(x: float) -> float:
-    """Clamp a numeric value into the -1.0 to 1.0 range."""
-    return max(-1.0, min(1.0, x))
-
-
 def _coerce_bool(value: Any) -> Optional[bool]:
     """Convert common truthy and falsy values into a boolean when possible."""
     if isinstance(value, bool):
@@ -241,7 +236,8 @@ def parse_with_gemini(
             needs_external_evidence = _clamp01(float(needs_external_evidence_raw))
             needs_task_plan = _clamp01(float(needs_task_plan_raw))
             needs_multi_source_integration = _clamp01(float(needs_multi_source_integration_raw))
-            valence = _clamp11(float(valence_raw))
+            valence = (lambda val: max(-1.0, min(1.0, val)))(float(valence_raw))
+
 
         except Exception as e:
             print(f"Numeric conversion error: {e}")

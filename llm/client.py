@@ -19,12 +19,6 @@ _client = None
 
 RETRYABLE_MARKERS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "HIGH DEMAND")
 
-
-def _is_retryable(error: Exception) -> bool:
-    message = str(error).upper()
-    return any(marker in message for marker in RETRYABLE_MARKERS)
-
-
 def _get_client():
     global _client
     if _client is None:
@@ -49,7 +43,7 @@ def query_llm_for_json(prompt: str) -> str:
             return response.text
         except Exception as error:
             last_error = error
-            if attempt == 2 or not _is_retryable(error):
+            if attempt == 2 or not (lambda err: any(marker in str(err).upper() for marker in RETRYABLE_MARKERS))(error):
                 raise
             time.sleep(1.5 * (attempt + 1))
 
