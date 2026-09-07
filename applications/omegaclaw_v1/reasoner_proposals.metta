@@ -15,6 +15,8 @@
 ;; other fields are explanatory/provenance data or scheduler intents; they
 ;; never become commands inside MetaMo.
 
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposal_helpers))
+
 (: ReasonerMotivationalProposalType Type)
 (: ReasonerMotivationalProposal
    (-> Symbol Symbol Symbol Expression Symbol Expression Expression
@@ -159,18 +161,18 @@
       $confidence $evidence $prediction))
 
 (= (reasonerProposalValid $proposal)
-   ;; Keep the public predicate single-arity and read the positional fields
-   ;; only after checking the constructor tag. Unknown shapes fail closed.
+   ;; Keep the public predicate single-arity and read the named fields only
+   ;; after checking the constructor tag. Unknown shapes fail closed.
    (if (== (car-atom $proposal) ReasonerMotivationalProposal)
        (let* (
-          ($id (index-atom $proposal 1))
-          ($source (index-atom $proposal 2))
-          ($kind (index-atom $proposal 3))
-          ($target (index-atom $proposal 4))
-          ($candidate (index-atom $proposal 5))
-          ($claim (index-atom $proposal 6))
-          ($confidence (index-atom $proposal 8))
-          ($prediction (index-atom $proposal 10)))
+          ($id (getProposalId $proposal))
+          ($source (getProposalSource $proposal))
+          ($kind (getProposalKind $proposal))
+          ($target (getProposalTarget $proposal))
+          ($candidate (getProposalCandidate $proposal))
+          ($claim (getProposalClaim $proposal))
+          ($confidence (getProposalConfidence $proposal))
+          ($prediction (getProposalPrediction $proposal)))
           (and (reasonerProposalIdValid $id)
                (reasonerProposalSourceValid $source)
                (reasonerProposalKindValid $kind)
@@ -185,7 +187,7 @@
    (if (not (reasonerProposalValid $proposal))
        (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none)
        (let* (
-          ($candidate (index-atom $proposal 5))
+          ($candidate (getProposalCandidate $proposal))
           ((GateDecision $admission $reason) (feasibilityGate $bundle $candidate)))
           (if (== $admission Admitted)
               (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate 0.0)
@@ -198,9 +200,9 @@
 (= (reasonerProposalToAction $bundle $proposal)
    (let* (
       ($admission (reasonerProposalAdmission $bundle $proposal))
-      ($status (index-atom $admission 1))
-      ($reason (index-atom $admission 2))
-      ($candidate (index-atom $admission 4)))
+      ($status (getStatus $admission))
+      ($reason (getReason $admission))
+      ($candidate (getCandidate $admission)))
       (if (== $status Accepted)
           (ReasonerProposalActionResult Accepted Feasible $candidate
              (candidateToAction $candidate))
@@ -213,8 +215,8 @@
 (= (reasonerProposalScore $bundle $state $proposal)
    (let* (
       ($conversion (reasonerProposalToAction $bundle $proposal))
-      ($status (index-atom $conversion 1))
-      ($action (index-atom $conversion 4)))
+      ($status (getStatus $conversion))
+      ($action (getAction $conversion)))
       (if (== $status Accepted)
           (omegaclawScoreForBundle $bundle $state $action)
           0.0)))
@@ -261,8 +263,8 @@
 ;; confidence. It never bypasses feasibility and never creates an action.
 (= (reasonerProposalInfluence $proposal)
    (let* (
-      ($source (index-atom $proposal 2))
-      ($confidence (index-atom $proposal 8)))
+      ($source (getProposalSource $proposal))
+      ($confidence (getProposalConfidence $proposal)))
       (clampValue (* $confidence (reasonerSourceReliability $source)))))
 
 (= (reasonerProposalEffectiveScore $bundle $state $proposal)
@@ -273,7 +275,7 @@
 ;; deferred until the scheduler performs its own authorization/availability
 ;; check. This is distinct from rejection and malformed input.
 (= (reasonerProposalDisposition $proposal Accepted)
-   (let $kind (index-atom $proposal 3)
+   (let $kind (getProposalKind $proposal)
       (if (or (== $kind request-frame-switch)
               (== $kind request-mode-change))
           Deferred
@@ -282,7 +284,7 @@
 
 (= (recordReasonerProposalEvent $proposal $decision)
    (let* (
-      ($status (index-atom $decision 1))
+      ($status (getStatus $decision))
       ($disposition (reasonerProposalDisposition $proposal $status))
       ($event (ReasonerProposalEvent
          (proposal $proposal)
@@ -347,9 +349,8 @@
          (outcome $outcome)
          (grade $grade)))
       ($_ (add-atom &reasoner-proposal-outcomes $event))
-      ($proposal-field (index-atom $proposal-event 1))
-      ($proposal (index-atom $proposal-field 1))
-      ($source (index-atom $proposal 2))
+      ($proposal (getProposalEventProposal $proposal-event))
+      ($source (getProposalSource $proposal))
       ($_ (updateReasonerSourceReliability $source $grade)))
       $event))
 
@@ -376,10 +377,10 @@
 (= (reasonerProposalDecision $bundle $state $proposal)
    (let* (
       ($conversion (reasonerProposalToAction $bundle $proposal))
-      ($status (index-atom $conversion 1))
-      ($reason (index-atom $conversion 2))
-      ($candidate (index-atom $conversion 3))
-      ($action (index-atom $conversion 4)))
+      ($status (getStatus $conversion))
+      ($reason (getReason $conversion))
+      ($candidate (getCandidate $conversion))
+      ($action (getAction $conversion)))
       ($decision
          (if (== $status Accepted)
              (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
@@ -411,12 +412,12 @@
 (= (reasonerProposalToSchedulerDirective $bundle $state $proposal)
    (let* (
       ($decision (reasonerProposalDecision $bundle $state $proposal))
-      ($status (index-atom $decision 1))
-      ($reason (index-atom $decision 2))
-      ($candidate (index-atom $decision 4))
-      ($score (index-atom $decision 5))
-      ($kind (index-atom $proposal 3))
-      ($target (index-atom $proposal 4)))
+      ($status (getStatus $decision))
+      ($reason (getReason $decision))
+      ($candidate (getCandidate $decision))
+      ($score (getScore $decision))
+      ($kind (getProposalKind $proposal))
+      ($target (getProposalTarget $proposal)))
       (ReasonerMotivationalDirective
          (proposal $proposal)
          (status $status)

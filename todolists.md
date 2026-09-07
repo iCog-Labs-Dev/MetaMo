@@ -12,7 +12,7 @@ This checklist tracks the work remaining against the 22 July 2026 integration sp
   - [x] Keep trigger thresholds registry-resident and mark them as seed values.
   - [x] Add transition tests for collisions, preemption, and default Engaged behavior.
 
-- [ ] Add the reasoner proposal channel (R3/S3 migration seam).
+- [x] Add the reasoner proposal channel (R3/S3 migration seam).
   - [x] Define a source-neutral typed `reasoner-motivational-proposal` boundary.
   - [x] Accept proposals derived by NARS/PLN inference, with LLM-supported reasoning treated as an optional proposal source.
   - [x] Keep reasoner proposals advisory: MetaMo validates and scores them, while ContextFrames or the scheduler performs approved state changes.
@@ -50,8 +50,8 @@ in the integration test suite and in one end-to-end OmegaClaw run:
   dispatcher does not turn a missing reasoner proposal into an implicit action.
 
 - [ ] Complete relation evidence lifecycle (R7).
-  - [ ] Route same-frame judgments to an explicit `verify-frame-state` operation or suspension state.
-  - [ ] Capture verification outcomes as confirmed or refuted evidence.
+  - [x] Route same-frame judgments to an explicit `verify-frame-state` operation or suspension state.
+  - [x] Capture verification outcomes as confirmed or refuted evidence.
   - [ ] Write verification outcomes back to the originating relation.
   - [ ] Treat model-declared confidence as a prior after evidence exists.
   - [ ] Replace hard confidence bands with a continuous scheduling influence function.
