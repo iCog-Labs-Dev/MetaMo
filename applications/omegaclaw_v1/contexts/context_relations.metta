@@ -3,6 +3,16 @@
 ;; Relations cross the ContextFrames -> MetaMo boundary as bounded evidence,
 ;; never as frame topology or permission to mutate a frame.
 
+(= (frameStateMaxRelations) 10)
+(= (frameStateTake $n () ()) ())
+(= (frameStateTake $n $items)
+   (if (<= $n 0)
+       ()
+       (let* (
+          (($head $tail) (decons-atom $items))
+          ($rest (frameStateTake (- $n 1) $tail)))
+          (cons $head $rest))))
+
 ;; Accept the two relation shapes used by ContextFrames relation providers.
 (= (frameStateRelationEvidence $source $target $type $evidence)
    (case $type
