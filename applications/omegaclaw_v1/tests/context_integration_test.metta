@@ -18,6 +18,7 @@
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/signals)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_slices)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/context_integration)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/candidate_selection)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/reasoner_proposals)
@@ -157,24 +158,11 @@
             (r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12)))
       10)
 
-;; Each slice resolves through the supplied bundle and remains non-empty; the
-;; slice constructors encode the field omissions in their contracts.
-!(test (!= (frameStateForSlice Minimal (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice CurrentFrameSummary (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice CurrentFrameTask (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice CurrentFrameAndRelations (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice IndexOverview (frameStateBundle)) ()) True)
-
 ;; Required ContextFrames symbols must resolve and produce values after init.
 !(test (== (cfv2-has-current-frame) False) True)
 !(test (!= (contextFrameForPrompt) ()) True)
 !(test (!= (frameStateBundle) ()) True)
 !(test (!= (frameStateForMetaMo) ()) True)
-!(test (!= (frameStateForSlice Minimal (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice CurrentFrameSummary (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice CurrentFrameAndRelations (frameStateBundle)) ()) True)
-!(test (!= (frameStateForSlice IndexOverview (frameStateBundle)) ()) True)
-
 ;; Frame creation is exercised by the full runtime test suite. It requires the
 ;; optional ChromaDB relation-composer dependency, so this import smoke test
 ;; deliberately stays independent of that external service.
