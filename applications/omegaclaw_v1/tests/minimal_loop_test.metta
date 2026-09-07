@@ -62,6 +62,7 @@
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_slices)
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_policy)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/context_integration)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/task_lifecycle)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/bridge)
