@@ -173,14 +173,18 @@
           ($claim (getProposalClaim $proposal))
           ($confidence (getProposalConfidence $proposal))
           ($prediction (getProposalPrediction $proposal)))
-          (and (reasonerProposalIdValid $id)
-               (reasonerProposalSourceValid $source)
-               (reasonerProposalKindValid $kind)
-               (reasonerProposalTargetValid $kind $target)
-               (reasonerProposalCandidateValid $candidate)
-               (reasonerProposalConfidenceValid $confidence)
-               (not (== $claim ()))
-               (not (== $prediction ()))))
+          ;; `and` is binary in the MeTTa runtime, so keep the validation
+          ;; conjunction explicitly nested rather than passing a variadic
+          ;; argument list.
+          (and (== (size-atom $proposal) 11)
+               (and (reasonerProposalIdValid $id)
+                    (and (reasonerProposalSourceValid $source)
+                         (and (reasonerProposalKindValid $kind)
+                              (and (reasonerProposalTargetValid $kind $target)
+                                   (and (reasonerProposalCandidateValid $candidate)
+                                        (and (reasonerProposalConfidenceValid $confidence)
+                                             (and (not (== $claim ()))
+                                                  (not (== $prediction ()))))))))))
        False)))
 
 (= (reasonerProposalAdmission $bundle $proposal)
