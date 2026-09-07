@@ -2,24 +2,66 @@
 
 This directory contains the MetaMo adapter and motivation logic for OmegaClaw.
 
-## Module Structure
+## Pluggable Module Structure
 
 | File | Responsibility |
 | --- | --- |
-| `openpsi_config.metta` | Goal, modulator, and stimulus indices used by MetaMo. |
-| `registry.metta` | Declarative goals, signals, candidates, weights, thresholds, and dynamics. |
-| `utils.metta` | Generic utilities shared across application modules. |
-| `adapter.metta` | OmegaClaw motivation spaces and conversion to and from MetaMo state/actions. |
-| `signals.metta` | Runtime signal extraction and signal-to-appraisal aggregation. |
-| `omegaclaw_appraisal.metta` | Appraisal-driven updates to the modulator vector. |
-| `homeostasis.metta` | Self-model updates and homeostatic rules. |
-| `task_lifecycle.metta` | User-task state, execution continuation, and autonomy phases. |
-| `candidate_selection.metta` | Candidate-condition evaluation and availability. |
-| `omegaclaw_decision.metta` | Candidate scoring and winner selection. |
-| `persistence.metta` | Save, restore, and persistence scheduling. |
-| `bridge.metta` | MetaMo-cycle orchestration, prompt construction, and startup. |
-| `run.metta` | Dependency composition and application entry point. |
-| `tests/` | Isolated integration and scoring diagnostics. |
+| `config.metta` | Application scales, feature names, signal names, cognitive modes, and capability envelopes. |
+| `schema.metta` | OmegaClaw goal schema, modulator schema, and named vector builders. |
+| `state.metta` | Default schema-aware MetaMo motivation state. |
+| `signals.metta` | Immutable observation, outcome, signal, and perception records plus signal weights. |
+| `stimulus.metta` | Pure conversion from OmegaClaw signals to named MetaMo stimulus features. |
+| `actions.metta` | Representative candidate policies, correlations, metadata, and candidate builder. |
+| `appraisal_profile.metta` | OpenPsi-compatible stimulus-to-modulator and outcome-to-goal conversions. |
+| `decision_profile.metta` | MAGUS-compatible additive decision profile for OmegaClaw candidates. |
+| `policies.metta` | Configured stability, coherence, and merge policies. |
+| `bundle.metta` | OmegaClaw `applicationBundle`, validation helper, bimonad helper, and diagnosed step helper. |
+| `adapters/omegaclaw_host.metta` | Application-local, host-policy-first lifecycle boundary with immutable turn state and duplicate/stale commit protection. |
+| `tests/host_contract_tests.metta` | Phase 1 host adapter contract tests. |
+| `tests/schema_bundle_tests.metta` | Phase 2 schema/profile/bundle vertical-slice tests. |
+
+The older files such as `bridge.metta`, `adapter.metta`, `omegaclaw_appraisal.metta`,
+`candidate_selection.metta`, and `run.metta` are still present as legacy material.
+They are not the canonical pluggable path until the later wiring phases replace
+their obsolete imports and runtime assumptions.
+
+## Motivation Model
+
+Goals:
+
+```text
+gInd_over, gTrans_over,
+help_user, learn, cooperate, responsiveness, clarity, coherence,
+reliability, progress, adaptivity,
+risk, contradiction, unsafe
+```
+
+Primary goals are `help_user`, `learn`, `cooperate`, `responsiveness`,
+`clarity`, `coherence`, `reliability`, `progress`, and `adaptivity`.
+Anti-goals are `risk`, `contradiction`, and `unsafe`. The overgoals are
+`gInd_over` and `gTrans_over`.
+
+Modulators:
+
+```text
+valence, arousal, approach, resolution, threshold, securing,
+urgency, persistence, context_depth, human_deference, focus
+```
+
+The first six modulators are the reusable MetaMo/OpenPsi core. The remaining
+five are OmegaClaw-owned application modulators.
+
+Stimulus features:
+
+```text
+novelty, risk, importance, uncertainty, opportunity, progress
+```
+
+Signals currently supported by the vertical slice are `failure`,
+`repeated-failure`, `ambiguity`, `verified-success`, `progress-made`,
+`stalled-progress`, `user-waiting`, `task-drift`, `danger`, and
+`execution-request`.
+
 
 ## Installation
 
@@ -32,7 +74,7 @@ mkdir -p repos
 git clone https://github.com/asi-alliance/OmegaClaw-Core.git repos/OmegaClaw-Core
 git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chromadb
 git clone https://github.com/iCog-Labs-Dev/MetaMo.git MetaMo
-cp MetaMo/usecase/omegaclaw/run.metta ./run_omega.metta
+cp MetaMo/usecase/omegaclaw_v1/run.metta ./run_omega.metta
 ```
 
 ## Usage
