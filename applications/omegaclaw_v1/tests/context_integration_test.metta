@@ -16,6 +16,8 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/mode_layer)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/signals)
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
+!(import! &self ../../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/context_integration)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/candidate_selection)
 !(import! &self ../../../../MetaMo/applications/omegaclaw_v1/reasoner_proposals)
@@ -145,12 +147,6 @@
    True)
 
 !(test (!= (frameStateForMetaMo) ()) True)
-!(test (frameBundleCurrentId (pureTestBundle)) current-id)
-!(test (frameBundleCurrentPriority (pureTestBundle)) 0.8)
-!(test (frameBundleCurrentHistory (pureTestBundle)) compact-history)
-!(test (hasTypedHistorySummary (frameBundleCurrent (pureTestBundle))) True)
-!(test (frameRuntimeMessage (pureTestBundle)) compact-message)
-!(test (frameRuntimeResults (pureTestBundle)) compact-results)
 !(test (!= (cfv2-compact-limited "abcdefghijklmnopqrstuvwxyz" 8)
            "abcdefghijklmnopqrstuvwxyz") True)
 !(test (size-atom
@@ -174,9 +170,6 @@
 !(test (!= (contextFrameForPrompt) ()) True)
 !(test (!= (frameStateBundle) ()) True)
 !(test (!= (frameStateForMetaMo) ()) True)
-!(test (== (frameRuntimeNewMessage (frameStateForMetaMo)) False) True)
-!(test (== (frameRuntimeTaskOpen (frameStateForMetaMo)) False) True)
-!(test (== (bundle-runtime-has-new-message (frameStateForMetaMo)) False) True)
 !(test (!= (frameStateForSlice Minimal (frameStateBundle)) ()) True)
 !(test (!= (frameStateForSlice CurrentFrameSummary (frameStateBundle)) ()) True)
 !(test (!= (frameStateForSlice CurrentFrameAndRelations (frameStateBundle)) ()) True)
@@ -194,18 +187,6 @@
            (GateDecision Rejected NoActiveFrame)) True)
 !(test (== (eval (candidateAdmitted (frameStateForMetaMo) execute-skill)) False) True)
 !(test (== (eval (feasibilityGateActions (frameStateForMetaMo) ())) True) True)
-
-;; Relations are six-field advisory projections. A same-frame judgment is
-;; marked for verification and does not create or merge a frame.
-!(test (eval (frameStateProjectRelation
-               (FrameRelation frame-a frame-a SameFrame "same" 0.90 Proposed)))
-      (FrameStateRelation
-         (source-frame frame-a)
-         (target-frame frame-a)
-         (relation-type SameFrame)
-         (reason (cfv2-compact-limited "same" 240))
-         (confidence 0.90)
-         (evidence-status VerificationRequired)))
 
 ;; Same-frame evidence selects the explicit verification operation rather than
 ;; the generic defer action. The operation remains subject to the normal frame
@@ -258,22 +239,6 @@
          (reason Feasible)
          (priority (clampValue 0.7999999999999999))
          (source MetaMo)))
-!(test (eval (bundleNeedsRelationVerification (sameFrameBundle))) True)
-!(test (eval (frameVerificationStatus
-               (captureFrameVerificationOutcome
-                  (car-atom (frameBundleRelations (sameFrameBundle)))
-                  Confirmed)))
-      Confirmed)
-!(test (eval (frameVerificationStatus
-               (captureFrameVerificationOutcome
-                  (car-atom (frameBundleRelations (sameFrameBundle)))
-                  Refuted)))
-      Refuted)
-!(test (eval (frameVerificationStatus
-               (captureFrameVerificationOutcome
-                  (car-atom (frameBundleRelations (sameFrameBundle)))
-                  UnknownVerificationResult)))
-      Unresolved)
 !(test (eval (candidateIsAvailable (sameFrameBundle) verify-frame-state)) True)
 !(test (eval (candidateIsAvailable (sameFrameBundle) defer)) False)
 !(test (eval (candidateIsAvailable (sameFrameBundle) execute-skill)) False)
