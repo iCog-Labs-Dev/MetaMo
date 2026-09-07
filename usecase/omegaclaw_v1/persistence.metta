@@ -1,94 +1,242 @@
-;; Motivational State Persistence
-;; Stores X=(G,M,S) in long-term ChromaDB memory so that the motivational state survives session boundaries.
+;; Persist only committed adapter states in a versioned local envelope.
 
-;; Restoration:
-;;   On startup, query ChromaDB for the most recent MOTIVOS_STATE_V1 entry.
-!(bind! &motivation-restored       (new-state False))
-!(bind! &motivation-save-countdown (new-state 10))
+(= (omegaClawPersistenceRestoreResult $state $status $detail)
+    (omegaClawPersistenceRestoreResultRecord $state $status $detail))
 
-(= (persistenceKey) "MOTIVOS_STATE_V1")
+(= (omegaClawPersistenceRestoreResultField $result $field)
+    (let (omegaClawPersistenceRestoreResultRecord $state $status $detail)
+        $result
+        (case $field (
+            (state $state)
+            (status $status)
+            (detail $detail)
+            ($_ (empty))
+        ))))
 
-(= (persistenceInterval)
-   (let $v (collapse (match &self (DynamicsConfig persistence_interval $x) $x))
-      (if (== $v ()) 10 (car-atom $v))))
+(= (omegaClawValidatePersistedAdapterFields
+        $state $engine $nextTurnId $adapterCommittedIds $stageTrace)
+    (let* (
+        ($motivationState
+            (omegaClawEngineStateField $engine motivation-state))
+        ($engineNextTurnId
+            (omegaClawEngineStateField $engine next-turn-id))
+        ($engineCommittedIds
+            (omegaClawEngineStateField $engine committed-turn-ids))
+        ($pendingAction
+            (omegaClawEngineStateField $engine pending-action))
+    )
+        (if (!= (stateSchema $motivationState) (omegaClawSchema))
+            (validationError
+                persisted-schema-mismatch
+                (stateSchema $motivationState))
+            (if (!= $nextTurnId $engineNextTurnId)
+                (validationError
+                    persisted-turn-id-mismatch
+                    (adapter $nextTurnId engine $engineNextTurnId))
+                (if (!= $adapterCommittedIds $engineCommittedIds)
+                    (validationError
+                        persisted-commit-id-mismatch
+                        ($adapterCommittedIds $engineCommittedIds))
+                    (if (!= $pendingAction none)
+                        (validationError
+                            persisted-uncommitted-action
+                            $pendingAction)
+                        (if (not (omegaClawCollectionWithinLimit
+                                    $adapterCommittedIds
+                                    (omegaClawCommittedTurnIdLimit)))
+                            (validationError
+                                oversized-persisted-commit-ids
+                                (size-atom $adapterCommittedIds))
+                            (if (not (omegaClawCollectionWithinLimit
+                                        $stageTrace
+                                        (omegaClawAdapterStageTraceLimit)))
+                                (validationError
+                                    oversized-persisted-stage-trace
+                                    (size-atom $stageTrace))
+                                (validationOk $state)))))))))
 
+(= (omegaClawPersistedEngineRecord $engine)
+    (case $engine (
+        ((omegaClawEngineStateRecord
+                (motivationState $schema $goals $modulators)
+                $taskState $autonomyState $goalState $pendingAction
+                $recentActions $diagnosticsHistory $goalEvidence
+                $nextTurnId $committedTurnIds $lastOutcome)
+            True)
+        ($_ False)
+    )))
 
-;; saveMotivationalState
-(= (saveMotivationalState)
-   (let* (
-      ($timestamp (get_time_as_string))
-      ($goals     (eval (string-safe (repr (getGoals)))))
-      ($antiGoals (eval (string-safe (repr (getAntiGoals)))))
-      ($mods      (eval (string-safe (repr (getModulators)))))
-      ($self      (eval (string-safe (repr (getSelfModel)))))
-      ($payload   (eval (py-str (
-                     (persistenceKey) " time:" $timestamp
-                     " G:" $goals " AG:" $antiGoals
-                     " M:" $mods
-                     " S:" $self))))
-      ($_ (remember $payload))
-      ($_ (println! ("Motivational state saved to long-term memory.")))
-   ) saved))
+(= (omegaClawValidatePersistedAdapterState $state)
+    (case $state (
+        ((omegaClawAdapterStateRecord
+                $engine $nextTurnId $adapterCommittedIds $stageTrace)
+            (if (omegaClawPersistedEngineRecord $engine)
+                (let $engineResult
+                    (eval (omegaClawValidateEngineState $engine))
+                    (if (eval (validationIsOk $engineResult))
+                        (omegaClawValidatePersistedAdapterFields
+                            $state $engine $nextTurnId
+                            $adapterCommittedIds $stageTrace)
+                        $engineResult))
+                (validationError invalid-persisted-engine $engine)))
+        ($_ (validationError invalid-persisted-adapter-state $state))
+    )))
 
+;; Persist durable motivation and autonomy, never an in-flight host turn.
+(= (omegaClawPersistenceProjection $state)
+    (let (omegaClawAdapterStateRecord
+            (omegaClawEngineStateRecord
+                $motivationState $taskState $autonomyState $goalState
+                $pendingAction $recentActions $diagnosticsHistory $goalEvidence
+                $nextTurnId $committedTurnIds $lastOutcome)
+            $adapterTurnId $adapterCommittedIds $stageTrace)
+        $state
+        (omegaClawAdapterState
+            (omegaClawEngineState
+                $motivationState
+                (omegaClawTaskState none inactive)
+                $autonomyState
+                $goalState
+                none
+                ()
+                ()
+                ()
+                $nextTurnId
+                $committedTurnIds
+                none)
+            $adapterTurnId
+            $adapterCommittedIds
+            ())))
 
-;; restoreMotivationalState
-(= (restoreMotivationalState)
-   (let* (
-      ($_ (println! ("Querying long-term memory for prior motivational state...")))
-      ($results (eval (query (persistenceKey))))
-      ($raw     (eval (string-safe $results)))
-   )
-   (if (hasTextContent $raw)
-       (let* (
-          ($parsed  (py-call (lib_llm_ext.parseMotivosState $raw)))
-          ($_ (if (and (!= $parsed ()) (!= $parsed (Error)))
-                  (let* (
-                     ($_ (collapse
-                            (let $entry (superpose $parsed)
-                               (case $entry (
-                                  ((goal $name $val)
-                                    (replaceGoal $name $val))
-                                  ((modulator $name $val)
-                                    (replaceModulator $name $val))
-                                  ((motive $name $val)
-                                    (replaceMotive $name $val))
-                                  ((self-metric $name $val)
-                                    (replaceSelfMetric $name $val))
-                                  ($_ (empty)))))))
-                     ($_ (println! ("Prior motivational state successfully restored.")))
-                  ) ())
-                  (println! ("No prior motivational state found. Using registry defaults."))
-                  ))
-       ) ())
-       (println! ("No prior motivational state found. Using registry defaults.")))))
+(= (omegaClawPersistenceDecodeState $payload $freshState)
+    (case (catch (sread $payload)) (
+        ((Error $errorType $details)
+            (omegaClawPersistenceRestoreResult
+                $freshState invalid
+                (parse-error $errorType $details)))
+        ($state
+            (case (catch
+                    (omegaClawValidatePersistedAdapterState $state)) (
+                ((Error $errorType $details)
+                    (omegaClawPersistenceRestoreResult
+                        $freshState invalid
+                        (validation-error $errorType $details)))
+                ((validationOk $validated)
+                    (omegaClawPersistenceRestoreResult
+                        $validated loaded none))
+                ((validationError $code $details)
+                    (omegaClawPersistenceRestoreResult
+                        $freshState invalid ($code $details)))
+                ($_
+                    (omegaClawPersistenceRestoreResult
+                        $freshState invalid validation-no-result))
+            )))
+    )))
 
+(= (omegaClawPersistenceLoad $freshState)
+    (let* (
+        ($loaded
+            (py-call (state_store.load_snapshot
+                (omegaClawPersistenceConfig path)
+                (omegaClawPersistenceConfig version))))
+        ($status (py-call (state_store.snapshot_field $loaded status)))
+        ($detail (py-call (state_store.snapshot_field $loaded detail)))
+    )
+        (case $status (
+            (loaded
+                (omegaClawPersistenceDecodeState
+                    (py-call (state_store.snapshot_field $loaded state))
+                    $freshState))
+            (missing
+                (omegaClawPersistenceRestoreResult
+                    $freshState missing none))
+            (incompatible
+                (omegaClawPersistenceRestoreResult
+                    $freshState incompatible $detail))
+            ($_
+                (omegaClawPersistenceRestoreResult
+                    $freshState invalid $detail))
+        ))))
 
-;; tryRestoreOrInit - Called once during startup after default initialisation.
-(= (tryRestoreOrInit)
-   (let* (
-      ($_ (println! ("Checking long-term memory for persisted motivational state...")))
-      ($_ (restoreMotivationalState))
-      ($_ (println! ("Startup restoration complete (defaults remain active as fallback).")))
-   ) ()))
+(= (omegaClawPersistenceSave $state)
+    (case (omegaClawValidatePersistedAdapterState $state) (
+        ((validationOk $validated)
+            (let $projected
+                (omegaClawPersistenceProjection $validated)
+                (py-call (state_store.save_snapshot
+                    (omegaClawPersistenceConfig path)
+                    (omegaClawPersistenceConfig version)
+                    (repr $projected)))))
+        ((validationError $code $details)
+            save-invalid-state)
+    )))
 
-(= (ensureMotivationRestored)
-   (if (get-state &motivation-restored)
-       True
-       (let* (
-          ($_ (tryRestoreOrInit))
-          ($_ (change-state! &motivation-restored True))
-          ($_ (change-state! &motivation-save-countdown
-                  (persistenceInterval)))
-       ) True)))
+(= (omegaClawPersistenceRecoverFresh $freshState $restoreResult)
+    (let* (
+        ($status
+            (omegaClawPersistenceRestoreResultField
+                $restoreResult status))
+        ($detail
+            (omegaClawPersistenceRestoreResultField
+                $restoreResult detail))
+        ($_ (if (or (== $status invalid) (== $status incompatible))
+            (py-call (state_store.quarantine_snapshot
+                (omegaClawPersistenceConfig path) $detail))
+            none))
+        ($saveStatus (omegaClawPersistenceSave $freshState))
+        ($_ (println!
+            (METAMO-PERSISTENCE: initialized $status $detail $saveStatus)))
+    )
+        $freshState))
 
-(= (maybeSaveMotivationalState)
-   (let $count (get-state &motivation-save-countdown)
-      (if (<= $count 0)
-          (let* (
-             ($_ (saveMotivationalState))
-             ($_ (change-state! &motivation-save-countdown
-                     (persistenceInterval)))
-          ) True)
-          (let $_
-               (change-state! &motivation-save-countdown (- $count 1))
-               False))))
+(= (omegaClawPersistenceInitialize $freshState)
+    (let $restoreResult (omegaClawPersistenceLoad $freshState)
+        (case (omegaClawPersistenceRestoreResultField
+                $restoreResult status) (
+            (loaded
+                (prog1
+                    (omegaClawPersistenceRestoreResultField
+                        $restoreResult state)
+                    (println!
+                        (METAMO-PERSISTENCE: restored
+                            (omegaClawAdapterStateField
+                                (omegaClawPersistenceRestoreResultField
+                                    $restoreResult state)
+                                next-turn-id)))))
+            ($_
+                (omegaClawPersistenceRecoverFresh
+                    $freshState $restoreResult))
+        ))))
+
+(= (omegaClawPersistenceCommittedAdvance $previousState $nextState)
+    (case (omegaClawValidatePersistedAdapterState $nextState) (
+        ((validationOk $validated)
+            (let* (
+                ($previousTurnId
+                    (omegaClawAdapterStateField
+                        $previousState next-turn-id))
+                ($nextTurnId
+                    (omegaClawAdapterStateField
+                        $validated next-turn-id))
+                ($committedTurnId (- $nextTurnId 1))
+            )
+                (and (> $nextTurnId $previousTurnId)
+                    (listContains
+                        (omegaClawAdapterStateField
+                            $validated committed-turn-ids)
+                        $committedTurnId))))
+        ($_ False)
+    )))
+
+(= (omegaClawPersistenceSaveCommitted $previousState $nextState)
+    (if (omegaClawPersistenceCommittedAdvance
+            $previousState $nextState)
+        (let $status (omegaClawPersistenceSave $nextState)
+            (prog1
+                $status
+                (println!
+                    (METAMO-PERSISTENCE: commit
+                        (- (omegaClawAdapterStateField
+                                $nextState next-turn-id) 1)
+                        $status))))
+        skipped))
