@@ -1,179 +1,528 @@
-;; Signal extraction and signal-to-appraisal conversion.
 
-!(bind! &signal-space    (new-space))
-!(bind! &appraisal-space (new-space))
-!(bind! &failure-streak  (new-state 0))
+(= (omegaClawObservation
+        $turnId $wakeReason $timestamp
+        $newMessage $messageId $messageText $channel
+        $activeTask $taskStatus $autonomyPhase
+        $previousAction $previousCommandResults $previousErrors
+        $loopBudget $resourceSignals $semanticSignals)
+    (omegaClawObservationRecord
+        $turnId $wakeReason $timestamp
+        $newMessage $messageId $messageText $channel
+        $activeTask $taskStatus $autonomyPhase
+        $previousAction $previousCommandResults $previousErrors
+        $loopBudget $resourceSignals $semanticSignals))
 
-!(bind! &new-msg-flag (new-state False))
-!(bind! &last-results-seen (new-state ""))
+(= (omegaClawObservationField $observation $field)
+    (let (omegaClawObservationRecord
+            $turnId $wakeReason $timestamp
+            $newMessage $messageId $messageText $channel
+            $activeTask $taskStatus $autonomyPhase
+            $previousAction $previousCommandResults $previousErrors
+            $loopBudget $resourceSignals $semanticSignals)
+        $observation
+        (case $field (
+            (turn-id $turnId)
+            (wake-reason $wakeReason)
+            (timestamp $timestamp)
+            (new-message $newMessage)
+            (message-id $messageId)
+            (message-text $messageText)
+            (channel $channel)
+            (active-task $activeTask)
+            (task-status $taskStatus)
+            (autonomy-phase $autonomyPhase)
+            (previous-action $previousAction)
+            (previous-command-results $previousCommandResults)
+            (previous-errors $previousErrors)
+            (loop-budget $loopBudget)
+            (resource-signals $resourceSignals)
+            (semantic-signals $semanticSignals)
+            ($_ (empty))
+        ))))
 
+(= (omegaClawOutcome
+        $sourceTurn $candidateId
+        $commandsProposed $commandsAuthorized $commandsExecuted
+        $successCount $failureCount $blockedCount
+        $userVisibleResult $taskProgress $evidenceQuality
+        $safetyEvents $resourceCost $contradictionEvidence)
+    (omegaClawOutcomeRecord
+        $sourceTurn $candidateId
+        $commandsProposed $commandsAuthorized $commandsExecuted
+        $successCount $failureCount $blockedCount
+        $userVisibleResult $taskProgress $evidenceQuality
+        $safetyEvents $resourceCost $contradictionEvidence
+        (omegaClawNormalizeLegacyOutcome
+            $candidateId
+            $commandsProposed $commandsAuthorized $commandsExecuted
+            $successCount $failureCount $blockedCount
+            $userVisibleResult $taskProgress $evidenceQuality
+            $safetyEvents $contradictionEvidence)))
 
-(= (hasTextContent $value)
-   (> (eval (string_length (eval (string-safe $value)))) 2))
+(= (omegaClawOutcomeWithMeaning
+        $sourceTurn $candidateId
+        $commandsProposed $commandsAuthorized $commandsExecuted
+        $successCount $failureCount $blockedCount
+        $userVisibleResult $taskProgress $evidenceQuality
+        $safetyEvents $resourceCost $contradictionEvidence
+        $meaning)
+    (omegaClawOutcomeRecord
+        $sourceTurn $candidateId
+        $commandsProposed $commandsAuthorized $commandsExecuted
+        $successCount $failureCount $blockedCount
+        $userVisibleResult $taskProgress $evidenceQuality
+        $safetyEvents $resourceCost $contradictionEvidence
+        $meaning))
 
-(= (clearSignals)
-   (clearSpace &signal-space))
+;; Keep dispatch, utility, verification, and delivery independent.
+(= (omegaClawOutcomeMeaning
+        $proposalStatus $dispatchStatus $effectCount $effectClass
+        $resultUtility $verificationStatus $deliveryStatus $failureReason
+        $guidanceCandidateId $realizationId $evidenceRelevant)
+    (omegaClawOutcomeMeaningWithProposal
+        $proposalStatus $dispatchStatus $effectCount $effectClass
+        $resultUtility $verificationStatus $deliveryStatus $failureReason
+        $guidanceCandidateId $realizationId $evidenceRelevant none 0))
 
-(= (addSignal $kind $strength)
-   (let* (
-      ($_ (collapse (let $old (match &signal-space (signal $kind $_) (signal $kind $_)) (remove-atom &signal-space $old))))
-   )
-   (add-atom &signal-space (signal $kind $strength))))
+(= (omegaClawOutcomeMeaningWithProposal
+        $proposalStatus $dispatchStatus $effectCount $effectClass
+        $resultUtility $verificationStatus $deliveryStatus $failureReason
+        $guidanceCandidateId $realizationId $evidenceRelevant
+        $proposalFingerprint $proposalAttempt)
+    (omegaClawOutcomeMeaningRecord
+        $proposalStatus $dispatchStatus $effectCount $effectClass
+        $resultUtility $verificationStatus $deliveryStatus $failureReason
+        $guidanceCandidateId $realizationId $evidenceRelevant
+        $proposalFingerprint $proposalAttempt))
 
-(= (getSignals)
-   (collapse (match &signal-space (signal $kind $strength) (signal $kind $strength))))
+(= (omegaClawOutcomeMeaningField $meaning $field)
+    (let (omegaClawOutcomeMeaningRecord
+            $proposalStatus $dispatchStatus $effectCount $effectClass
+            $resultUtility $verificationStatus $deliveryStatus $failureReason
+            $guidanceCandidateId $realizationId $evidenceRelevant
+            $proposalFingerprint $proposalAttempt)
+        $meaning
+        (case $field (
+            (proposal-status $proposalStatus)
+            (dispatch-status $dispatchStatus)
+            (effect-count $effectCount)
+            (effect-class $effectClass)
+            (result-utility $resultUtility)
+            (verification-status $verificationStatus)
+            (delivery-status $deliveryStatus)
+            (failure-reason $failureReason)
+            (guidance-candidate-id $guidanceCandidateId)
+            (realization-id $realizationId)
+            (evidence-relevant $evidenceRelevant)
+            (proposal-fingerprint $proposalFingerprint)
+            (proposal-attempt $proposalAttempt)
+            ($_ (empty))
+        ))))
 
-(= (hasSignal $kind)
-   (let $res (collapse (match &signal-space (signal $kind $_) True))
-      (if (== $res ()) False True)))
+(= (omegaClawNoEffectOutcomeCandidate $candidateId)
+    (case $candidateId (
+        (defer True)
+        (idle True)
+        ($_ False)
+    )))
 
-(= (hasErrors)
-   (or (hasSignal failure) (hasSignal repeated-failure)))
+(= (omegaClawLegacyProposalStatus
+        $candidateId $proposed $authorized $blockedCount)
+    (if (omegaClawNoEffectOutcomeCandidate $candidateId)
+        not-required
+        (if (== $proposed ())
+            empty
+            (if (== $authorized ())
+                invalid
+                (if (> $blockedCount 0) partial valid)))))
 
-(= (hasResults)
-   (or (hasSignal progress-made) (hasSignal verified-success)))
+(= (omegaClawLegacyDispatchStatus
+        $executed $successCount $failureCount)
+    (if (== $executed ())
+        not-dispatched
+        (if (> $failureCount 0)
+            (if (> $successCount 0) partial failed)
+            executed)))
 
+(= (omegaClawLegacyResultUtility
+        $executed $visible $taskProgress $evidenceQuality)
+    (if (== $executed ())
+        irrelevant
+        (if (and
+                (not (== $visible ()))
+                (or (> $taskProgress 0.0) (> $evidenceQuality 0.0)))
+            useful
+            empty)))
 
-;; Returns the registered strength for a signal kind (fallback to default).
-(= (signalStrength $kind $default)
-   (let $v (collapse (match &self (SignalStrength $kind $s) $s))
-      (if (== $v ()) $default (car-atom $v))))
+(= (omegaClawLegacyVerificationStatus
+        $candidateId $successCount $failureCount $evidenceQuality)
+    (case $candidateId (
+        (verify
+            (if (> $failureCount 0) failed
+                (if (and (> $successCount 0)
+                         (>= $evidenceQuality
+                             (omegaClawEvidenceSufficiencyThreshold)))
+                    passed pending)))
+        (verify-goal
+            (if (> $failureCount 0) failed
+                (if (and (> $successCount 0)
+                         (>= $evidenceQuality
+                             (omegaClawEvidenceSufficiencyThreshold)))
+                    passed pending)))
+        ($_ not-required)
+    )))
 
-;; Returns the registered threshold for a named check (fallback to default).
-(= (signalThreshold $key $default)
-   (let $v (collapse (match &self (SignalThreshold $key $t) $t))
-      (if (== $v ()) $default (car-atom $v))))
+(= (omegaClawLegacyDeliveryStatus
+        $candidateId $successCount $failureCount)
+    (case $candidateId (
+        (respond
+            (if (> $successCount 0) sent
+                (if (> $failureCount 0) failed suppressed)))
+        (ask-clarification
+            (if (> $successCount 0) sent
+                (if (> $failureCount 0) failed suppressed)))
+        ($_ not-applicable)
+    )))
 
+(= (omegaClawOutcomeFailureReasonFromStatuses
+        $proposalStatus $dispatchStatus $resultUtility
+        $verificationStatus $deliveryStatus
+        $safetyEvents $contradictionEvidence)
+    (if (> $safetyEvents 0)
+        safety-event
+        (if (> $contradictionEvidence 0)
+            contradiction
+            (case $proposalStatus (
+                (empty proposal-empty)
+                (invalid proposal-invalid)
+                ($_ (case $dispatchStatus (
+                    (failed dispatch-failed)
+                    (partial dispatch-partial-failure)
+                    ($_ (case $deliveryStatus (
+                        (failed delivery-failed)
+                        (suppressed delivery-suppressed)
+                        ($_ (case $verificationStatus (
+                            (failed verification-failed)
+                            ($_ (case $resultUtility (
+                                (empty result-empty)
+                                ($_ none)
+                            )))
+                        )))
+                    )))
+                )))
+            )))))
 
-;; refreshSignals
-;; Extract signals from current OmegaClaw state.
-(= (refreshSignals)
-   (let* (
-      ($_ (collapse (clearSignals)))
-      ;; Read OmegaClaw state (interface contract)
-      ($msg        (get-state &prevmsg))
-      ($activeTask (get-state &active-task))
-      ($taskOpen   (get-state &task-open))
-      ($results    (get-state &lastresults))
-      ($error      (get-state &error))
-      ($isNewMsg   (get-state &new-msg-flag))
-      ($hasMsg     (hasTextContent $msg))
-      ($hasResults (hasTextContent $results))
-      ($freshResults (and $hasResults (!= $results (get-state &last-results-seen))))
-      ($hasError   (> (eval (string_length (eval (string-safe (repr $error))))) 4))
-      ($resultsLen (eval (string_length (eval (string-safe $results)))))
-      ($prov       (provider))
-      ($confirmScore (if $isNewMsg
-                         (py-call (lib_llm_ext.executionConfirmationScore $prov $msg $activeTask))
-                         0.0))
-      ($executionFollowup (and $isNewMsg (> $confirmScore 0.75)))
+(= (omegaClawOutcomeHasLegacyEvidence
+        $proposalStatus $dispatchStatus $resultUtility
+        $verificationStatus $deliveryStatus
+        $safetyEvents $contradictionEvidence)
+    (not (and
+        (== $proposalStatus not-required)
+        (and
+            (== $dispatchStatus not-dispatched)
+            (and
+                (== $resultUtility irrelevant)
+                (and
+                    (== $verificationStatus not-required)
+                    (and
+                        (== $deliveryStatus not-applicable)
+                        (and (== $safetyEvents 0)
+                             (== $contradictionEvidence 0)))))))))
 
-      ;; Failure streak: updated based on error presence.
-      ($_ (if $hasError
-              (change-state! &failure-streak (+ (get-state &failure-streak) 1))
-              (change-state! &failure-streak 0)))
-      ($failureStreak (get-state &failure-streak))
-      ($repeatThresh  (signalThreshold failure-streak-repeat 1))
+(= (omegaClawNormalizeLegacyOutcome
+        $candidateId
+        $commandsProposed $commandsAuthorized $commandsExecuted
+        $successCount $failureCount $blockedCount
+        $userVisibleResult $taskProgress $evidenceQuality
+        $safetyEvents $contradictionEvidence)
+    (let* (
+        ($proposalStatus
+            (omegaClawLegacyProposalStatus
+                $candidateId $commandsProposed
+                $commandsAuthorized $blockedCount))
+        ($dispatchStatus
+            (omegaClawLegacyDispatchStatus
+                $commandsExecuted $successCount $failureCount))
+        ($resultUtility
+            (omegaClawLegacyResultUtility
+                $commandsExecuted $userVisibleResult
+                $taskProgress $evidenceQuality))
+        ($verificationStatus
+            (omegaClawLegacyVerificationStatus
+                $candidateId $successCount $failureCount
+                $evidenceQuality))
+        ($deliveryStatus
+            (omegaClawLegacyDeliveryStatus
+                $candidateId $successCount $failureCount))
+        ($failureReason
+            (omegaClawOutcomeFailureReasonFromStatuses
+                $proposalStatus $dispatchStatus $resultUtility
+                $verificationStatus $deliveryStatus
+                $safetyEvents $contradictionEvidence))
+        ($evidenceRelevant
+            (omegaClawOutcomeHasLegacyEvidence
+                $proposalStatus $dispatchStatus $resultUtility
+                $verificationStatus $deliveryStatus
+                $safetyEvents $contradictionEvidence))
+    )
+        (omegaClawOutcomeMeaning
+            $proposalStatus $dispatchStatus
+            (size-atom $commandsExecuted) unknown
+            $resultUtility $verificationStatus $deliveryStatus $failureReason
+            $candidateId $candidateId $evidenceRelevant)))
 
-      ;; 1. Repeated failure: multiple consecutive errors
-      ($_ (if (and (> $failureStreak $repeatThresh) $hasError)
-              (addSignal repeated-failure (signalStrength repeated-failure 0.85))
-              _))
+(= (omegaClawOutcomeField $outcome $field)
+    (let (omegaClawOutcomeRecord
+            $sourceTurn $candidateId
+            $commandsProposed $commandsAuthorized $commandsExecuted
+            $successCount $failureCount $blockedCount
+            $userVisibleResult $taskProgress $evidenceQuality
+            $safetyEvents $resourceCost $contradictionEvidence $meaning)
+        $outcome
+        (case $field (
+            (source-turn $sourceTurn)
+            (candidate-id $candidateId)
+            (commands-proposed $commandsProposed)
+            (commands-authorized $commandsAuthorized)
+            (commands-executed $commandsExecuted)
+            (success-count $successCount)
+            (failure-count $failureCount)
+            (blocked-count $blockedCount)
+            (user-visible-result $userVisibleResult)
+            (task-progress $taskProgress)
+            (evidence-quality $evidenceQuality)
+            (safety-events $safetyEvents)
+            (resource-cost $resourceCost)
+            (contradiction-evidence $contradictionEvidence)
+            (meaning $meaning)
+            (proposal-status
+                (omegaClawOutcomeMeaningField $meaning proposal-status))
+            (dispatch-status
+                (omegaClawOutcomeMeaningField $meaning dispatch-status))
+            (effect-count
+                (omegaClawOutcomeMeaningField $meaning effect-count))
+            (effect-class
+                (omegaClawOutcomeMeaningField $meaning effect-class))
+            (result-utility
+                (omegaClawOutcomeMeaningField $meaning result-utility))
+            (verification-status
+                (omegaClawOutcomeMeaningField $meaning verification-status))
+            (delivery-status
+                (omegaClawOutcomeMeaningField $meaning delivery-status))
+            (failure-reason
+                (omegaClawOutcomeMeaningField $meaning failure-reason))
+            (guidance-candidate-id
+                (omegaClawOutcomeMeaningField
+                    $meaning guidance-candidate-id))
+            (realization-id
+                (omegaClawOutcomeMeaningField $meaning realization-id))
+            (evidence-relevant
+                (omegaClawOutcomeMeaningField $meaning evidence-relevant))
+            (proposal-fingerprint
+                (omegaClawOutcomeMeaningField $meaning proposal-fingerprint))
+            (proposal-attempt
+                (omegaClawOutcomeMeaningField $meaning proposal-attempt))
+            ($_ (empty))
+        ))))
 
-      ;; 2. Single failure (first error)
-      ($_ (if (and $hasError (<= $failureStreak $repeatThresh))
-              (addSignal failure (signalStrength failure 0.80))
-              _))
+;; Empty recall proves goal absence without creating failure learning.
+(= (omegaClawOutcomeExpectedEmpty $outcome)
+    (and
+        (== (omegaClawOutcomeField $outcome realization-id) recall-goals)
+        (and
+            (> (omegaClawOutcomeField $outcome success-count) 0)
+            (== (omegaClawOutcomeField $outcome result-utility) empty))))
 
-      ;; 3. Task drift — only on a new message when topic changed
-      ($_ (if (and $isNewMsg (and $taskOpen (and (hasTextContent $activeTask) (!= $msg $activeTask))))
-              (addSignal task-drift (signalStrength task-drift 0.45))
-              _))
+(= (omegaClawSignal $kind $strength $source)
+    (omegaClawSignalRecord $kind (clipUnit $strength) $source))
 
-      ;; 4. Ambiguity — new message with no results and no error
-      ($_ (if (and $isNewMsg (and (not $freshResults) (not $hasError)))
-              (addSignal ambiguity (signalStrength ambiguity 0.60))
-              _))
+(= (omegaClawSignalField $signal $field)
+    (let (omegaClawSignalRecord $kind $strength $source)
+        $signal
+        (case $field (
+            (kind $kind)
+            (strength $strength)
+            (source $source)
+            ($_ (empty))
+        ))))
 
-      ;; 5. Progress made — skills executed and returned results without error.
-      ($_ (if (and $freshResults (not $hasError))
-              (addSignal progress-made (signalStrength progress-made 0.40))
-              _))
+(= (omegaClawPerception $observation $outcome $signals)
+    (omegaClawPerceptionRecord
+        $observation $outcome $signals $signals () ()))
 
-      ;; 6. Stalled progress — new message, no results, no error
-      ($_ (if (and $isNewMsg (and (not $freshResults) (not $hasError)))
-              (addSignal stalled-progress (signalStrength stalled-progress 0.35))
-              _))
+(= (omegaClawPerceptionFromParts
+        $observation $outcome
+        $structuralSignals $semanticSignals $outcomeSignals)
+    (omegaClawPerceptionRecord
+        $observation
+        $outcome
+        (listAppend
+            $structuralSignals
+            (listAppend $semanticSignals $outcomeSignals))
+        $structuralSignals
+        $semanticSignals
+        $outcomeSignals))
 
-      ;; 7. User waiting — fires when a new message has arrived and awaits reply.
-      ($_ (if (and $hasMsg $isNewMsg)
-              (addSignal user-waiting (signalStrength user-waiting 0.30))
-              _))
+(= (omegaClawPerceptionField $perception $field)
+    (let (omegaClawPerceptionRecord
+            $observation $outcome $signals
+            $structuralSignals $semanticSignals $outcomeSignals)
+        $perception
+        (case $field (
+            (observation $observation)
+            (outcome $outcome)
+            (signals $signals)
+            (structural-signals $structuralSignals)
+            (semantic-signals $semanticSignals)
+            (outcome-signals $outcomeSignals)
+            ($_ (empty))
+        ))))
 
-      ;; 8. Semantic extraction — only on new messages (skip LLM call on idle)
-      ($_ (if $isNewMsg
-              (collapse (let* (($semStr (py-call (lib_llm_ext.extractSemantics $prov $msg)))
-                               ($semList (catch (sread $semStr))))
-                          (if (and (!= $semList ()) (!= $semList (Error)))
-                              (let $s (superpose $semList)
-                                   (add-atom &signal-space $s))
-                              (empty))))
-              _))
+(= (omegaClawSignalsContainKind () $kind)
+    False)
 
-      ;; Confirmation replies inherit semantic execution intent from the open
-      ;; task instead of becoming generic chat.
-      ($_ (if $executionFollowup
-              (addSignal execution-request $confirmScore)
-              _))
+(= (omegaClawSignalsContainKind $signals $kind)
+    (let* (
+        (($head $tail) (decons $signals))
+    )
+        (if (== (omegaClawSignalField $head kind) $kind)
+            True
+            (omegaClawSignalsContainKind $tail $kind))))
 
-      ;; Track the active task (update only when a new message arrived)
-      ($_ (if (and $isNewMsg
-                   (and (not $executionFollowup)
-                        (or (not $hasError) (not (hasTextContent $activeTask)))))
-              (change-state! &active-task $msg)
-              _))
-      ($_ (if $isNewMsg
-              (change-state! &task-open True)
-              _))
-      ($_ (if $hasResults
-              (change-state! &last-results-seen $results)
-              _))
-   )
-   (getSignals)))
+(= (omegaClawSignalStrengthByKind () $kind)
+    0.0)
 
+(= (omegaClawSignalStrengthByKind $signals $kind)
+    (let* (
+        (($head $tail) (decons $signals))
+    )
+        (if (== (omegaClawSignalField $head kind) $kind)
+            (omegaClawSignalField $head strength)
+            (omegaClawSignalStrengthByKind $tail $kind))))
 
-;; Convert the current signals into the six appraisal dimensions.
-(= (signalDimContrib $kind $strength $dim)
-   (let $weights (collapse (match &self (SignalAppraisal $kind $dim $w) $w))
-      (if (== $weights ()) 0.0 (* $strength (car-atom $weights)))))
+;; Omitted signal-feature weights contribute zero.
+(= (omegaClawSignalFeatureWeights $kind)
+    (case $kind (
+        (human-message ((importance 0.55) (human_presence 1.00)))
+        (user-waiting ((importance 0.60) (human_presence 1.00)))
+        (autonomous-turn ((autonomy_drive 0.70)))
+        (information-request ((importance 0.45) (opportunity 0.35)
+                              (human_presence 0.40)))
+        (goal-control-request ((importance 0.75) (goal_control 1.00)
+                               (human_presence 0.60)))
+        (failure ((importance 0.50) (uncertainty 0.40)
+                  (progress -0.30) (failure_load 0.75)))
+        (repeated-failure ((importance 0.70)
+                           (uncertainty 0.60) (progress -0.50)
+                           (failure_load 1.00)))
+        (execution-failure ((importance 0.55)
+                            (uncertainty 0.45) (progress -0.40)
+                            (failure_load 0.85)))
+        (proposal-empty ((uncertainty 0.35) (progress -0.20)
+                         (failure_load 0.40)))
+        (proposal-invalid ((uncertainty 0.45)
+                           (progress -0.30) (failure_load 0.65)))
+        (proposal-repeated ((uncertainty 0.55)
+                            (progress -0.45) (failure_load 0.80)))
+        (ambiguity ((novelty 0.30) (importance 0.40) (uncertainty 0.60)
+                    (ambiguity_load 1.00)))
+        (verified-success ((risk -0.30) (opportunity 0.50) (progress 0.70)
+                           (evidence_strength 1.00)))
+        (verification-passed ((opportunity 0.45) (progress 0.65)
+                              (evidence_strength 1.00)))
+        (verification-failed ((uncertainty 0.55)
+                              (progress -0.35) (failure_load 0.55)))
+        (progress-made ((opportunity 0.30) (progress 0.45)
+                        (evidence_strength 0.35)))
+        (result-useful ((opportunity 0.40) (progress 0.50)
+                        (evidence_strength 0.60)))
+        (result-empty ((uncertainty 0.25) (progress -0.20)
+                       (failure_load 0.30)))
+        (evidence-sufficient ((uncertainty -0.35) (opportunity 0.25)
+                              (progress 0.30) (evidence_strength 1.00)))
+        (evidence-insufficient ((uncertainty 0.45)
+                                (ambiguity_load 0.45)))
+        (stalled-progress ((importance 0.50) (progress -0.20)
+                           (failure_load 0.30)))
+        (task-drift ((novelty 0.60) (uncertainty 0.40)
+                     (task_focus 0.80)))
+        (user-angry ((importance 0.35) (human_presence 0.35)))
+        (danger ((risk 0.80) (importance 0.70) (uncertainty 0.40)
+                 (ambiguity_load 0.20)))
+        (contradiction ((risk 0.35) (uncertainty 0.50)
+                        (task_focus 0.55)))
+        (semantic-unavailable ())
+        (execution-request ((importance 0.70) (opportunity 0.90)
+                            (progress 0.60)))
+        (scheduled-wake ((opportunity 0.45) (importance 0.20)))
+        (continuation-due ((importance 0.55) (progress 0.35)))
+        (active-goal ((importance 0.50) (opportunity 0.40)
+                      (progress 0.25) (task_focus 0.75)
+                      (autonomy_drive 0.35)))
+        (goal-missing ((novelty 0.35) (opportunity 0.45)
+                       (uncertainty 0.20)))
+        (verification-needed ((importance 0.60) (uncertainty 0.30)
+                              (progress 0.25) (ambiguity_load 0.25)))
+        (goal-complete ((opportunity 0.40) (progress 0.75)
+                        (evidence_strength 0.70)))
+        (budget-low ((risk 0.15) (importance 0.35)
+                     (task_focus 0.40)))
+        (blocked-command ((risk 0.45) (importance 0.35)
+                          (uncertainty 0.30) (progress -0.25)
+                          (failure_load 0.40)))
+        (effect-reversible ((risk -0.15) (opportunity 0.15)))
+        (effect-external ((risk 0.35) (importance 0.25)))
+        (effect-destructive ((risk 0.90) (importance 0.80)
+                             (uncertainty 0.30)))
+        ($_ ())
+    )))
 
-(= (sumDimFromSignals $dim () $acc) $acc)
-(= (sumDimFromSignals $dim $signals $acc)
-   (let* (
-      (($head $tail) (decons-atom $signals))
-      ((signal $kind $strength) $head)
-      ($contrib (signalDimContrib $kind $strength $dim))
-   )
-      (sumDimFromSignals $dim $tail (+ $acc $contrib))))
+(= (omegaClawSignalDefaultStrength $kind)
+    (case $kind (
+        (repeated-failure 0.85)
+        (failure 0.80)
+        (task-drift 0.45)
+        (ambiguity 0.60)
+        (stalled-progress 0.35)
+        (progress-made 0.40)
+        (verified-success 0.40)
+        (human-message 1.00)
+        (user-waiting 0.30)
+        (user-angry 0.60)
+        (danger 0.60)
+        (contradiction 0.60)
+        (semantic-unavailable 1.00)
+        (information-request 0.75)
+        (goal-control-request 0.85)
+        (execution-request 0.85)
+        (autonomous-turn 0.70)
+        (scheduled-wake 0.55)
+        (continuation-due 0.60)
+        (task-execution-authorized 1.00)
+        (active-goal 0.60)
+        (goal-missing 0.55)
+        (verification-needed 0.65)
+        (goal-complete 0.70)
+        (budget-low 0.70)
+        (blocked-command 0.65)
+        (proposal-empty 0.75)
+        (proposal-invalid 0.80)
+        (proposal-repeated 0.90)
+        (execution-failure 0.85)
+        (result-empty 0.70)
+        (result-useful 0.75)
+        (evidence-sufficient 0.80)
+        (evidence-insufficient 0.75)
+        (verification-passed 0.85)
+        (verification-failed 0.85)
+        (effect-reversible 0.60)
+        (effect-external 0.70)
+        (effect-destructive 1.00)
+        ($_ 0.0)
+    )))
 
-(= (computeDimension $dim)
-   (let $signals
-         (collapse (match &signal-space (signal $kind $strength)
-                                        (signal $kind $strength)))
-      (clamp01 (sumDimFromSignals $dim $signals 0.0))))
-
-(= (computeAllDimensions)
-   (let* (
-      ($novelty (computeDimension novelty))
-      ($risk (computeDimension risk))
-      ($importance (computeDimension importance))
-      ($uncertainty (computeDimension uncertainty))
-      ($opportunity (computeDimension opportunity))
-      ($progress (computeDimension progress))
-      ($_ (add-atom &appraisal-space (appraisal novelty $novelty)))
-      ($_ (add-atom &appraisal-space (appraisal risk $risk)))
-      ($_ (add-atom &appraisal-space (appraisal importance $importance)))
-      ($_ (add-atom &appraisal-space (appraisal uncertainty $uncertainty)))
-      ($_ (add-atom &appraisal-space (appraisal opportunity $opportunity)))
-      ($_ (add-atom &appraisal-space (appraisal progress $progress)))
-   ) True))
+(= (omegaClawDefaultSignal $kind $source)
+    (omegaClawSignal
+        $kind
+        (omegaClawSignalDefaultStrength $kind)
+        $source))
