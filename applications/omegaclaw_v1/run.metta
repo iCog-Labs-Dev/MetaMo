@@ -48,6 +48,7 @@
 !(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
 !(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_slices)
 !(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_policy)
+!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_directives)
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_decision))
