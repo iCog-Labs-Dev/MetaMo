@@ -116,20 +116,20 @@
    (omegaclawAppraise (neutralAppraisalState) (safetyStimulus)))
 
 
-!(println! "Direct motivational-state scoring")
-!(printScenario execution-state (executionTestState))
-!(printScenario knowledge-state (knowledgeTestState))
-!(printScenario growth-state (growthTestState))
-!(printScenario safety-state (safetyTestState))
+; !(println! "Direct motivational-state scoring")
+; !(printScenario execution-state (eval (executionTestState)))
+; !(printScenario knowledge-state (knowledgeTestState))
+; !(printScenario growth-state (growthTestState))
+; !(printScenario safety-state (safetyTestState))
 
-!(println! "Appraisal-driven scoring from one neutral state")
-!(printScenario execution-stimulus (appraisedExecutionState))
-!(printScenario growth-stimulus (appraisedGrowthState))
-!(printScenario safety-stimulus (appraisedSafetyState))
+; !(println! "Appraisal-driven scoring from one neutral state")
+; !(printScenario execution-stimulus (appraisedExecutionState))
+; !(printScenario growth-stimulus (appraisedGrowthState))
+; !(printScenario safety-stimulus (appraisedSafetyState))
 
 
-!(println! "Production baseline calibration report")
-!(printScenario production-initial-state (createInitialState))
+; !(println! "Production baseline calibration report")
+; !(printScenario production-initial-state (createInitialState))
 
 
 !(test (diagnosticWinner (executionTestState)) respond)

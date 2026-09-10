@@ -43,39 +43,42 @@
 (= (reasonerProposalKinds)
    (propose-candidate request-frame-switch request-mode-change request-attention))
 
-(= (reasonerProposalSourceValid nars) True)
-(= (reasonerProposalSourceValid pln) True)
-(= (reasonerProposalSourceValid llm) True)
-(= (reasonerProposalSourceValid rule-engine) True)
-(= (reasonerProposalSourceValid human-adapter) True)
-(= (reasonerProposalSourceValid $_) False)
+(= (reasonerProposalSourceValid $value)
+   (case $value ((nars True)
+      (pln True)
+      (llm True)
+      (rule-engine True)
+      (human-adapter True)
+      ($_ False))))
 
-(= (reasonerProposalKindValid propose-candidate) True)
-(= (reasonerProposalKindValid request-frame-switch) True)
-(= (reasonerProposalKindValid request-mode-change) True)
-(= (reasonerProposalKindValid request-attention) True)
-(= (reasonerProposalKindValid $_) False)
+(= (reasonerProposalKindValid $value)
+   (case $value ((propose-candidate True)
+      (request-frame-switch True)
+      (request-mode-change True)
+      (request-attention True)
+      ($_ False))))
 
 (= (reasonerProposalConfidenceValid $confidence)
    (and (>= $confidence 0.0) (<= $confidence 1.0)))
 
 ;; Candidate names are registry-owned. This prevents a reasoner from smuggling
 ;; an arbitrary executable operation through the proposal boundary.
-(= (reasonerProposalCandidateValid respond) True)
-(= (reasonerProposalCandidateValid retrieve-memory) True)
-(= (reasonerProposalCandidateValid search-knowledge) True)
-(= (reasonerProposalCandidateValid execute-skill) True)
-(= (reasonerProposalCandidateValid learn) True)
-(= (reasonerProposalCandidateValid self-improve) True)
-(= (reasonerProposalCandidateValid background-work) True)
-(= (reasonerProposalCandidateValid recall-goals) True)
-(= (reasonerProposalCandidateValid invent-goal) True)
-(= (reasonerProposalCandidateValid plan-goal) True)
-(= (reasonerProposalCandidateValid repair-failure) True)
-(= (reasonerProposalCandidateValid defer) True)
-(= (reasonerProposalCandidateValid verify-frame-state) True)
-(= (reasonerProposalCandidateValid ask-clarification) True)
-(= (reasonerProposalCandidateValid $_) False)
+(= (reasonerProposalCandidateValid $value)
+   (case $value ((respond True)
+      (retrieve-memory True)
+      (search-knowledge True)
+      (execute-skill True)
+      (learn True)
+      (self-improve True)
+      (background-work True)
+      (recall-goals True)
+      (invent-goal True)
+      (plan-goal True)
+      (repair-failure True)
+      (defer True)
+      (verify-frame-state True)
+      (ask-clarification True)
+      ($_ False))))
 
 (= (reasonerProposalIdValid $id)
    (not (== $id ())))
@@ -83,15 +86,15 @@
 ;; A proposal may ask the scheduler to consider a frame/mode transition. The
 ;; target is deliberately data-shaped and is never passed to a ContextFrames
 ;; mutation function by MetaMo.
-(= (reasonerProposalTargetValid propose-candidate $target)
-   (not (== $target ())))
-(= (reasonerProposalTargetValid request-attention $target)
-   (not (== $target ())))
-(= (reasonerProposalTargetValid request-frame-switch (FrameTarget $frame))
-   (not (== $frame ())))
-(= (reasonerProposalTargetValid request-mode-change (ModeTarget Fast)) True)
-(= (reasonerProposalTargetValid request-mode-change (ModeTarget Slow)) True)
-(= (reasonerProposalTargetValid $_ $_) False)
+(= (reasonerProposalTargetValid $kind $target)
+   (case $kind (
+      (propose-candidate (not (== $target ())))
+      (request-attention (not (== $target ())))
+      (request-frame-switch (case $target (
+         ((FrameTarget $frame) (not (== $frame ()))) ($_ False))))
+      (request-mode-change (case $target (
+         ((ModeTarget Fast) True) ((ModeTarget Slow) True) ($_ False))))
+      ($_ False))))
 
 ;; ---------------------------------------------------------------------------
 ;; Inference adapters
@@ -161,35 +164,22 @@
       $confidence $evidence $prediction))
 
 (= (reasonerProposalValid $proposal)
-   ;; Keep the public predicate single-arity and read the named fields only
-   ;; after checking the constructor tag. Unknown shapes fail closed.
-   (if (== (car-atom $proposal) ReasonerMotivationalProposal)
-       (let* (
-          ($id (getProposalId $proposal))
-          ($source (getProposalSource $proposal))
-          ($kind (getProposalKind $proposal))
-          ($target (getProposalTarget $proposal))
-          ($candidate (getProposalCandidate $proposal))
-          ($claim (getProposalClaim $proposal))
-          ($confidence (getProposalConfidence $proposal))
-          ($prediction (getProposalPrediction $proposal)))
-          ;; `and` is binary in the MeTTa runtime, so keep the validation
-          ;; conjunction explicitly nested rather than passing a variadic
-          ;; argument list.
-          (and (== (size-atom $proposal) 11)
-               (and (reasonerProposalIdValid $id)
-                    (and (reasonerProposalSourceValid $source)
-                         (and (reasonerProposalKindValid $kind)
-                              (and (reasonerProposalTargetValid $kind $target)
-                                   (and (reasonerProposalCandidateValid $candidate)
-                                        (and (reasonerProposalConfidenceValid $confidence)
-                                             (and (not (== $claim ()))
-                                                  (not (== $prediction ()))))))))))
-       False)))
+   (case $proposal (
+      ((ReasonerMotivationalProposal $id $source $kind $target $candidate
+         $claim $support $confidence $evidence $prediction)
+       (and (reasonerProposalIdValid $id)
+         (and (reasonerProposalSourceValid $source)
+           (and (reasonerProposalKindValid $kind)
+             (and (reasonerProposalTargetValid $kind $target)
+               (and (reasonerProposalCandidateValid $candidate)
+                 (and (reasonerProposalConfidenceValid $confidence)
+                   (and (not (== $claim ()))
+                        (not (== $prediction ()))))))))))
+      ($_ False))))
 
 (= (reasonerProposalAdmission $bundle $proposal)
    (if (not (reasonerProposalValid $proposal))
-       (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none)
+       (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none 0.0)
        (let* (
           ($candidate (getProposalCandidate $proposal))
           ((GateDecision $admission $reason) (feasibilityGate $bundle $candidate)))
@@ -228,12 +218,13 @@
 ;; Reliability priors are deliberately conservative and source-specific. They
 ;; are not MetaMo candidate scores; they only influence how much a proposal
 ;; source's recommendation affects the final proposal score.
-(= (reasonerSourceReliabilityPrior nars) 0.80)
-(= (reasonerSourceReliabilityPrior pln) 0.80)
-(= (reasonerSourceReliabilityPrior llm) 0.50)
-(= (reasonerSourceReliabilityPrior rule-engine) 0.75)
-(= (reasonerSourceReliabilityPrior human-adapter) 0.70)
-(= (reasonerSourceReliabilityPrior $_) 0.0)
+(= (reasonerSourceReliabilityPrior $value)
+   (case $value ((nars 0.80)
+      (pln 0.80)
+      (llm 0.50)
+      (rule-engine 0.75)
+      (human-adapter 0.70)
+      ($_ 0.0))))
 
 (= (reasonerSourceReliability $source)
    (let $rows (collapse (match &reasoner-source-reliability
@@ -254,11 +245,11 @@
       ($oldRows (collapse (match &reasoner-source-reliability
          (ReasonerSourceReliability $source $old)
          (ReasonerSourceReliability $source $old))))
-      ($_ (if (== $oldRows ())
-              ()
-              (remove-atom &reasoner-source-reliability
-                 (car-atom $oldRows))))
       ($new (reasonerSourceReliabilityAfterGrade $source $grade))
+      ($_ (if (== $oldRows ())
+              True
+              (let $oldRow (car-atom $oldRows)
+                 (remove-atom &reasoner-source-reliability $oldRow))))
       ($_ (add-atom &reasoner-source-reliability
              (ReasonerSourceReliability $source $new))))
       $new))
@@ -278,13 +269,12 @@
 ;; A transition proposal can be valid, feasible, and scored while still being
 ;; deferred until the scheduler performs its own authorization/availability
 ;; check. This is distinct from rejection and malformed input.
-(= (reasonerProposalDisposition $proposal Accepted)
-   (let $kind (getProposalKind $proposal)
-      (if (or (== $kind request-frame-switch)
-              (== $kind request-mode-change))
-          Deferred
-          Accepted)))
-(= (reasonerProposalDisposition $_ $status) $status)
+(= (reasonerProposalDisposition $proposal $status)
+   (if (== $status Accepted)
+       (let $kind (getProposalKind $proposal)
+          (if (or (== $kind request-frame-switch)
+                  (== $kind request-mode-change)) Deferred Accepted))
+       $status))
 
 (= (recordReasonerProposalEvent $proposal $decision)
    (let* (
@@ -384,12 +374,12 @@
       ($status (getStatus $conversion))
       ($reason (getReason $conversion))
       ($candidate (getCandidate $conversion))
-      ($action (getAction $conversion)))
+      ($action (getAction $conversion))
       ($decision
          (if (== $status Accepted)
              (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
                 (reasonerProposalEffectiveScore $bundle $state $proposal))
-             (ReasonerMotivationalDecision $status $reason $proposal none 0.0))))
+             (ReasonerMotivationalDecision $status $reason $proposal none 0.0)))
       ($_ (recordReasonerProposalEvent $proposal $decision)))
       $decision))
 

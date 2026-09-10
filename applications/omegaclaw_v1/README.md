@@ -61,3 +61,54 @@ The demo is intentionally narrower than the production loop and is suitable
 for showing the core integration before the remaining runtime requirements are
 implemented. The first slice uses one deterministic `respond` candidate and a
 fixed score; the real bundle feasibility gate is still exercised and asserted.
+
+## NARS / PLN proposal integration
+
+`reasoner_integration.metta` loads PeTTa's local `lib_nars` and `lib_pln`
+through `reasoner_engines.pl`. The loader prefixes all library-defined function
+names because PeTTa compiles functions globally even across imported spaces.
+It uses the local PeTTa parser/compiler and rejects runnable library forms.
+The original libraries are not modified or copied. These are distinct from
+OmegaClaw-Core's `lib_nal` and `lib_pln` rule libraries.
+
+Import the integration module once, in place of importing `reasoner_proposals`
+directly when composing a host that needs inference:
+
+```metta
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
+```
+
+The caller supplies bounded `Sentence` facts and stable evidence stamps from an
+admitted frame slice. A positive conclusion `(Recommend FRAME CANDIDATE)` must
+be supported by inference; querying it does not assert it. NARS uses `==>` for
+implication and PLN uses `Implication`. For example:
+
+```metta
+(reasonerInferProposal nars proposal-1 frame-A
+   ((Sentence ((Failed frame-A) (stv 1.0 0.9)) (observation-1))
+    (Sentence ((==> (Failed frame-A) (Recommend frame-A repair-failure))
+       (stv 1.0 0.9)) (rule-1)))
+   repair-failure (Expected recovered) (InferenceLimits 8 10 40))
+```
+
+The return is a `ReasonerMotivationalProposal` or `()` for no supported positive
+recommendation. The full truth value is retained in support and the evidence
+stamps are retained in evidence references. Confidence is the engine's confidence,
+not a calibrated probability of success. The positive-value cutoff is an MVP
+seed rule. `reasonerInferDirective` additionally takes a frame bundle and MetaMo
+state and calls the existing validation, feasibility, scoring, and audit path.
+It returns an advisory scheduler directive; it does not execute anything.
+
+Automatic frame-to-fact extraction, proposal collection in the live bridge,
+and scheduler outcome callbacks remain host integration work.
+
+From the PeTTa workspace root, run the offline integration checks:
+
+```bash
+sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
+```
+
+The test reuses the minimal-loop fixture and additionally checks real derivation
+in both engines, evidence and target preservation, missing-premise behavior,
+engine isolation, negative evidence, policy rejection, malformed input, and
+cumulative reliability updates. No LLM, network, or persistence is needed.

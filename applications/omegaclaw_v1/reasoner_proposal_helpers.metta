@@ -49,22 +49,11 @@
 )
 
 
-(= (getStatus $conversion)
-    (if (<= (size-atom $conversion) 5) (Error "There is a conversion error") (index-atom $conversion 1))
-)
-
-(= (getReason $conversion)
-    (if (<= (size-atom $conversion) 5) (Error "There is a conversion error") (index-atom $conversion 2))
-)
-
-(= (getCandidate $conversion)
-    (if (<= (size-atom $conversion) 5) (Error "There is a conversion error") (index-atom $conversion 3))
-)
-
-(= (getAction $conversion)
-    (if (<= (size-atom $conversion) 5) (Error "There is a conversion error") (index-atom $conversion 4))
-)
-
-(= (getScore $decision)
-    (if (<= (size-atom $decision) 5) (Error "There is a decision error") (index-atom $decision 5))
-)
+(= (getStatus (ReasonerMotivationalDecision $status $reason $proposal $candidate $score)) $status)
+(= (getStatus (ReasonerProposalActionResult $status $reason $candidate $action)) $status)
+(= (getReason (ReasonerMotivationalDecision $status $reason $proposal $candidate $score)) $reason)
+(= (getReason (ReasonerProposalActionResult $status $reason $candidate $action)) $reason)
+(= (getCandidate (ReasonerMotivationalDecision $status $reason $proposal $candidate $score)) $candidate)
+(= (getCandidate (ReasonerProposalActionResult $status $reason $candidate $action)) $candidate)
+(= (getAction (ReasonerProposalActionResult $status $reason $candidate $action)) $action)
+(= (getScore (ReasonerMotivationalDecision $status $reason $proposal $candidate $score)) $score)
