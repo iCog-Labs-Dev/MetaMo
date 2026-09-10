@@ -90,4 +90,7 @@
               (clampValue (- 0.90 (* $streak 0.08)))))
       ($_ (replaceSelfMetric resource_usage
               (clampValue (/ $cycles (+ $cycles 50.0)))))
-   ) ()))
+   ) 
+      (UPDATED SELF MODEL METRICS)
+   )
+   )

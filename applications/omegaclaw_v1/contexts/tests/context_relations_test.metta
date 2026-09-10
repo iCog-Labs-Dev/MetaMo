@@ -62,13 +62,3 @@
                   (car-atom (frameBundleRelations (relationTestBundle)))
                   Confirmed)))
 
-; !(frameBundleRelations 
-;    (FrameStateBundle 
-;          (root (FrameStateRoot root-id frame-a (mode Fast) (ResourceBudget 10 10 units (status Open)) root-constraints))  
-;          (current (FrameStateCurrent frame-a (parent ()) UserDirective (status Active) (frame-mode Fast) (priority 0.8) (goal-summary goal) (history-summary history) (deliverable-summary deliverable) (results-summary results) (budget (ResourceBudget 10 10 units (status Open))) (constraints constraints) (certified-method method))) 
-;          (index (active ()) (completed ())) 
-;          (relations ((FrameStateRelation (source-frame frame-a) (target-frame frame-a) (relation-type SameFrame) (reason same-frame) (confidence 0.9) (evidence-status VerificationRequired))))
-;          (runtime ())
-;    )
-; )
-

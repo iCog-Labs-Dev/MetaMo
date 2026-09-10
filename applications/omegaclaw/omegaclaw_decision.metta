@@ -46,7 +46,7 @@
         0.0
         (let* (
         ($candName  (actionId $action))
-        ; ($_ (println! ("Scoring candidate: " $candName)))
+        ($_ (println! ("Scoring candidate: " $candName)))
         ($gInd      (getGoal $state gInd_over))
         ($gTrans    (getGoal $state gTrans_over))
         ($type      (candidateType $candName))
@@ -109,12 +109,14 @@
     (let* (
         (($head $tail) (decons-atom $remaining))
         ($score (omegaclawScore $state $head))
+        ($_ (println! ("Evaluating candidate: " (actionId $head) " score: " $score))
     )
         (if (> $score $bestScore)
             (findBestAction $state $tail $head $score)
             (findBestAction $state $tail $bestAction $bestScore)
         )
     )
+)
 )
 
 

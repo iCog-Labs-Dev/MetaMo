@@ -18,6 +18,7 @@
 !(import! &self (library MetaMo applications/omegaclaw/omegaclaw_decision))
 
 
+
 (= (clamp $value)
    (if (< $value 0.0) 0.0 (if (> $value 1.0) 1.0 $value)))
 
@@ -26,18 +27,18 @@
 (= (diagnosticActions)
    (collapse
       (let $name (superpose (respond retrieve-memory learn ask-clarification))
-         (candidateToAction $name))))
+         (eval (candidateToAction $name)))))
 
 (= (diagnosticScores $state)
    (let* (
       ($respondScore
-         (omegaclawScore $state (candidateToAction respond)))
+         (omegaclawScore $state (eval (candidateToAction respond))))
       ($retrieveScore
-         (omegaclawScore $state (candidateToAction retrieve-memory)))
+         (omegaclawScore $state (eval (candidateToAction retrieve-memory))))
       ($learnScore
-         (omegaclawScore $state (candidateToAction learn)))
+         (omegaclawScore $state (eval (candidateToAction learn))))
       ($clarificationScore
-         (omegaclawScore $state (candidateToAction ask-clarification)))
+         (omegaclawScore $state (eval (candidateToAction ask-clarification))))
    )
       ((respond $respondScore)
        (retrieve-memory $retrieveScore)

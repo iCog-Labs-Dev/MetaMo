@@ -216,7 +216,7 @@
 )
 
 (= (candidateToAction $cand)
-    (let* (
+   (let* (
         ($corrs (buildGoalCorrelations $cand))
         ($risk (lookupRiskEstimate $cand))
         ($delta (buildDeltaG $cand))
