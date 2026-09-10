@@ -25,13 +25,13 @@
 (= (diagnosticScores $state)
    (let* (
       ($respondScore
-         (omegaclawScore $state (candidateToAction respond)))
+         (collapse (omegaclawScore $state (collapse (candidateToAction respond)))))
       ($retrieveScore
-         (omegaclawScore $state (candidateToAction retrieve-memory)))
+         (collapse (omegaclawScore $state (collapse (candidateToAction retrieve-memory)))))
       ($learnScore
-         (omegaclawScore $state (candidateToAction learn)))
+         (collapse (omegaclawScore $state (collapse (candidateToAction learn)))))
       ($clarificationScore
-         (omegaclawScore $state (candidateToAction ask-clarification)))
+         (collapse (omegaclawScore $state (collapse (candidateToAction ask-clarification)))))
    )
       ((respond $respondScore)
        (retrieve-memory $retrieveScore)
@@ -42,12 +42,13 @@
 ;; its anti-saturation counter. This keeps repeated diagnostic runs identical.
 (= (diagnosticWinner $state)
    (let* (
-      ($actions (diagnosticActions))
+      ($actions (eval (diagnosticActions)))
       (($head $tail) (decons-atom $actions))
-      ($firstScore (omegaclawScore $state $head))
-      ($bestAction (findBestAction $state $tail $head $firstScore))
+      ($firstScore (eval (omegaclawScore $state (eval $head))))
+      ($bestAction
+         (eval (findBestAction $state (eval $tail) (eval $head) $firstScore)))
    )
-      (actionId $bestAction)))
+      (eval (actionId $bestAction))))
 
 (= (printScenario $label $state)
    (let* (
@@ -125,11 +126,11 @@
 !(printScenario production-initial-state (createInitialState))
 
 
-!(test (diagnosticWinner (executionTestState)) respond)
-!(test (diagnosticWinner (knowledgeTestState)) retrieve-memory)
-!(test (diagnosticWinner (growthTestState)) learn)
-!(test (diagnosticWinner (safetyTestState)) ask-clarification)
+!(test (eval (diagnosticWinner (executionTestState))) respond)
+!(test (eval (diagnosticWinner (knowledgeTestState))) retrieve-memory)
+!(test (eval (diagnosticWinner (growthTestState))) learn)
+!(test (eval (diagnosticWinner (safetyTestState))) ask-clarification)
 
-!(test (diagnosticWinner (appraisedExecutionState)) respond)
-!(test (diagnosticWinner (appraisedGrowthState)) learn)
-!(test (diagnosticWinner (appraisedSafetyState)) ask-clarification)
+!(test (eval (diagnosticWinner (appraisedExecutionState))) respond)
+!(test (eval (diagnosticWinner (appraisedGrowthState))) learn)
+!(test (eval (diagnosticWinner (appraisedSafetyState))) ask-clarification)
