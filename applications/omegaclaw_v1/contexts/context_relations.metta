@@ -11,7 +11,7 @@
        (let* (
           (($head $tail) (decons-atom $items))
           ($rest (frameStateTake (- $n 1) $tail)))
-          (cons $head $rest))))
+          (cons-atom $head $rest))))
 
 ;; Accept the two relation shapes used by ContextFrames relation providers.
 (= (frameStateRelationEvidence $source $target $type $evidence)
@@ -50,9 +50,9 @@
    (let* (
       (($head $tail) (decons-atom $relations))
       ($projected (frameStateProjectRelation $head)))
-      (cons $projected
+      (cons-atom $projected
             (frameStateBoundRelations
-               (frameStateTake (- (frameStateMaxRelations) 1) $tail)))))
+               (eval (frameStateTake (- (frameStateMaxRelations) 1) $tail))))))
 
 ;; A same-frame relation is evidence requiring verification, never permission
 ;; to merge or rewrite either frame.
@@ -65,11 +65,13 @@
 (= (relationsNeedVerification ()) False)
 (= (relationsNeedVerification $relations)
    (let* ((($head $tail) (decons-atom $relations)))
-      (if (relationNeedsVerification $head)
+      (if (eval (relationNeedsVerification $head))
           True
-          (relationsNeedVerification $tail))))
+          (eval (relationsNeedVerification $tail)))))
 (= (bundleNeedsRelationVerification $bundle)
-   (relationsNeedVerification (frameBundleRelations $bundle)))
+   (let (FrameStateBundle $_ $_ $_ (relations $relations) $_)
+        (eval $bundle)
+      (eval (relationsNeedVerification $relations))))
 
 ;; ---------------------------------------------------------------------------
 ;; Frame-state verification evidence
@@ -101,16 +103,18 @@
       (prior-confidence $confidence)
       (evidence-status (verificationEvidenceStatus $result))))
 
-(= (frameVerificationStatus
-      (FrameVerificationEvidence $_ $_ $_ $_ $_ (evidence-status $status)))
-   $status)
+(= (frameVerificationStatus $evidence)
+   (let (FrameVerificationEvidence $_ $_ $_ $_ $_ (evidence-status $status))
+        $evidence
+      $status))
 
 ;; Capture a typed observation without mutating the input relation. The
 ;; returned evidence is suitable for a scheduler audit event and is also
 ;; stored for later relation write-back.
 !(bind! &frame-verification-evidence (new-space))
 (= (captureFrameVerificationOutcome $relation $result)
-   (let $evidence (makeFrameVerificationEvidence $relation $result)
+   (let $evidence
+         (makeFrameVerificationEvidence (eval $relation) $result)
       (let $_ (add-atom &frame-verification-evidence $evidence)
          $evidence)))
 

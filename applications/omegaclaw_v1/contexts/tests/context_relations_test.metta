@@ -10,6 +10,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/utils))
 !(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/context_integration)
 !(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
+!(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
 
 !(test (!= (frameStateProjectRelation
                (FrameRelation frame-a frame-a SameFrame "same" 0.90 Proposed))
@@ -28,23 +29,46 @@
          (budget (ResourceBudget 10 10 units (status Open)))
          (constraints constraints) (certified-method method)))
       (index (active ()) (completed ()))
-      (relations
+(relations
          ((FrameStateRelation
             (source-frame frame-a) (target-frame frame-a)
             (relation-type SameFrame) (reason same-frame) (confidence 0.90)
             (evidence-status VerificationRequired))))
       (runtime ())))
 
-!(test (bundleNeedsRelationVerification (relationTestBundle)) True)
-!(test (eval (eval (frameVerificationStatus
+
+!(test (eval (bundleNeedsRelationVerification (relationTestBundle))) True)
+!(test  (eval (frameVerificationStatus
                (captureFrameVerificationOutcome
                   (car-atom (frameBundleRelations (relationTestBundle)))
-                  Confirmed)))) Confirmed)
-!(test (eval (eval (frameVerificationStatus
+                  Confirmed))) Confirmed)
+!(captureFrameVerificationOutcome
+                  (relationTestBundle)
+                  Confirmed)
+!(eval (frameBundleRelations (eval (relationTestBundle))))
+!(test (eval (frameVerificationStatus
                (captureFrameVerificationOutcome
                   (car-atom (frameBundleRelations (relationTestBundle)))
-                  Refuted)))) Refuted)
-!(test (eval (eval (frameVerificationStatus
+                  Refuted))) Refuted)
+!(let $interimVariable (frameBundleRelations (relationTestBundle))
+      (test  (eval (frameVerificationStatus
+               (eval (captureFrameVerificationOutcome
+                  (car-atom $$interimVariable)
+                  ;(car-atom $interimVariable)
+                  UnknownVerificationResult)))) Unresolved))
+
+!(eval (frameVerificationStatus
                (captureFrameVerificationOutcome
                   (car-atom (frameBundleRelations (relationTestBundle)))
-                  UnknownVerificationResult)))) Unresolved)
+                  Confirmed)))
+
+; !(frameBundleRelations 
+;    (FrameStateBundle 
+;          (root (FrameStateRoot root-id frame-a (mode Fast) (ResourceBudget 10 10 units (status Open)) root-constraints))  
+;          (current (FrameStateCurrent frame-a (parent ()) UserDirective (status Active) (frame-mode Fast) (priority 0.8) (goal-summary goal) (history-summary history) (deliverable-summary deliverable) (results-summary results) (budget (ResourceBudget 10 10 units (status Open))) (constraints constraints) (certified-method method))) 
+;          (index (active ()) (completed ())) 
+;          (relations ((FrameStateRelation (source-frame frame-a) (target-frame frame-a) (relation-type SameFrame) (reason same-frame) (confidence 0.9) (evidence-status VerificationRequired))))
+;          (runtime ())
+;    )
+; )
+
