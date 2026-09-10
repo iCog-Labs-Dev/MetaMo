@@ -7,7 +7,6 @@
 (= (activeFrameBundle)
    (get-state &active-frame-bundle))
 
-
 ;; Check if a candidate is registered as a safety-type action.
 (= (isSafetyCandidate $name)
     (let $res (collapse (match &self (CandidateSpec $name safety) True))
