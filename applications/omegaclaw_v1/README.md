@@ -23,24 +23,19 @@ This directory contains the MetaMo adapter and motivation logic for OmegaClaw.
 
 ## Installation
 
-To set up and run this application, clone the necessary repositories and copy the run file:
-
-```bash
-git clone https://github.com/trueagi-io/PeTTa
-cd PeTTa
-mkdir -p repos
-git clone https://github.com/asi-alliance/OmegaClaw-Core.git repos/OmegaClaw-Core
-git clone https://github.com/patham9/petta_lib_chromadb.git repos/petta_lib_chromadb
-git clone https://github.com/iCog-Labs-Dev/MetaMo.git MetaMo
-cp MetaMo/applications/omegaclaw_v1/run.metta ./run_omega.metta
-```
+Use the exact source revisions and workspace structure recorded in
+[DEPENDENCIES.md](DEPENDENCIES.md). Keep `MetaMo/`, `repos/OmegaClaw-Core/`,
+and `repos/petta_lib_chromadb/` inside the same PeTTa workspace. Run the
+application file in place; copying it to the workspace root breaks its
+relative imports. The recorded offline baseline is not yet a verified full
+live-runtime installation.
 
 ## Usage
 
-After copying the file, you can run the system from the root folder:
+After configuring dependencies and credentials, run from the PeTTa workspace root:
 
 ```bash
-OMEGACLAW_AUTH_SECRET=<channel-secret> sh run.sh run_omega.metta IRC_channel="<irc-channel>" -s
+OMEGACLAW_AUTH_SECRET=<channel-secret> sh ./run.sh MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>" -s
 ```
 
 *(Note: Replace `<channel-secret>` and `<irc-channel>` with your own values, similarly to the default OmegaClaw setup).*
@@ -54,8 +49,12 @@ selection. It does not require a live channel, LLM, persistence backend, or
 ChromaDB:
 
 ```bash
-applications/omegaclaw_v1/tests/run_minimal_loop.sh
+sh ./run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 ```
+
+Run this command from the PeTTa workspace root using its local `run.sh`.
+The `tests/run_minimal_loop.sh` convenience wrapper uses `petta` from `PATH`,
+which may select a different checkout; see [DEPENDENCIES.md](DEPENDENCIES.md).
 
 The demo is intentionally narrower than the production loop and is suitable
 for showing the core integration before the remaining runtime requirements are
