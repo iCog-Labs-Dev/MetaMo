@@ -3,7 +3,8 @@
 ;; This module decides whether a registered candidate is feasible for a bounded
 ;; FrameStateBundle. It does not construct scheduler directives.
 
-!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_accessors))
+;; context_integration imports context_accessors before this module. Leaf
+;; modules do not reimport dependencies: native PeTTa would compile them twice.
 
 (= (cfv2-current-frame-active)
    (or (== (get-state &cfv2-current-status) Active)
@@ -126,4 +127,3 @@
       ((GateDecision $admission $reason) $gate))
       (and (== $admission Admitted)
            (feasibilityGateActions $bundle $tail))))
-

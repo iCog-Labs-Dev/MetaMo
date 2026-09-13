@@ -1,8 +1,8 @@
 ;; Focused tests for bounded ContextFrames projection.
 
 !(import! &self (library lib_import))
-!(import! &self (library OmegaClaw-Core src/helper.py))
-!(import! &self (library OmegaClaw-Core src/context))
+!(import! &self "../../../../../repos/OmegaClaw-Core/src/helper.py")
+!(import! &self ../../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo core/state))
 !(import! &self (library MetaMo core/state_accessors))
 !(import! &self (library MetaMo core/helper))

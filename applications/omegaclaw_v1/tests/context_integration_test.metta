@@ -1,11 +1,15 @@
 ;; ContextFrames/MetaMo v1 integration smoke test.
 ;; This intentionally imports the same local OmegaClaw-Core composition used
 ;; by MetaMo/applications/omegaclaw_v1/run.metta.
+;; From the workspace root:
+;;   sh run.sh MetaMo/applications/omegaclaw_v1/tests/context_integration_test.metta -s
+;; Host source paths are explicit because native PeTTa does not register the
+;; OmegaClaw-Core package namespace. The context facade owns all leaf imports.
 
 !(import! &self (library lib_import))
-!(import! &self (library OmegaClaw-Core src/helper.py))
-!(import! &self (library OmegaClaw-Core src/skills))
-!(import! &self (library OmegaClaw-Core src/context))
+!(import! &self "../../../../repos/OmegaClaw-Core/src/helper.py")
+!(import! &self ../../../../repos/OmegaClaw-Core/src/skills)
+!(import! &self ../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo core/config))
 !(import! &self (library MetaMo core/state))
 !(import! &self (library MetaMo core/state_accessors))

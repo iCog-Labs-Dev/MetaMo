@@ -56,8 +56,22 @@ but does not start a channel, initialize a task, or restore persistence.
 
 The context facade is the public bundle of context modules. Consumers needing
 the complete boundary import it once instead of listing its children as well.
-Leaf modules may still declare their own dependencies; the loader makes those
-shared edges idempotent. Focused tests may import individual leaves.
+Context leaves do not import one another. The facade loads accessors before
+policy, then directives, so this graph also compiles once under native `run.sh`.
+Focused tests may import individual leaves only when they explicitly load their
+prerequisites in order and do not also import the facade.
+
+The context integration test and focused context tests use explicit host source
+paths so native PeTTa does not silently skip an unregistered OmegaClaw-Core
+namespace. From the workspace root, the integration test also runs directly:
+
+```bash
+sh run.sh MetaMo/applications/omegaclaw_v1/tests/context_integration_test.metta -s
+```
+
+This command passes all 77 assertions without the custom import cache. A native
+runner regression check prevents the caching launcher from concealing future
+duplicate imports. This does not give native PeTTa general import-once semantics.
 
 `tests/fixtures/minimal_loop.metta` contains shared offline definitions and
 imports the same application composition. Its scenario reset is the explicit

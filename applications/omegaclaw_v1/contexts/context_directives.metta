@@ -3,8 +3,8 @@
 ;; This module converts an admitted policy result into typed advisory output;
 ;; it does not execute operations or mutate ContextFrames.
 
-!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_accessors))
-!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_policy))
+;; context_integration imports context_accessors and context_policy first.
+;; Keep imports in that facade so native PeTTa loads each definition once.
 
 
 !(bind! &last-attention-directive
@@ -118,4 +118,3 @@
    ;; Example: `(lastAttentionDirective)` reads the most recently published
    ;; directive. It is initialized to a rejected `none` directive at startup.
    (get-state &last-attention-directive))
-
