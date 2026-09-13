@@ -3,8 +3,8 @@
 ;; This module converts an admitted policy result into typed advisory output;
 ;; it does not execute operations or mutate ContextFrames.
 
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_policy)
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_accessors))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_policy))
 
 
 !(bind! &last-attention-directive

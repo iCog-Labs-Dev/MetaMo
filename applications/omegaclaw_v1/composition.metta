@@ -1,0 +1,32 @@
+;; Common application composition for live startup and offline fixtures.
+;; Imports define functions and allocate module-owned state once. This module
+;; does not initialize a task, restore persistence, or start a channel.
+!(import! &self (library lib_import))
+
+!(import! &self (library MetaMo core/config))
+!(import! &self (library MetaMo applications/omegaclaw_v1/openpsi_config))
+!(import! &self (library MetaMo core/state))
+!(import! &self (library MetaMo core/state_accessors))
+!(import! &self (library MetaMo core/helper))
+!(import! &self (library MetaMo core/helpers.py))
+!(import! &self (library MetaMo category/functors))
+!(import! &self (library MetaMo category/bimonad))
+!(import! &self (library MetaMo dynamics/stability))
+!(import! &self (library MetaMo dynamics/coherence))
+
+!(import! &self (library MetaMo main/main))
+!(import! &self (library MetaMo core/registry))
+!(import! &self (library MetaMo applications/omegaclaw_v1/utils))
+!(import! &self (library MetaMo applications/omegaclaw_v1/registry))
+!(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
+!(import! &self (library MetaMo applications/omegaclaw_v1/mode_layer))
+!(import! &self (library MetaMo applications/omegaclaw_v1/signals))
+!(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_appraisal))
+!(import! &self (library MetaMo applications/omegaclaw_v1/homeostasis))
+!(import! &self (library MetaMo applications/omegaclaw_v1/task_lifecycle))
+!(import! &self (library MetaMo applications/omegaclaw_v1/context_integration))
+!(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
+!(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_decision))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
+!(import! &self (library MetaMo applications/omegaclaw_v1/persistence))
+!(import! &self (library MetaMo applications/omegaclaw_v1/bridge))

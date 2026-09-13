@@ -18,24 +18,25 @@ This directory contains the MetaMo adapter and motivation logic for OmegaClaw.
 | `omegaclaw_decision.metta` | Candidate scoring and winner selection. |
 | `persistence.metta` | Save, restore, and persistence scheduling. |
 | `bridge.metta` | MetaMo-cycle orchestration, prompt construction, and startup. |
-| `run.metta` | Dependency composition and application entry point. |
+| `composition.metta` | Shared application imports in dependency order; no channel startup. |
+| `run.metta` | Host imports and explicit application startup. |
 | `tests/` | Isolated integration and scoring diagnostics. |
 
 ## Installation
 
 Use the exact source revisions and workspace structure recorded in
 [DEPENDENCIES.md](DEPENDENCIES.md). Keep `MetaMo/`, `repos/OmegaClaw-Core/`,
-and `repos/petta_lib_chromadb/` inside the same PeTTa workspace. Run the
-application file in place; copying it to the workspace root breaks its
-relative imports. The recorded offline baseline is not yet a verified full
-live-runtime installation.
+and `repos/petta_lib_chromadb/` inside the same PeTTa workspace. Use the common
+launcher below for canonical import resolution and one-time module loading.
+See [COMPOSITION.md](COMPOSITION.md) for dependency and initialization rules.
+The offline baseline is not yet a verified full live-runtime installation.
 
 ## Usage
 
 After configuring dependencies and credentials, run from the PeTTa workspace root:
 
 ```bash
-OMEGACLAW_AUTH_SECRET=<channel-secret> sh ./run.sh MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>" -s
+OMEGACLAW_AUTH_SECRET=<channel-secret> python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>"
 ```
 
 *(Note: Replace `<channel-secret>` and `<irc-channel>` with your own values, similarly to the default OmegaClaw setup).*
@@ -49,12 +50,14 @@ selection. It does not require a live channel, LLM, persistence backend, or
 ChromaDB:
 
 ```bash
-sh ./run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta
 ```
 
-Run this command from the PeTTa workspace root using its local `run.sh`.
-The `tests/run_minimal_loop.sh` convenience wrapper uses `petta` from `PATH`,
-which may select a different checkout; see [DEPENDENCIES.md](DEPENDENCIES.md).
+Run this command from the PeTTa workspace root. The
+`tests/run_minimal_loop.sh` convenience wrapper uses the same launcher.
+Pass `--workspace` to select a compiler workspace explicitly; the default is
+the parent of this MetaMo checkout. Native `petta` and `run.sh` do not enforce
+one-time module loading.
 
 The demo is intentionally narrower than the production loop and is suitable
 for showing the core integration before the remaining runtime requirements are
@@ -70,8 +73,9 @@ It uses the local PeTTa parser/compiler and rejects runnable library forms.
 The original libraries are not modified or copied. These are distinct from
 OmegaClaw-Core's `lib_nal` and `lib_pln` rule libraries.
 
-Import the integration module once, in place of importing `reasoner_proposals`
-directly when composing a host that needs inference:
+Import the integration module when composing a host that needs inference.
+Its shared proposal dependency is loaded once even when already present in
+the application composition:
 
 ```metta
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
@@ -104,7 +108,7 @@ and scheduler outcome callbacks remain host integration work.
 From the PeTTa workspace root, run the offline integration checks:
 
 ```bash
-sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta
 ```
 
 The test reuses the minimal-loop fixture and additionally checks real derivation

@@ -2,8 +2,10 @@
 % Load the two local libraries with every library-defined function renamed,
 % including higher-order references. Data constructors (Sentence/stv) stay intact.
 :- dynamic metamo_engine_loaded/1.
-:- prolog_load_context(directory, Dir),
-   directory_file_path(Dir, '../../../lib', Lib),
+:- ( current_predicate(mm_root/2), mm_root(petta, Root)
+   -> directory_file_path(Root, lib, Lib)
+   ; prolog_load_context(directory, Dir),
+     directory_file_path(Dir, '../../../lib', Lib) ),
    asserta(metamo_engine_library_dir(Lib)).
 
 loadReasonerEngines(true) :-

@@ -48,10 +48,10 @@
 
 ;; Relation projection and verification evidence live in a focused submodule;
 ;; this file remains the compatibility façade for the complete boundary.
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_slices)
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_policy)
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_directives)
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_projection)
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_relations))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_accessors))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_slices))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_policy))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_directives))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_projection))
 

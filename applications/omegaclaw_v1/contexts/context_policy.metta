@@ -3,7 +3,7 @@
 ;; This module decides whether a registered candidate is feasible for a bounded
 ;; FrameStateBundle. It does not construct scheduler directives.
 
-!(import! &self ../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_accessors))
 
 (= (cfv2-current-frame-active)
    (or (== (get-state &cfv2-current-status) Active)

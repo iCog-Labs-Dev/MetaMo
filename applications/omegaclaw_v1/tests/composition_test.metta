@@ -1,0 +1,36 @@
+;; Importing a facade or the full composition must preserve already-live state.
+!(import! &self (library MetaMo applications/omegaclaw_v1/mode_layer))
+!(setConstitutionalMode Threat)
+!(import! &self (library MetaMo applications/omegaclaw_v1/signals))
+!(change-state! &failure-streak 7)
+!(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
+!(add-atom &goal-space (composition-sentinel preserved))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_relations))
+!(add-atom &frame-verification-evidence (composition-evidence preserved))
+!(import! &self (library MetaMo applications/omegaclaw_v1/registry))
+
+;; These three routes converge on the same physical module files.
+!(import! &self ../mode_layer.metta)
+!(import! &self ../contexts/context_relations.metta)
+!(import! &self (library MetaMo applications/omegaclaw_v1/context_integration))
+!(import! &self (library MetaMo applications/omegaclaw_v1/composition))
+!(import! &self ../composition.metta)
+
+!(test (constitutionalMode) Threat)
+!(test (get-state &failure-streak) 7)
+!(test (collapse (match &goal-space (composition-sentinel $value) $value)) (preserved))
+!(test (collapse (match &frame-verification-evidence (composition-evidence $value) $value)) (preserved))
+!(test (collapse (match &self (ModulatorSpec urgency $value) $value)) (0.50))
+!(test (directiveSlice respond) CurrentFrameSummary)
+
+;; Loading reusable fixture definitions must not run scenario setup or tests.
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
+!(test (constitutionalMode) Threat)
+!(test (get-state &failure-streak) 7)
+!(test (collapse (match &goal-space (composition-sentinel $value) $value)) (preserved))
+!(initMinimalLoopFixture)
+!(test (constitutionalMode) Engaged)
+!(test (get-state &failure-streak) 0)
+!(change-state! &failure-streak 9)
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
+!(test (get-state &failure-streak) 9)

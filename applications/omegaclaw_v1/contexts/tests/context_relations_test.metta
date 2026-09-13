@@ -1,16 +1,14 @@
 ;; Focused tests for the ContextFrames relation boundary.
 
 !(import! &self (library lib_import))
-!(import! &self "../../../../../repos/OmegaClaw-Core/src/helper.py")
-!(import! &self ../../../../../repos/OmegaClaw-Core/src/context)
+!(import! &self (library OmegaClaw-Core src/helper.py))
+!(import! &self (library OmegaClaw-Core src/context))
 !(import! &self (library MetaMo core/state))
 !(import! &self (library MetaMo core/state_accessors))
 !(import! &self (library MetaMo core/helper))
 !(import! &self (library MetaMo core/helpers.py))
 !(import! &self (library MetaMo applications/omegaclaw_v1/utils))
-!(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/context_integration)
-!(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
-!(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/contexts/context_accessors)
+!(import! &self (library MetaMo applications/omegaclaw_v1/context_integration))
 
 !(test (!= (frameStateProjectRelation
                (FrameRelation frame-a frame-a SameFrame "same" 0.90 Proposed))

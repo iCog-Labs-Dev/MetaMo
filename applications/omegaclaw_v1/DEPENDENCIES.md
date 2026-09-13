@@ -53,20 +53,16 @@ The inspected `<workspace>` is
 `/Users/nahomsenay/Hyperclaw-Metamo-Fork`. The directory name can change; the
 relative structure above is required by current imports.
 
-Why the layout matters:
+The standard launcher is now `MetaMo/scripts/run-omegaclaw.py`; see
+[COMPOSITION.md](COMPOSITION.md). It maps named packages to explicit physical
+roots and loads each module once. Its default compiler workspace is MetaMo's
+parent; `--workspace` supports a separate compiler checkout containing `lib/`
+and `repos/`. MetaMo imports always target the checkout containing the launcher.
+The inference engines use that selected compiler workspace's `lib/` as well.
+Relative imports, when used, are relative to the importing file.
 
-- PeTTa initializes its library search path from its own `src/../lib`.
-  `(library MetaMo ...)` therefore resolves through that workspace's sibling
-  `MetaMo/` directory.
-- The v1 entry point uses `../../../repos/OmegaClaw-Core/...` imports.
-  Tests use deeper relative paths appropriate to their entry-file directories.
-- `reasoner_engines.pl` locates `../../../lib` relative to its own source file.
-  Compiler and engine libraries must come from the intended workspace baseline.
-- Moving or copying `run.metta` to the workspace root breaks its relative path
-  contract. Run the original file in place. Do not use the previous README's
-  `cp ... ./run_omega.metta` instructions.
-- Standalone MetaMo installation beside an unrelated PeTTa checkout is not a
-  supported v1 layout until import resolution is standardized and tested.
+The native PeTTa runner does not provide these composition guarantees. Keep the
+original entry point and invoke it through the common launcher below.
 
 ## Runtime and Python dependency status
 
@@ -104,8 +100,8 @@ SWI-Prolog, not only the shell's `python3`, when validating installed packages.
 From `<workspace>`, run the offline smoke checks with the local compiler:
 
 ```bash
-sh ./run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
-sh ./run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta
 ```
 
 Run the focused suite and source guards:
@@ -120,13 +116,21 @@ The intended live invocation, after configuring dependencies and channel
 credentials, is below. It was not executed as part of this baseline check:
 
 ```bash
-OMEGACLAW_AUTH_SECRET=<channel-secret> sh ./run.sh MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>" -s
+OMEGACLAW_AUTH_SECRET=<channel-secret> python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>"
 ```
 
 Verify checkout identities with `git rev-parse HEAD` in each directory listed
 in the revision table before comparing test results.
 
-## Compatibility evidence and alternate runners
+## Current composition validation
+
+With the common launcher, all 12 v1 MeTTa test files and six launcher regression
+tests pass locally. The reasoner test now runs 18 of its own assertions; the six
+minimal-loop assertions are no longer executed indirectly by importing a test.
+The earlier native-runner observations below are historical diagnosis, not
+results for the current launcher. Full live-runtime compatibility is unverified.
+
+## Historical compatibility evidence and alternate runners
 
 Using the workspace-local runner and the recorded source revisions:
 

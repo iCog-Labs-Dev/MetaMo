@@ -1,14 +1,14 @@
 ;; Focused tests for bounded ContextFrames projection.
 
 !(import! &self (library lib_import))
-!(import! &self "../../../../../repos/OmegaClaw-Core/src/helper.py")
-!(import! &self ../../../../../repos/OmegaClaw-Core/src/context)
+!(import! &self (library OmegaClaw-Core src/helper.py))
+!(import! &self (library OmegaClaw-Core src/context))
 !(import! &self (library MetaMo core/state))
 !(import! &self (library MetaMo core/state_accessors))
 !(import! &self (library MetaMo core/helper))
 !(import! &self (library MetaMo core/helpers.py))
-!(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/contexts/context_relations)
-!(import! &self ../../../../../MetaMo/applications/omegaclaw_v1/contexts/context_projection)
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_relations))
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_projection))
 
 !(test (eval (frameStateMaxIndexRefs)) 20)
 !(test (eval (frameStateMaxRelations)) 10)

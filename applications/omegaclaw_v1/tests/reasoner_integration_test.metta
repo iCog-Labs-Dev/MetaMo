@@ -1,6 +1,7 @@
 ;; Offline real inference plus production proposal admission/conversion.
-!(import! &self (library MetaMo applications/omegaclaw_v1/tests/minimal_loop_test))
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
+!(initMinimalLoopFixture)
 
 (= (narsRepairFacts)
    ((Sentence ((Failed demo-frame) (stv 1.0 0.9)) (observation-1))

@@ -1,0 +1,96 @@
+# Predictable v1 module composition
+
+## Diagnosis
+
+PeTTa's native importer processes a file on every import. Each MeTTa function
+definition adds another global Prolog clause, and each top-level `bind!` runs
+again. Rebinding a state replaces its value; rebinding a space loses the
+previous space reference and its accumulated contents.
+
+The v1 dependency graph previously loaded context leaves directly, through
+`context_integration`, and again through leaf dependencies. For example, the
+facade imports `context_accessors`, `context_policy` imports it again, and
+`context_directives` imports both. The scoring tests also imported the registry
+twice. These routes explain repeated accessor/directive results and repeated
+allocation of directive and relation-evidence state.
+
+There was a separate setup issue: the reasoner integration test imported the
+runnable minimal-loop test, executing its initialization and six assertions as
+a side effect. Finally, the production import order placed proposals before the
+decision scorer. PeTTa could compile the unresolved scorer call as data; using
+the production composition in the reasoner test reproduced an arithmetic type
+error on `omegaclawScoreForBundle`.
+
+## Contract
+
+- Use `scripts/run-omegaclaw.py` for v1 execution and import auditing. Native
+  `petta`/`run.sh` do not provide these import semantics.
+- Named imports resolve from explicit roots: this MetaMo checkout, the selected
+  PeTTa `lib/`, and that workspace's two `repos/` dependencies. Relative imports
+  resolve from the importing source file, not the initial entry file or shell.
+- Canonical physical paths identify modules. Direct, named, facade, `..`, and
+  symlink routes to the same file share one successful load.
+- A successful MeTTa module load compiles definitions, adds registry facts, and
+  runs allocation forms once. Subsequent imports preserve state and space
+  contents; they are not a reset API.
+- Modules become loaded only after successful completion. A load error aborts
+  execution; failed imports are not treated as successfully cached modules.
+  Partial effects are not rolled back, so restart after a failed load.
+- Cyclic imports fail explicitly rather than exposing partially loaded modules.
+- Loading one MeTTa module into a second space fails explicitly. PeTTa function
+  compilation is global; a second space is not an isolated copy of module code.
+  This launcher is intended for v1's single-space module composition.
+- Python imports verify the loaded module's `__file__` against the requested
+  physical file. Errors and same-name module collisions are not silently ignored.
+
+## Composition and initialization
+
+`composition.metta` owns the application import order: shared core, configuration
+and state adapters, modes/signals/appraisal, homeostasis/lifecycle, context facade,
+candidate generation, decision scoring, proposals, persistence, and bridge.
+The scorer is imported before the proposal functions that call it.
+
+`run.metta` imports the host dependencies and this common composition, then calls
+`motivatedOmegaclaw` explicitly. Importing `composition.metta` allocates defaults
+but does not start a channel, initialize a task, or restore persistence.
+
+The context facade is the public bundle of context modules. Consumers needing
+the complete boundary import it once instead of listing its children as well.
+Leaf modules may still declare their own dependencies; the loader makes those
+shared edges idempotent. Focused tests may import individual leaves.
+
+`tests/fixtures/minimal_loop.metta` contains shared offline definitions and
+imports the same application composition. Its scenario reset is the explicit
+`initMinimalLoopFixture` function. Importing the fixture neither resets a live
+scenario nor executes test assertions. The minimal-loop and reasoner tests each
+call setup once, in their own process.
+
+## Verification and inspection
+
+From the MetaMo repository root:
+
+```bash
+python3 scripts/run-tests.py --root applications/omegaclaw_v1 --import-report-dir /tmp/omegaclaw-imports
+python3 scripts/import-resolution-test.py
+python3 scripts/run-omegaclaw.py applications/omegaclaw_v1/run.metta --audit --report /tmp/omegaclaw-run-imports.json
+```
+
+Use `--workspace /absolute/path/to/PeTTa` on the standalone launcher, or
+`--petta-runner /absolute/path/to/PeTTa/run.sh` on the suite, to select a different
+workspace explicitly. The `run.sh` argument selects the compiler directory;
+v1 tests still execute through the common launcher.
+
+JSON reports list each declared import edge's owner, request, kind, and physical
+target. They include transitive MeTTa imports, declared Prolog helpers, and the
+two inference engine files. Repeated edges are expected where dependencies are
+shared; they do not imply repeated execution. Audit mode parses source without
+executing application Python, MeTTa setup, or channel startup. It does not audit
+transitive Python package imports or arbitrary computed imports inside functions;
+imports reached at execution still use the same resolver.
+
+Validation after this change: all 12 v1 MeTTa test files passed, including a new
+12-assertion composition test. Six launcher regression tests passed. The tests
+cover state/evidence preservation, singleton registry facts and function results,
+explicit fixture setup, symlink identity, shell-directory independence, missing
+sources, application-free auditing, cycle detection, and cross-space rejection.
+No live channel or persistence backend was started. CI/CD YAML remains unchanged.
