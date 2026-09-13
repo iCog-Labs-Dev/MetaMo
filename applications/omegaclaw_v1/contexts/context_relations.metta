@@ -4,9 +4,10 @@
 ;; never as frame topology or permission to mutate a frame.
 
 (= (frameStateMaxRelations) 10)
-(= (frameStateTake $n () ()) ())
+;; Stop on either bound without overlapping base clauses. Empty and short
+;; input lists must return one prefix rather than fail during deconstruction.
 (= (frameStateTake $n $items)
-   (if (<= $n 0)
+   (if (or (<= $n 0) (== $items ()))
        ()
        (let* (
           (($head $tail) (decons-atom $items))

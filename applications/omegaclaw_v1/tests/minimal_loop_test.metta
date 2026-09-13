@@ -39,6 +39,9 @@
 ;; a feasible AttentionDirective targeting demo-frame. The score is deliberately
 ;; fixed at 0.50 in minimalLoop so repeated runs produce identical output.
 
+;; Explicit host sources also resolve under the workspace-local run.sh.
+!(import! &self "../../../../repos/OmegaClaw-Core/src/helper.py")
+!(import! &self ../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
 !(initMinimalLoopFixture)
 

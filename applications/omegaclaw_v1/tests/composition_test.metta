@@ -1,4 +1,7 @@
 ;; Importing a facade or the full composition must preserve already-live state.
+;; Explicit host sources also resolve under the workspace-local run.sh.
+!(import! &self "../../../../repos/OmegaClaw-Core/src/helper.py")
+!(import! &self ../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo applications/omegaclaw_v1/mode_layer))
 !(setConstitutionalMode Threat)
 !(import! &self (library MetaMo applications/omegaclaw_v1/signals))

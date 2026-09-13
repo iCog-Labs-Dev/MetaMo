@@ -73,11 +73,13 @@ It uses the local PeTTa parser/compiler and rejects runnable library forms.
 The original libraries are not modified or copied. These are distinct from
 OmegaClaw-Core's `lib_nal` and `lib_pln` rule libraries.
 
-Import the integration module when composing a host that needs inference.
-Its shared proposal dependency is loaded once even when already present in
-the application composition:
+Load the application composition once, then its inference extension.
+`composition.metta` owns the proposal definitions and import helpers; the
+extension must not reload them under native PeTTa. If the host has already
+loaded the composition, add only the second import:
 
 ```metta
+!(import! &self (library MetaMo applications/omegaclaw_v1/composition))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
 ```
 
@@ -115,3 +117,13 @@ The test reuses the minimal-loop fixture and additionally checks real derivation
 in both engines, evidence and target preservation, missing-premise behavior,
 engine isolation, negative evidence, policy rejection, malformed input, and
 cumulative reliability updates. No LLM, network, or persistence is needed.
+
+Both offline tests also run with the workspace-local native runner:
+
+```bash
+sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
+sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
+```
+
+They pass all 6 and 18 assertions respectively without import caching. Native
+compiler regression checks run both with a 64 MiB stack limit as well.

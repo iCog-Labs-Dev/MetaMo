@@ -2,11 +2,15 @@
 % Load the two local libraries with every library-defined function renamed,
 % including higher-order references. Data constructors (Sentence/stv) stay intact.
 :- dynamic metamo_engine_loaded/1.
-:- ( current_predicate(mm_root/2), mm_root(petta, Root)
+% Resolve engines beside the compiler actually running this process, including
+% native run.sh. Do not mix that compiler with libraries beside a different
+% MetaMo checkout, and do not accumulate directory facts on repeated consults.
+metamo_engine_library_dir(Lib) :-
+   ( current_predicate(mm_root/2), mm_root(petta, Root)
    -> directory_file_path(Root, lib, Lib)
-   ; prolog_load_context(directory, Dir),
-     directory_file_path(Dir, '../../../lib', Lib) ),
-   asserta(metamo_engine_library_dir(Lib)).
+   ; once(source_file(process_metta_string(_, _, _), Compiler)),
+     file_directory_name(Compiler, Dir),
+     directory_file_path(Dir, '../lib', Lib) ).
 
 loadReasonerEngines(true) :-
     metamo_load_engine('lib_nars.metta', 'MetaMoNARS.'),
@@ -28,6 +32,8 @@ metamo_load_engine(File, Prefix) :-
 % These libraries are declarative. Reject startup commands instead of executing
 % unscoped code if a future library revision adds any.
 metamo_engine_term(form(Source), Term) :- sread(Source, Term).
+metamo_engine_term(runnable(_), _) :-
+    throw(error(permission_error(load, runnable_reasoner_library, engine), _)).
 metamo_engine_rename(_, _, Term, Term) :- var(Term), !.
 metamo_engine_rename(Names, Prefix, Term, Renamed) :-
     atom(Term), memberchk(Term, Names), !, atom_concat(Prefix, Term, Renamed).

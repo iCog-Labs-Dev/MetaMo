@@ -1,7 +1,7 @@
 ;; Offline fixture: imports and definitions only. Setup is explicit.
-!(import! &self (library OmegaClaw-Core src/helper.py))
-!(import! &self (library OmegaClaw-Core src/skills))
-!(import! &self (library OmegaClaw-Core src/context))
+;; The test entry point imports host helper/ContextFrames sources explicitly.
+;; Native PeTTa resolves relative imports against the entry point, so host
+;; source paths must not be hidden inside this reusable nested fixture.
 !(import! &self (library MetaMo applications/omegaclaw_v1/composition))
 
 ;; ---------------------------------------------------------------------------

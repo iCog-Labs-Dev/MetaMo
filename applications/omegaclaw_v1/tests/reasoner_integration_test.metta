@@ -1,4 +1,7 @@
 ;; Offline real inference plus production proposal admission/conversion.
+;; Explicit host sources also resolve under the workspace-local run.sh.
+!(import! &self "../../../../repos/OmegaClaw-Core/src/helper.py")
+!(import! &self ../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
 !(initMinimalLoopFixture)

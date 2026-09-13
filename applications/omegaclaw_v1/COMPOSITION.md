@@ -79,6 +79,26 @@ imports the same application composition. Its scenario reset is the explicit
 scenario nor executes test assertions. The minimal-loop and reasoner tests each
 call setup once, in their own process.
 
+The native reasoner test previously returned sixteen `nars` alternatives for
+its first scalar assertion: `reasoner_integration` reimported both `lib_import`
+and `reasoner_proposals` after the fixture's composition had loaded them.
+The extension now requires composition first and imports only its engine adapter.
+This removes repeated compilation and proposal-state allocation at their source.
+
+Host helper and ContextFrames imports live at each test entry point, using
+explicit source paths. They are no longer hidden behind a package alias that
+native PeTTa does not register. The reusable fixture receives those host
+definitions from its caller. Engine libraries resolve beside the compiler
+actually running, and runnable forms in engine libraries produce an explicit
+load error rather than silently leaving inference calls unresolved.
+
+After the earlier context-import repair, the minimal-loop overflow was no
+longer reproducible in the current tree. Both the minimal loop (6 assertions)
+and real NARS/PLN integration (18 assertions) now pass under native `run.sh`
+and under the same native compiler constrained to a 64 MiB stack. The existing
+inference, evidence, negative-premise, rejection, and reliability assertions
+are unchanged. No deduplication or blanket result collapsing was added.
+
 ## Verification and inspection
 
 From the MetaMo repository root:
@@ -103,7 +123,7 @@ transitive Python package imports or arbitrary computed imports inside functions
 imports reached at execution still use the same resolver.
 
 Validation after this change: all 12 v1 MeTTa test files passed, including a new
-12-assertion composition test. Six launcher regression tests passed. The tests
+12-assertion composition test. Eight import/runner regression tests passed. The tests
 cover state/evidence preservation, singleton registry facts and function results,
 explicit fixture setup, symlink identity, shell-directory independence, missing
 sources, application-free auditing, cycle detection, and cross-space rejection.

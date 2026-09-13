@@ -124,11 +124,17 @@ in the revision table before comparing test results.
 
 ## Current composition validation
 
-With the common launcher, all 12 v1 MeTTa test files and six launcher regression
+With the common launcher, all 12 v1 MeTTa test files and eight import/runner regression
 tests pass locally. The reasoner test now runs 18 of its own assertions; the six
 minimal-loop assertions are no longer executed indirectly by importing a test.
 The earlier native-runner observations below are historical diagnosis, not
 results for the current launcher. Full live-runtime compatibility is unverified.
+
+The context integration (77 assertions), minimal loop (6), and NARS/PLN
+integration (18) also pass with the workspace-local native `run.sh`. The last
+two pass with the native compiler's stack constrained to 64 MiB. See
+`COMPOSITION.md` for the repaired import graph and the composition prerequisite
+for loading the reasoner extension.
 
 ## Historical compatibility evidence and alternate runners
 

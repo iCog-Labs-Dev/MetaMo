@@ -1,12 +1,13 @@
 ;; Bounded NARS/PLN inference -> existing advisory proposal boundary.
 ;; Caller supplies Sentence facts from an admitted frame slice, with stable
 ;; evidence stamps. No raw history, frame mutation, or execution occurs here.
-!(import! &self (library lib_import))
+;; Import composition.metta first. It owns lib_import and reasoner_proposals;
+;; importing them here again recompiles proposal functions and resets state
+;; under native PeTTa. This extension owns only the inference engine adapter.
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/reasoner_engines.pl)
    (loadReasonerEngines))
 !(loadReasonerEngines)
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
 
 ;; Explicit small MVP inference budget; callers can supply tighter limits.
 (= (reasonerInferenceLimits) (InferenceLimits 8 10 40))

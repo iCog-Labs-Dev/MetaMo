@@ -15,23 +15,27 @@
       ($_ (println! ("Unknown condition type: " $type)))
    )))
 
-(= (allTrue ()) True)
+;; Keep the empty-list branch in the same two-argument definition. Separate
+;; broad recursive and base clauses can overlap in MeTTa's result set.
 (= (allTrue $bundle $lst)
-   (let* (
-      (($head $tail) (decons-atom $lst))
-      ((CandidateCondition $_ $type $param $thresh) $head)
-      ($result (evalCondition $bundle $type $param $thresh))
-   )
-   (if $result (allTrue $bundle $tail) False)))
+   (if (== $lst ())
+      True
+      (let* (
+         (($head $tail) (decons-atom $lst))
+         ((CandidateCondition $_ $type $param $thresh) $head)
+         ($result (evalCondition $bundle $type $param $thresh))
+      )
+         (if $result (allTrue $bundle $tail) False))))
 
-(= (anyTrue ()) False)
 (= (anyTrue $bundle $lst)
-   (let* (
-      (($head $tail) (decons-atom $lst))
-      ((CandidateConditionAny $_ $type $param $thresh) $head)
-      ($result (evalCondition $bundle $type $param $thresh))
-   )
-   (if $result True (anyTrue $bundle $tail))))
+   (if (== $lst ())
+      False
+      (let* (
+         (($head $tail) (decons-atom $lst))
+         ((CandidateConditionAny $_ $type $param $thresh) $head)
+         ($result (evalCondition $bundle $type $param $thresh))
+      )
+         (if $result True (anyTrue $bundle $tail)))))
 
 (= (candidateIsAvailableRaw $bundle $name)
    (if (idleAutonomyActiveForBundle $bundle)
