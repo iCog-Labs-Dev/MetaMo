@@ -102,12 +102,6 @@
     )
 )
 
-;; Novelty of the last price move, between 0 and 1. Big moves feel new.
-;; Example: (marketNovelty 0.05) -> 0.4
-(= (marketNovelty $return)
-    (npClip (* (absNumber $return) (NOVELTY_GAIN)) 0.0 1.0)
-)
-
 ;; Conduciveness between 0 and 1, seen from the agent's position. While
 ;; holding, a rise is good and a fall is bad. While flat, the price does
 ;; not touch the wallet, but a turbulent market still feels unsafe, so
@@ -135,11 +129,16 @@
 ;; same role as the text perception in the research assistant.
 ;; Example: (marketStimulus 0.05 True 0.3)
 (= (marketStimulus $return $holding $turbulence)
-    (openPsiStimulus
-        (marketNovelty $return)
-        (marketConduciveness $return $holding $turbulence)
-        (marketRisk $return $holding $turbulence)
-        (TRADING_EFFORT)
+    (let $marketNovelty 
+        (|-> ($return) 
+            (npClip (* (absNumber $return) (NOVELTY_GAIN)) 0.0 1.0)
+        )
+        (openPsiStimulus
+            ($marketNovelty $return)
+            (marketConduciveness $return $holding $turbulence)
+            (marketRisk $return $holding $turbulence)
+            (TRADING_EFFORT)
+        )
     )
 )
 

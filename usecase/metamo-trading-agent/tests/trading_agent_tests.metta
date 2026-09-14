@@ -132,9 +132,7 @@
         ())
 )
 
-(= (isOfferedWhileHolding $actionId)
-    (or (== $actionId sell) (== $actionId hold))
-)
-
-!(test (isOfferedWhileHolding (actionId (cycleFinalAction (crashCycleResult)))) True)
+!(test (let $isOfferedWhileHolding (|-> ($actionId) (or (== $actionId sell) (== $actionId hold)))
+            ($isOfferedWhileHolding (actionId (cycleFinalAction (crashCycleResult)))))
+       True)
 !(test (validateMotivationalStateShape (cycleMergedTarget (crashCycleResult))) True)

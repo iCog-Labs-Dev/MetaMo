@@ -51,7 +51,7 @@
 )
 
 ;; Mock projection function (identity).
-(= (identityProject $state)
+(= (identityBoundary $state)
     $state
 )
 

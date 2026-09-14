@@ -132,14 +132,6 @@
   )
 )
 
-(= (qwestorAntiGoalValues $space)
-  (
-    (getAntiGoal $space hallucinate)
-    (getAntiGoal $space redundant)
-    (getAntiGoal $space rabbit_hole)
-    (getAntiGoal $space premature)
-  )
-)
 ; Risk adjustment
 ; Risk now depends on current motivational state instead of being fixed. 
 ; adjusted risk = base_risk + 0.25 (current_anti-goal_vector . action_exposure_vector)
@@ -148,8 +140,14 @@
 
 (= (qwestorActionWithAntiGoals $space (action $id $goalCorrelations $riskEstimate $deltaG))
   (let*
-    (
-      ($anti-values (qwestorAntiGoalValues $space))
+    (  
+      ($getAntiGoalValues (|-> ($space) (
+        (getAntiGoal $space hallucinate)
+        (getAntiGoal $space redundant)
+        (getAntiGoal $space rabbit_hole)
+        (getAntiGoal $space premature)
+    )))
+      ($anti-values ($getAntiGoalValues $space))
       ($exposure (match &self (QwestorAntiGoalExposure $id $values) $values))
       ($anti-pressure (eval (dotProduct $anti-values $exposure)))
       ($adjusted-risk (eval (clampToUnitInterval (+ $riskEstimate (* 0.25 $anti-pressure)))))

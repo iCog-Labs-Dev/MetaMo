@@ -58,15 +58,11 @@
     )
 )
 
-;; Retrieve indices for growth goals to eliminate hardcoded (3 4 5).
-(= (getGrowthIndices)
-    (collapse (match &self (growthGoal $name) (match &self (GoalIndex $name $idx) $idx)))
-)
-
 ;; Compute the normalized growth signal for a candidate action.
 (= (magusNormalizedGrowthSignal $candidate)
     (let* (
-        ($growthIndices (getGrowthIndices))
+        ($getGrowthIndices(collapse (match &self (growthGoal $name) (match &self (GoalIndex $name $idx) $idx))))
+        ($growthIndices ($getGrowthIndices))
         ($corrs (actionGoalCorrelations $candidate))
         ($deltaG (actionDeltaG $candidate))
         ($exploratoryAlignment (meanAtIndices $corrs $growthIndices))
@@ -105,10 +101,6 @@
     )
 )
 
-(= (getGoalIndex $goalName)
-    (match &self (GoalIndex $goalName $idx) $idx)
-)
-
 ;; MAGUS Score Candidate
 (= (magusScore $state $candidate)
     (let* (
@@ -124,15 +116,15 @@
         ($baseScore (sumGoalContributions $primaryGoals $state $candidate $indSignal $transSignal))
 
         ;; Conflict penalty: curiosity-ethics conflict
-        ($ethicIdx (getGoalIndex gEthic))
-        ($curioIdx (getGoalIndex gCurio))
-
+        ;; Conflict penalty: curiosity-ethics conflict
+        ($getGoalIndex (|-> ($goalName) (match &self (GoalIndex $goalName $idx) $idx)))
+        ($ethicIdx ($getGoalIndex gEthic))
+        ($curioIdx ($getGoalIndex gCurio))
         ($corrs (eval (actionGoalCorrelations $candidate)))
         ($curioEthicConflict (* (index-atom $corrs $curioIdx) (index-atom $corrs $ethicIdx)))
         ($conflictPenalty (if (< $curioEthicConflict -0.2)
                             (eval (expNum (* (absNumber $curioEthicConflict) 3.0)))
                             0.0))
-
         ($riskPenalty (* (* (* (eval (LAMBDA_IND)) $gInd) $cautionSignal) (eval (actionRiskEstimate $candidate))))
         ($growthReward (* (* (* (eval (LAMBDA_TRANS)) $gTrans) $growthSignal)
                         (magusNormalizedGrowthSignal $candidate)))

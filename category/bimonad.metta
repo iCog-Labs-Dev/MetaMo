@@ -1,4 +1,3 @@
-
 (: TransitionResult Type)
 (: transitionResult (-> ActionType MotivationalState TransitionResult))
 
@@ -7,7 +6,7 @@
 
 (: MetaMoPseudoBimonad Type)
 (: metaMoPseudoBimonad
-   (-> AppraisalComonad DecisionMonad Symbol Symbol Symbol Symbol Symbol MetaMoPseudoBimonad))
+  (-> AppraisalComonad DecisionMonad Symbol Symbol Symbol Symbol Symbol MetaMoPseudoBimonad))
 
 ;; Extract the action from a TransitionResult.
 ;; Example: (transitionAction (transitionResult MOVE (motivation g m))) -> MOVE
@@ -38,6 +37,7 @@
 (= (bimonadAppraisal (metaMoPseudoBimonad $appraisal $decision $dampingFn $boundaryFn $projectFn $contractiveFn $safeFn))
     $appraisal
 )
+
 
 ;; Extract the decision monad from a MetaMoPseudoBimonad.
 ;; Example: (bimonadDecision myBimonad)
