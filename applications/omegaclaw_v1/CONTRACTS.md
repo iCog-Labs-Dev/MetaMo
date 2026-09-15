@@ -1,6 +1,7 @@
 # ContextFrames × MetaMo boundary contracts, version 1
 
-Status: specification; runtime migration and shared host/adapter contract tests
+Status: specification, identity/revision rules expanded 15 September 2026;
+runtime migration and shared host/adapter contract tests
 are pending. This document specifies the six Phase 2 boundary records. Existing
 unversioned MeTTa records are legacy v0; they are not implicitly v1.
 
@@ -26,8 +27,9 @@ Every boundary message uses this envelope:
   the `producer` field alone establishes no authority.
 - `PRODUCER` is a configured host, MetaMo, reasoner adapter, or executor identity.
 - `CONTEXT` is `(SnapshotRef HOST SNAPSHOT-ID REVISION POLICY-REVISION)` or
-  `NoSnapshot`. Revisions are nonnegative integers; their comparison is scoped
-  to that host. A snapshot identifies the complete immutable admitted view,
+  `NoSnapshot`. `REVISION` is the host state revision, not a snapshot counter
+  or frame revision. Revisions are nonnegative integers; their comparison is
+  scoped to that host. A snapshot identifies the complete immutable admitted view,
   including current-frame and lifecycle state. Derived messages copy its context.
 - `NoSnapshot` is permitted only for startup/no-action policy and attention
   output. It is forbidden for proposals, bundles, outcomes, and evidence.
@@ -52,6 +54,184 @@ frame mutation, evidence write-back, or reliability update. Reasons include
 `MissingReference`, `StaleSnapshot`, and `IdentityConflict`. Unknown enum values
 are invalid, rather than silently mapped to a permissive default.
 
+## Identity, causality, and revision rules
+
+### ID ownership and lifetime
+
+IDs are opaque strings, never timestamps, array positions, text hashes, or
+recycled native frame numbers. Producers must allocate IDs without reuse across
+restart, using a durable allocator or collision-resistant random IDs. Prefixes
+in examples are illustrative and have no parsing semantics. The same immutable
+record delivered again retains its ID; recomputation creates a new record ID.
+Resolving an ID requires its namespace and expected type. Wrong-type references
+are `MalformedRecord`; unavailable references are `MissingReference`.
+
+`HOST` denotes one durable host-state lineage. Ordinary restart preserves that
+identity and all counters. Restoring an older backup, resetting counters, or
+forking state creates a new host identity and invalidates outstanding contexts
+from the old lineage. Producer namespaces likewise cannot be reused after their
+identity ledger is lost. Cross-host frame references are unsupported in v1.
+
+| Entity | Allocator and canonical reference | Lifetime and links |
+| --- | --- | --- |
+| Snapshot | Host; `(SnapshotRef HOST ID STATE-REV POLICY-REV)` | Immutable bundle; resolves to `(RecordRef HOST ID)`. Both revisions must equal those recorded with that bundle. |
+| Frame | Host; `(FrameRef HOST ID REVISION)` | Stable ID for the work item, new revision on mutation. Bare payload frame IDs inherit `HOST` from context and resolve at the snapshot revision. |
+| Proposal | Reasoner adapter; `(RecordRef PRODUCER ID)` | One proposal over one snapshot; its evidence and target belong to that admitted view. |
+| Decision | MetaMo; `(RecordRef PRODUCER ID)` | One `MetaMoPolicyOutput`; references its proposal or `None` for a native candidate. |
+| Directive | Scheduler adapter; `(RecordRef PRODUCER ID)` | One `AttentionDirective`; references exactly one decision except at startup. |
+| Dispatch | Host scheduler; `(DispatchRef HOST ID)` | One durable attempt to dispatch a directive, including blocked attempts. Records decision, directive, proposal, target revision, and original snapshot. |
+| Execution | Host executor; `(ExecutionRef HOST ID)` | One concrete execution attempt belonging to exactly one dispatch. Allocated durably before invocation; reused when reconciling that attempt. |
+| Observation | Host observation adapter; `(ObservationRef HOST ID)` | Immutable observed data with provenance; records observed frame/relation revisions and execution reference when applicable. |
+| Verification evidence | Host verification adapter; `(RecordRef PRODUCER ID)` | One `FrameVerificationEvidence`; links a relation revision, observations, and optional execution. |
+| Outcome | Host scheduler/executor; `(RecordRef PRODUCER ID)` | One `ExecutionOutcome`; links dispatch, optional execution, decision, directive, optional proposal, observations, and verification records. |
+
+Frame and relation IDs remain reserved after completion/deletion; a reused task
+description is not the same work item. Native IDs that can be recycled must be
+mapped to durable integration IDs. Evidence identity is distinct from proposal
+identity, even if an observation supports multiple proposals.
+
+### Revisions and snapshot consistency
+
+The host maintains durable, monotonically increasing counters. Revisions are
+compared for exact equality, never by wall-clock age or `>=` acceptance:
+
+- **State revision:** advances on every committed change that can affect the
+  admitted view or execution eligibility: frame creation/deletion, current-frame
+  selection, goals, lifecycle/task state, status, mode, priority, results,
+  relations/evidence, resource availability/reservations, new input, and wake
+  state. Changes outside a bounded projection still advance this counter.
+- **Policy revision:** advances on permission grants/revocations, constraints,
+  skill/handler or candidate-registry changes, egress rules, and budget limits.
+  These changes also advance the state revision. Any configuration used to
+  interpret an operation or authorize dispatch must belong to this revision.
+- **Frame/relation revision:** advances whenever that entity changes, including
+  results and evidence write-back. Creation starts at `0`. A relation change
+  advances its own revision and the host state revision; it need not change
+  endpoint frame revisions unless those frames also change.
+  The root is a versioned frame: changing its current-frame pointer, mode,
+  global budget reference, or constraint reference advances its revision.
+- **Budget/constraint revision:** advances on mutation of the referenced object;
+  changing availability advances state, and changing policy advances both state
+  and policy as above. References resolve to retained immutable versions.
+
+Snapshot capture reads one consistent committed state after host lifecycle
+bookkeeping. Root/current/index revisions and every policy reference must refer
+to that same capture; never mix fields from different reads. Publishing another
+snapshot without a state change may use the same revisions but a fresh snapshot
+ID. Proposal, decision, and directive contexts must nevertheless match the exact
+snapshot reference, not merely its numeric revisions.
+
+Every frame target must resolve to a versioned frame in the admitted snapshot.
+For a non-current target, a compact index entry establishes identity/revision
+only; missing target policy or operation data requires a new admitted snapshot.
+A mode-change target uses the snapshot's current frame and root revision.
+Relation endpoints must have resolvable frame revisions in that admitted view.
+
+V1 deliberately invalidates decisions on any host state revision change, even
+an unrelated frame update. This is conservative and may cause recomputation.
+A future dependency-based scheme can reduce invalidation; consumers must not
+silently introduce it by ignoring the global revision.
+
+### Dispatch linkage and stale-decision detection
+
+The scheduler maintains the following durable host ledger entries. These are
+host-internal linkage contracts, not additional `IntegrationRecord` schemas:
+
+```metta
+(DispatchLink
+  (id (DispatchRef HOST ID))
+  (context SNAPSHOT-REF)
+  (decision DECISION-REF) (directive DIRECTIVE-REF)
+  (proposal PROPOSAL-REF-OR-None)
+  (target FRAME-REF-OR-None)
+  (checked-state-revision STATE-REV)
+  (checked-policy-revision POLICY-REV))
+(ExecutionLink
+  (id (ExecutionRef HOST ID))
+  (dispatch DISPATCH-REF))
+```
+
+`checked-*` records the actual host revisions at the dispatch check, including
+when it fails. The target is the requested frame revision from the snapshot,
+not a later version substituted by the scheduler. A dispatch has at most one
+execution attempt in v1; each authorized retry needs a new dispatch and execution
+ID. An execution may comprise a handler's command batch, with observations
+identifying its individual results. Handler-level partial execution and retry
+semantics remain Phase 5 work.
+
+Before any invocation or frame mutation, the scheduler must:
+
+1. Resolve and validate the directive → decision → optional proposal chain;
+   require identical contexts and agreement on operation, target, and admission.
+   Resolve all target, policy, and supporting evidence references with their
+   expected types. Unsupported or missing references cannot authorize dispatch.
+2. Verify the snapshot belongs to the current host lineage. Compare its state
+   and policy revisions with current authoritative counters, and verify target,
+   relation, budget, and constraint revisions against the captured versions.
+   Any mismatch is `StaleSnapshot`, even if the old policy admitted the action.
+3. Revalidate policy for the resolved concrete handler, arguments, target, and
+   cost. A matching revision is necessary, but does not itself grant permission.
+4. Atomically couple the final revision/policy check with durable dispatch
+   claiming, execution-ID allocation, and applicable resource reservation.
+   Record reservation changes as new state revisions. A queued executor must
+   use a host-enforced claim/fence: intervening changes invalidate the claim
+   unless the host serializes them with the execution start. A separate earlier
+   check followed by unguarded invocation does not satisfy this contract.
+
+A directive found stale before execution allocation produces a linked `Blocked` outcome with reason
+`StaleSnapshot` and execution `None`; it cannot be repaired by replacing its
+context. Capture new state and recompute the proposal (if used), decision, and
+directive with new IDs. Keep the old chain for audit. Malformed records use
+`ContractRejection` instead of manufacturing a valid dispatch chain.
+If a queued claim is invalidated after execution-ID allocation but before
+invocation, retain that ID in the `Blocked` outcome and record that invocation
+never started. Do not report `Blocked` for an invocation that may already have
+run; reconcile it or report `Unobserved` with the allocated execution ID.
+
+Once a directive has a recorded dispatch, redelivery returns that recorded
+attempt; it must not allocate another execution. An explicit retry creates a
+fresh decision/directive chain and a new dispatch. Unknown execution status
+requires reconciliation using the existing execution ID, not blind replay.
+IDs enable deduplication but do not guarantee exactly-once external effects;
+durable claiming and handler idempotency/recovery must be implemented by the host.
+
+### Outcome and evidence causality
+
+The complete causal chain is:
+
+```text
+snapshot → proposal (optional) → decision → directive → dispatch → execution
+    │                                                     │          │
+    └─ frame/relation revisions                            └─ outcome ┘
+                                                               │
+                                              observations / verification
+```
+
+For example, decision `(RecordRef "metamo-A" "decision-1")` and directive
+`(RecordRef "adapter-A" "directive-1")` both retain
+`(SnapshotRef "host-A" "snapshot-1" 42 7)`. Dispatch
+`(DispatchRef "host-A" "dispatch-1")` links these to target
+`(FrameRef "host-A" "frame-1" 3)`; execution
+`(ExecutionRef "host-A" "execution-1")` links back to that dispatch. Its outcome
+retains the original snapshot even when recording results advances state to
+`43`. A second unclaimed directive based on state `42` is now stale.
+
+Outcomes and post-execution verification retain the original decision context;
+they are historical observations and must not be discarded merely because the
+host has advanced. Validate their causal links instead. Each execution-bound
+observation must resolve to the same execution/dispatch as its outcome, and
+each verification reference must resolve to evidence for the relevant relation
+and frames. An observation shared across proposals does not imply it was
+produced by those proposals' executions.
+
+Standalone verification uses the snapshot on which verification was based and
+execution `None`. Applying any evidence to a relation is a separate host mutation
+using compare-and-set on its `RelationRef` revision. If that relation changed,
+retain the observation but require revalidation before write-back. Duplicate
+evidence must not increment relation revisions twice. Duplicate outcomes must
+not cause a second reliability update, including after restart; conflicting
+content under any existing identity is `IdentityConflict`.
+
 ## 1. FrameStateBundle
 
 Producer: host projection. Consumer: MetaMo and admitted-fact extraction.
@@ -71,10 +251,12 @@ Nested record shapes:
 
 ```metta
 (FrameStateRoot
-  (id ROOT-ID) (current-frame-id FRAME-ID-OR-None) (mode MODE)
+  (id ROOT-ID) (revision NONNEGATIVE-INTEGER)
+  (current-frame-id FRAME-ID-OR-None) (mode MODE)
   (global-budget BUDGET-REF) (global-constraints CONSTRAINTS-REF))
 (FrameStateCurrent
-  (id FRAME-ID) (parent FRAME-ID-OR-None) (source SOURCE-ID)
+  (id FRAME-ID) (revision NONNEGATIVE-INTEGER)
+  (parent FRAME-ID-OR-None) (source SOURCE-ID)
   (status STATUS) (frame-mode MODE) (priority UNIT-VALUE)
   (goal-summary TEXT) (history-summary TEXT) (deliverable-summary TEXT)
   (results-summary TEXT) (budget BUDGET-REF) (constraints CONSTRAINTS-REF)
@@ -218,8 +400,8 @@ This is an observation of execution, distinct from MetaMo's derived
   (decision DECISION-REF)
   (directive DIRECTIVE-REF)
   (proposal PROPOSAL-REF-OR-None)
-  (dispatch DISPATCH-ID)
-  (execution EXECUTION-ID-OR-None)
+  (dispatch DISPATCH-REF)
+  (execution EXECUTION-REF-OR-None)
   (frame FRAME-ID-OR-None)
   (status EXECUTION-STATUS)
   (reason REASON)
@@ -228,6 +410,8 @@ This is an observation of execution, distinct from MetaMo's derived
   (verification VERIFICATION-REFS))
 ```
 
+`DISPATCH-REF` and `EXECUTION-REF` use the host-qualified references defined
+above; decision/directive/proposal/verification references use `RecordRef`.
 `EXECUTION-STATUS` is `Completed | Failed | Blocked | Unobserved`. `Completed`
 and `Failed` require an execution ID and nonempty execution evidence. `Blocked`
 may have no execution ID if dispatch was prevented. `Unobserved` explicitly
@@ -257,7 +441,7 @@ Producer: host verification adapter. Consumers: host relation store and grading.
   (evidence-status EVIDENCE-STATUS)
   (observed-at UTC-MILLISECONDS)
   (observations OBSERVATION-REFS)
-  (execution EXECUTION-ID-OR-None))
+  (execution EXECUTION-REF-OR-None))
 ```
 
 `EVIDENCE-STATUS` is `Confirmed | Refuted | Unresolved`. An observation reference
@@ -295,11 +479,11 @@ Current producers/consumers that must migrate together:
 
 | Schema | Existing implementation | Required v1 change |
 | --- | --- | --- |
-| Bundle | `contexts/context_projection.metta`, accessors/slices | Envelope, explicit absent current frame, typed index/relations and policy references |
+| Bundle | `contexts/context_projection.metta`, accessors/slices | Envelope, root/current revisions, explicit absent current frame, typed index/relations and policy references |
 | Policy | `contexts/context_directives.metta`, `task_lifecycle.metta`, `bridge.metta` | Envelope, reason, proposal reference; identical startup/runtime shape |
 | Attention | `contexts/context_directives.metta`, proposal conversion | Envelope, decision reference; startup currently lacks `reason` |
 | Proposal | `reasoner_proposals.metta`, helpers, inference adapter | Named fields, ID in envelope, explicit targets and evidence references |
-| Outcome | `recordReasonerProposalOutcome` arguments | Host observation record validated before deriving a grade |
+| Outcome | `recordReasonerProposalOutcome` arguments | Host-qualified dispatch/execution references and validated causal chain before deriving a grade |
 | Verification | `contexts/context_relations.metta` | Relation identity/revision, observation references, timestamp, optional execution identity |
 
 Do not append version fields directly to existing positional patterns. Boundary
@@ -311,6 +495,12 @@ Before enabling v1, shared host/MetaMo contract fixtures must cover all six
 records; startup, admitted, rejected, and no-action output; absent current frame;
 each proposal kind and outcome/evidence status; wrong schema/version/arity;
 missing, duplicate, and unknown fields; invalid numbers; unresolved references;
-context mismatch; stale revisions; and duplicate/conflicting IDs. Host rollout,
+context mismatch; stale revisions; and duplicate/conflicting IDs. In particular,
+cover cross-host and wrong-type references; restart/backup-restore identity;
+changed non-current target, root mode, relation, budget, or policy; equal numeric
+revisions with different snapshot IDs; a policy change between check and execution
+start; duplicate directive delivery; unknown execution reconciliation; late valid
+outcomes after state advances; and stale/duplicate evidence write-back. These are
+required future shared fixtures, not claims of current runtime coverage. Host rollout,
 validators, collection limits, and lifecycle enforcement are not implemented by
 this specification. Phase 2 remains open until its implementation gates pass.
