@@ -2,6 +2,12 @@
 
 This directory contains the MetaMo adapter and motivation logic for OmegaClaw.
 
+## Boundary contracts
+
+[CONTRACTS.md](CONTRACTS.md) specifies the proposed version 1 records shared by
+ContextFrames, MetaMo, reasoner adapters, and the scheduler. Runtime records are
+still unversioned; migration and shared contract tests remain pending.
+
 ## Module Structure
 
 | File | Responsibility |
