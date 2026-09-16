@@ -14,13 +14,22 @@
           ($rest (frameStateTake (- $n 1) $tail)))
           (cons-atom $head $rest))))
 
-;; Accept the two relation shapes used by ContextFrames relation providers.
+;; Choose the evidence status exposed to MetaMo. SameFrame and
+;; PossibleSameFrame always become VerificationRequired; this currently
+;; overrides even supplied Confirmed/Refuted evidence. Other relation types
+;; retain their supplied status. The source/target arguments are not inspected.
 (= (frameStateRelationEvidence $source $target $type $evidence)
    (case $type
       ((SameFrame VerificationRequired)
        (PossibleSameFrame VerificationRequired)
        ($_ $evidence))))
 
+;; Project a positional FrameRelation into the named fields of
+;; FrameStateRelation used by MetaMo. Preserve source/target IDs, relation type,
+;; and confidence; compact the reason to a 240-character excerpt with a digest
+;; and original-length prefix (the full field can exceed 240 characters). Derive
+;; the evidence status using frameStateRelationEvidence above. This conversion
+;; neither verifies the relation nor mutates either frame.
 (= (frameStateProjectRelation
       (FrameRelation $source $target $type $reason $confidence $evidence))
    (let $status (eval (frameStateRelationEvidence
@@ -33,19 +42,25 @@
          (confidence $confidence)
          (evidence-status $status))))
 
+;; Core's relation provider emits this named-field Relation shape without an
+;; evidence status. Supply Unverified, then use the common projection above
+;; (which changes it to VerificationRequired for the two same-frame types).
 (= (frameStateProjectRelation
       (Relation (FrameID-1 $source) (FrameID-2 $target)
                 (Class $type) (Reason $reason) (Confidence $confidence)))
    (frameStateProjectRelation
       (FrameRelation $source $target $type $reason $confidence Unverified)))
 
+;; Also accept the positional Relation spelling, forwarding its explicit
+;; evidence status through the same projection and status-selection rule.
 (= (frameStateProjectRelation
       (Relation $source $target $type $reason $confidence $evidence))
    (frameStateProjectRelation
       (FrameRelation $source $target $type $reason $confidence $evidence)))
 
-;; Unknown relation shapes are intentionally dropped by the projection rules;
-;; no raw relation atom is allowed to cross the boundary.
+;; Only the three shapes above have projection rules. There is no explicit
+;; fallback returning () for unknown shapes, nor an explicit filter here;
+;; unsupported input therefore must not be assumed to be safely dropped.
 (= (frameStateBoundRelations ()) ())
 (= (frameStateBoundRelations $relations)
    (let* (
