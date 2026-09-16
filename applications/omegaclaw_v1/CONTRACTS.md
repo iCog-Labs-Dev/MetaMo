@@ -1,9 +1,55 @@
 # ContextFrames × MetaMo boundary contracts, version 1
 
-Status: specification, identity/revision rules expanded 15 September 2026;
-runtime migration and shared host/adapter contract tests
-are pending. This document specifies the six Phase 2 boundary records. Existing
+Status: v1 wire constructors, shape validation, explicit consumers, shared wire
+fixtures, and startup/default constructors implemented 16 September 2026.
+Live host migration and identity/revision enforcement remain pending. This
+document specifies the six Phase 2 boundary records. Existing
 unversioned MeTTa records are legacy v0; they are not implicitly v1.
+
+## Implemented API and scope
+
+`contracts.metta` exposes the shared implementation in `contracts.pl`; the
+context integration façade loads it once. It provides these executable APIs:
+
+| API | Behavior |
+| --- | --- |
+| `publishFrameStateBundle`, `publishMetaMoPolicyOutput`, `publishAttentionDirective`, `publishReasonerProposal`, `publishExecutionOutcome`, `publishFrameVerificationEvidence` | Accept record ID, producer, context, and the corresponding typed payload; emit a validated v1 envelope or `ContractRejection`. |
+| `integrationValidateRecord` | Returns exactly one `ContractValid SCHEMA 1` or `ContractRejection`; checks exact ordered fields, nested shapes, value types/enums, reference shapes, and local consistency invariants. |
+| `integrationConsumeRecord` | Takes expected schema and envelope; explicitly validates and returns its payload, or a rejection. Never treats a v0 payload as v1. |
+| `integrationRecordReference` | Returns a validated record's producer-qualified reference, or a rejection. |
+| `integrationPolicyRecord` | Builds a policy envelope from ID, producer, context, mode, operation, admission, reason, priority, and optional proposal reference. |
+| `integrationAttentionFromPolicy` | Takes ID, producer, policy envelope, target, and slice. Derives the decision reference, context, admission, reason, and priority; canonicalizes rejected directives to no action. |
+| `integrationStartupPolicy`, `integrationStartupAttention` | Accept caller-allocated identity (and constitutional mode for policy); use the same envelope/payload constructors as normal output with `NoSnapshot`. |
+
+These APIs inspect ground payloads as data. In MeTTa, quote literal payload data
+that could otherwise be evaluated by the language before the boundary call.
+Validation never evaluates the supplied claim, support, or prediction.
+
+`ContractValid` establishes representation validity, **not authorization**.
+The implementation does not allocate durable IDs, resolve references, authenticate
+producers, enforce state/policy revisions, or implement the host dispatch ledger.
+Relation-type and producer/source registration, deployment collection/text limits,
+and resolution of typed policy references remain explicit host validation gates.
+A caller must not dispatch solely because shape validation succeeded.
+
+The existing live loop still uses explicit legacy v0 projection/scoring paths
+until the host supplies v1 metadata and policy references. Its startup/reset
+policy and attention defaults now use centralized `legacyStartup*` constructors;
+the attention default includes the runtime `reason` field. No compatibility
+conversion fabricates host revisions or observation identities.
+
+The canonical v1 wire fixtures are `tests/fixtures/contracts_v1.pl`, shared by
+`tests/contracts_v1_test.pl` (standalone host-facing shape tests) and
+`tests/contracts_v1_test.metta` (the actual MeTTa publication/consumer API).
+They are distinct from the earlier workspace-level JSON design fixtures, which
+use a proposed direct-bundle encoding rather than this envelope.
+
+Run from the workspace root:
+
+```sh
+swipl -q -s MetaMo/applications/omegaclaw_v1/tests/contracts_v1_test.pl -g run_tests -t halt
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/contracts_v1_test.metta
+```
 
 ## Encoding and compatibility
 
@@ -501,6 +547,10 @@ changed non-current target, root mode, relation, budget, or policy; equal numeri
 revisions with different snapshot IDs; a policy change between check and execution
 start; duplicate directive delivery; unknown execution reconciliation; late valid
 outcomes after state advances; and stale/duplicate evidence write-back. These are
-required future shared fixtures, not claims of current runtime coverage. Host rollout,
-validators, collection limits, and lifecycle enforcement are not implemented by
-this specification. Phase 2 remains open until its implementation gates pass.
+required shared coverage, not claims that the live runtime implements these checks.
+The shared wire suites now cover all six shapes, constructors, startup and
+no-action records, absent current frames, proposal/outcome/evidence variants,
+malformed fields and versions, nonfinite numeric values, and local context/reference
+consistency. Durable replay, reference resolution, stale-decision enforcement,
+host rollout, collection limits, and lifecycle enforcement remain pending.
+Phase 2 remains open until its implementation gates pass.

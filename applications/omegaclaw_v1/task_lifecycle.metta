@@ -5,9 +5,7 @@
 !(bind! &last-motivation-decision
    (new-state (decision clarity orient inspect 0.0)))
 !(bind! &last-meta-mo-policy-output
-   (new-state (MetaMoPolicyOutput
-      (mode Engaged) (operation-class none)
-      (feasibility Rejected) (priority 0))))
+   (new-state (legacyStartupPolicyOutput (constitutionalModeDefault))))
 !(bind! &autonomy-phase          (new-state recall))
 !(bind! &autonomy-action-count   (new-state 0))
 !(bind! &task-execution-observed (new-state ""))

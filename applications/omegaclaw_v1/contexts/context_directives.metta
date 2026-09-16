@@ -8,14 +8,7 @@
 
 
 !(bind! &last-attention-directive
-   (new-state
-      (AttentionDirective
-         (target ())
-         (slice None)
-         (task none)
-         (admission Rejected)
-         (priority 0)
-         (source MetaMo))))
+   (new-state (legacyStartupAttentionDirective)))
 
 (= (directiveSlice $candidate)
    (case $candidate

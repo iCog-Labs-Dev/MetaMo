@@ -50,6 +50,7 @@
 ;; this file remains the compatibility façade for the complete boundary.
 ;; This facade owns dependency order. Leaves must not import one another:
 ;; native PeTTa recompiles imports and would produce duplicate alternatives.
+!(import! &self (library MetaMo applications/omegaclaw_v1/contracts))
 !(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_relations))
 !(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_accessors))
 !(import! &self (library MetaMo applications/omegaclaw_v1/contexts/context_slices))

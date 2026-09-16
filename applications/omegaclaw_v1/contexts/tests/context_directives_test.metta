@@ -30,6 +30,10 @@
          (error "") (wake-loops 0) (next-wake-at 0)
          (budget-state open-budget)))))
 
+;; Actual module initialization uses the same fields as emitted v0 directives.
+!(test (lastAttentionDirective) (legacyStartupAttentionDirective))
+!(test (size-atom (lastAttentionDirective))
+   (size-atom (makeAttentionDirective (directiveTestBundle) respond 0.50)))
 !(test (directiveSlice respond) CurrentFrameSummary)
 !(test (directiveSlice retrieve-memory) CurrentFrameAndRelations)
 !(test (directiveSlice execute-skill) CurrentFrameTask)

@@ -230,11 +230,9 @@
       ($_ (change-state! &new-msg-flag False))
       ($_ (change-state! &last-results-seen ""))
       ($_ (change-state! &last-meta-mo-policy-output
-              (MetaMoPolicyOutput
-                 (mode (constitutionalModeDefault))
-                 (operation-class none)
-                 (feasibility Rejected)
-                 (priority 0))))
+              (legacyStartupPolicyOutput (constitutionalModeDefault))))
+      ($_ (change-state! &last-attention-directive
+              (legacyStartupAttentionDirective)))
       ($_ (change-state! &active-task ""))
       ($_ (change-state! &task-open False))
       ($_ (change-state! &task-execution-observed ""))
