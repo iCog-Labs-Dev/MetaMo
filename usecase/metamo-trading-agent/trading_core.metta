@@ -143,6 +143,20 @@
     )
 )
 
+;; getStimulus: generic field accessor for an openPsiStimulus tuple.
+;; Example: (getStimulus (openPsiStimulus 1.0 1.0 1.0 0.1) risk) -> 1.0
+(: getStimulus (-> Expression Symbol Number))
+(= (getStimulus (openPsiStimulus $novelty $conduciveness $risk $effort) $field)
+    (case $field
+        (
+            (novelty $novelty)
+            (conduciveness $conduciveness)
+            (risk $risk)
+            (effort $effort)
+        )
+    )
+)
+
 ;; Part 3. The trade actions offered to the framework
 
 ;; The goal correlations use the framework's 8-goal layout. In the MAGUS
