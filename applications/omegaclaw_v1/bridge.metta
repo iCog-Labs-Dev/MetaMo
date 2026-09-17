@@ -16,15 +16,9 @@
 (= (motivationContextBlock)
    (let* (
       ($_ (ensureMotivationRestored))
-      ;; Capture the adapter snapshot before any MetaMo lifecycle logic.
-      ($bundle (frameStateForMetaMo))
-      ($_ (setActiveFrameBundle $bundle))
-      ;; Refresh internal execution bookkeeping before ContextFrames publishes
-      ;; the snapshot consumed by MetaMo.
-      ($_ (refreshTaskExecutionObserved))
-      ($_ (completePreviousTaskIfSuccessful))
-      ;; ContextFrames has already ingested input and updated its frame state.
-      ;; Capture one bounded snapshot and pass it through the whole cycle.
+      ;; Host bookkeeping completes before the single snapshot is published.
+      ;; Keep this same bundle through signals, selection, and directives.
+      ($bundle (prepareTaskStateForMetaMo))
       ($_ (eval (refreshSignals $bundle)))
       ($_ (eval (refreshConstitutionalMode $bundle)))
       ($_ (eval (clearSpace &appraisal-space)))

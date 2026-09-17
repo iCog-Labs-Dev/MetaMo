@@ -7,16 +7,17 @@ bridge="$app_dir/bridge.metta"
 signals="$app_dir/signals.metta"
 candidates="$app_dir/candidate_selection.metta"
 decision="$app_dir/omegaclaw_decision.metta"
+lifecycle="$app_dir/task_lifecycle.metta"
 
 # The motivational cycle must pass one bundle through every boundary.
-rg -q '\$bundle.*frameStateForMetaMo|frameStateForMetaMo.*\$bundle' "$bridge"
+rg -q '\$bundle.*prepareTaskStateForMetaMo' "$bridge"
 rg -q 'refreshSignals \$bundle' "$bridge"
 rg -q 'generateCandidates \$bundle' "$bridge"
 rg -q 'feasibilityGateActions \$bundle' "$bridge"
 rg -q 'schedulerAttentionDirective \$bundle' "$bridge"
 rg -q 'omegaclawScoreForBundle \$bundle' "$bridge"
 rg -q 'omegaclawScoreForBundle \$bundle' "$decision"
-rg -q 'setActiveFrameBundle \$bundle' "$bridge"
+rg -q 'setActiveFrameBundle \$bundle' "$lifecycle"
 rg -q 'omegaclawDecideBound' "$decision"
 
 # MetaMo modules may not read arbitrary OmegaClaw runtime state themselves.
@@ -42,13 +43,13 @@ if rg -q 'change-state! &(active-task|task-open)' "$signals"; then
 fi
 
 # The source order is part of the contract.
-python3 - "$bridge" <<'PY'
+python3 - "$bridge" "$lifecycle" <<'PY'
 from pathlib import Path
 import sys
 
 source = Path(sys.argv[1]).read_text()
 steps = [
-    "frameStateForMetaMo",
+    "($bundle (prepareTaskStateForMetaMo))",
     "refreshSignals $bundle",
     "computeAllDimensions",
     "feasibilityGateActions $bundle",
@@ -56,4 +57,13 @@ steps = [
 ]
 positions = [source.index(step) for step in steps]
 assert positions == sorted(positions), positions
+lifecycle = Path(sys.argv[2]).read_text().split('(= (prepareTaskStateForMetaMo)', 1)[1]
+steps = ['(refreshTaskExecutionObserved)', '(completePreviousTaskIfSuccessful)',
+         '(frameStateForMetaMo)', '(setActiveFrameBundle $bundle)']
+positions = [lifecycle.index(step) for step in steps]
+assert positions == sorted(positions), positions
+assert lifecycle.count('(frameStateForMetaMo)') == 1
+assert '(frameStateForMetaMo)' not in source
+assert '(refreshTaskExecutionObserved)' not in source
+assert '(completePreviousTaskIfSuccessful)' not in source
 PY

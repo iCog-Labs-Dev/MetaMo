@@ -91,13 +91,14 @@
    )))
 
 (= (refreshTaskExecutionObserved)
-   (let $bundle (activeFrameBundle)
-      (if (bundle-runtime-has-new-message $bundle)
+   ;; Host-side bookkeeping runs before publication, so it must not consult
+   ;; the previous cycle's bounded (and possibly truncated) bundle.
+      (if (get-state &new-msg-flag)
           (let $_ (change-state! &task-execution-observed "") True)
           (let $merged (py-call (helper.merge_observed_execution_commands
-                                 (frameRuntimeExecutionObserved $bundle)
-                                 (frameRuntimeResults $bundle)))
-             (change-state! &task-execution-observed $merged)))))
+                                 (get-state &task-execution-observed)
+                                 (get-state &lastresults)))
+             (change-state! &task-execution-observed $merged))))
 
 (= (executionContinuationNeeded)
    (executionContinuationNeededForBundle (activeFrameBundle)))
@@ -179,12 +180,30 @@
        ) True)
        False))
 
+(= (hostTaskValuePresent $value)
+   (and (!= $value "") (!= $value ())))
+
 (= (completePreviousTaskIfSuccessful)
+   ;; Completion uses current host observations, never appraisal signals from
+   ;; an earlier cycle. Preserve the existing terminal-candidate rule.
    (if (and (not (get-state &new-msg-flag))
-            (and (hasResults) (not (hasErrors))))
+            (and (hostTaskValuePresent (get-state &lastresults))
+                 (not (hostTaskValuePresent (get-state &error)))))
        (let* (
           ($lastDecision (get-state &last-motivation-decision))
           ((decision $candidate $_mode $_directive $_score) $lastDecision)
        )
           (completeTaskIfTerminal $candidate))
        False))
+
+;; Host adapter publication boundary for the serialized OmegaClaw loop.
+;; Ingestion has already updated host state. Finish bookkeeping, then publish
+;; exactly one snapshot; downstream MetaMo consumers only read that snapshot.
+(= (prepareTaskStateForMetaMo)
+   (let* (
+      ($_ (refreshTaskExecutionObserved))
+      ($_ (completePreviousTaskIfSuccessful))
+      ($bundle (frameStateForMetaMo))
+      ;; The decision module providing this setter loads after lifecycle.
+      ($_ (eval (setActiveFrameBundle $bundle)))
+   ) $bundle))

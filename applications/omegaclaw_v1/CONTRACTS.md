@@ -89,7 +89,7 @@ Every boundary message uses this envelope:
   `[0, 1]`; NaN, infinity, and out-of-range values are invalid. Runtime numbers
   remain numbers; integer persistence encoding is a separate migration.
 - `Text` is display-only text. `Data` is a bounded, parsed expression treated
-  only as data, never evaluated. Deployment must declare shared input limits
+  only as data, never evaluated. The shared input limits below must be enforced
   before enabling v1; exceeding a limit rejects the record. This specification
   does not authorize truncating IDs, evidence references, or policy records.
 
@@ -99,6 +99,175 @@ frame mutation, evidence write-back, or reliability update. Reasons include
 `MalformedRecord`, `UnsupportedSchema`, `UnsupportedVersion`, `InvalidValue`,
 `MissingReference`, `StaleSnapshot`, and `IdentityConflict`. Unknown enum values
 are invalid, rather than silently mapped to a permissive default.
+
+## Required values, bounds, and rejection behavior
+
+This section specifies the default v1 admission limits. Shape/type validation
+already exists; enforcement of the size limits and integer upper bounds below
+is pending. These are acceptance requirements, not claims about the current
+validator or legacy live loop. The MVP may use its smaller session-only
+interface from `INTEGRATION_PLAN.md`; it need not adopt all six v1 schemas.
+Apply the same conservative input handling to whichever MVP fields are used.
+
+### Required fields and absent values
+
+All envelope and nested payload fields shown in sections 1–6 are required
+exactly once and in the documented order, including fields whose value may be
+`None`. Missing, duplicate, reordered, and extra fields reject the whole record.
+No consumer fills missing policy, identity, status, confidence, or evidence data
+with permissive defaults.
+
+- Use `None` only where the field is explicitly optional; `none` is the distinct
+  no-action candidate. Neither is an unknown-value wildcard.
+- An empty display-text string is valid. An empty ID, producer, or symbol is
+  invalid. `claim`, `support`, and `prediction` must contain nonempty data.
+- Collections must be proper lists. Empty lists are valid unless the schema
+  requires evidence: NARS/PLN proposals need evidence references; completed or
+  failed executions need an execution reference and observations; confirmed or
+  refuted verification needs observations.
+- `current None` requires the root current-frame ID to be `None`. Required
+  budget/constraint/policy references remain present even without a current
+  frame. A reference is not a substitute for resolving its policy data.
+- `NoSnapshot` is limited to the documented startup defaults. A missing runtime
+  snapshot cannot be converted into an admitted startup/default action.
+
+### Numeric and size limits
+
+Limits are inclusive. Text lengths count Unicode code points after decoding;
+the separate wire-size limit counts UTF-8 bytes before parsing. Producers and
+consumers must use the same limits; changes require an explicit shared profile
+update, never silent local relaxation.
+
+| Value | Required range or maximum |
+| --- | --- |
+| Priority, confidence, prior-confidence, and every `UnitValue` | Finite numeric value in `[0, 1]`; no string/boolean coercion or clamping |
+| Revision and counter fields, including `wake-loops` | Integer in `[0, 9007199254740991]` |
+| `observed-at`, present `next-wake-at` | Integer UTC milliseconds since Unix epoch in `[0, 9007199254740991]`; timestamps do not establish freshness |
+| Schema version | Integer `1` for these schemas |
+| Every ID/namespace string, including IDs inside references | 1–256 code points |
+| Symbol tokens, including relation types and diagnostic reasons | 1–128 code points; closed enums still require an exact listed value |
+| Each display-text field | 1,200 code points, including any digest/length prefix; empty text is allowed |
+| Active and completed frame-index entries | 20 total across both lists |
+| Relations per bundle | 10 |
+| Each observation/evidence/verification reference list | 32 entries |
+| Each `claim`, `support`, or `prediction` expression | Depth at most 16, at most 256 list elements per list, and 1,024 total nodes |
+| Complete envelope, including nested payload/data | Depth at most 32, at most 4,096 total nodes, and 65,536 UTF-8 wire bytes |
+
+For node/depth accounting, every scalar or list counts as one node; the root
+has depth 1 and every child increases depth by one. Strings and symbols inside
+opaque data obey the text/token limits too; embedded numbers must be finite,
+and embedded integers must lie in `[-9007199254740991, 9007199254740991]`.
+Field-specific ranges take precedence over these generic data limits. Reject
+variables, improper/cyclic lists, executable objects, and invalid UTF-8.
+
+Check wire size before parsing and depth/node limits during bounded parsing or
+traversal. Do not rely on recursively walking arbitrarily large data first.
+Check integer overflow before incrementing counters; never wrap or reset them
+within an existing lineage. Budget quantities/costs remain typed host policy
+data: their units and ranges belong to the policy-data specification, not a
+guessed numeric default at this boundary.
+
+The producer may intentionally select bounded admitted collections and shorten
+display summaries before constructing a snapshot. It must retain the fields
+and references needed for the requested operation. If those cannot fit, request
+a narrower snapshot or return no action. Consumers reject oversized records;
+they do not truncate identities, evidence, constraints, or executable arguments
+to make an invalid record valid.
+
+### Conservative consumer behavior
+
+| Input condition | Required behavior |
+| --- | --- |
+| Malformed envelope, missing/duplicate/extra fields, wrong types or ranges, exceeded limits | Return one `ContractRejection`; do not score, dispatch, mutate, write evidence, or update reliability from that record |
+| Unknown schema/version, enum, candidate, relation type, or unregistered producer/source | Reject; do not infer a nearest known value or choose an action by default |
+| Missing or wrong-type reference, unavailable applicable policy | Reject admission; request valid data before retrying |
+| Unknown diagnostic outcome reason | May be retained as bounded diagnostic text/symbol when the outcome status and causal chain are valid; it grants no permission and does not determine a grade |
+| Unknown verification result or outcome status | Reject the incoming wire record; do not reinterpret it as confirmation, success, or failure |
+| No current frame, no feasible candidate, or an unavailable optional reasoner | Emit an explicit rejected/no-action decision from valid context; unsupported work must not become an implicit action |
+| Stale decision or changed applicable policy | Block before invocation and recompute from a new snapshot; preserve the old context for audit |
+
+An adapter may explicitly report `Unresolved` verification or `Unobserved`
+execution when that is what it observed, with the required causal references.
+It must not silently convert a malformed incoming record into either status.
+Malformed input receives a rejection, not a fabricated outcome. Existing
+`MalformedRecord`, `InvalidValue`, `UnsupportedSchema`, `UnsupportedVersion`,
+`MissingReference`, and `StaleSnapshot` reasons suffice; bounds need no new
+ontology. Diagnostic detail must itself be bounded and must not echo raw input.
+
+Acceptance fixtures must exercise each maximum and maximum-plus-one, empty and
+missing fields, unknown enums, nonfinite/out-of-range numbers, deeply nested
+data, unavailable policy, and evidence-required cases. Host and MetaMo consumers
+must agree on rejection and demonstrate that rejected input has no side effects.
+
+## Typed policy data and display summaries
+
+Enforceable policy comes from host-owned typed data, never from a summary,
+prompt, relation reason, model confidence, or `certified-method` label. The
+bundle's `HostPolicyRef`, `BudgetRef`, and `ConstraintsRef` resolve to immutable
+policy objects for the captured revisions. Their contents must be available to
+the feasibility consumer and checked again by Core at dispatch. A reference
+whose contents cannot be resolved does not confer permission.
+
+For the MVP, retain Core's native typed policy values and existing permission
+checks where available. Use a small explicit adapter for the supported handlers;
+do not add a general policy language. If the native host value is prose, the
+adapter must map a recognized constraint identifier to a concrete host check.
+It must not interpret arbitrary descriptions or ask an LLM to grant permission.
+Any applicable constraint without a supported check blocks that operation.
+
+| Policy information | Machine-consumed representation and interpretation |
+| --- | --- |
+| Permitted skills/handlers | Explicit registered handler IDs from the host permission store; an empty allowlist permits none |
+| Global/frame constraints | Recognized constraint IDs plus typed parameters required by their host checks; both scopes apply and frame policy can only tighten global policy |
+| Egress | Explicit permitted destination values checked against the resolved actual destination; no wildcard or destination inferred from prose |
+| Budget | Typed resource name/unit, nonnegative available amount, and known operation cost in the same unit; require cost within availability and reserve/account in Core |
+| Frame/mode restrictions | Exact host status/mode values and supported operation mapping; missing or unknown values cannot admit work |
+
+These are logical requirements on the native adapter and reference resolver,
+not additional `IntegrationRecord` schemas. Only support the resources and
+operations enabled for the milestone. Numeric budget quantities must be finite;
+integer quantities obey the integer bounds above. Unknown cost/unit, unsupported
+handler arguments, or an unavailable applicable policy check blocks dispatch.
+An operation with no egress or resource cost must be identified as such by its
+trusted handler definition, not inferred from a missing policy field.
+
+Display summaries are derived separately from policy objects. They may be
+shortened for prompts and logs, but no policy parser or admission check reads
+them. In particular:
+
+- Never pass policy objects through `cfv2-compact-limited`, `repr`, or another
+  text compactor as their authoritative boundary representation.
+- Preserve typed values or typed references without dropping fields or rules.
+  If policy exceeds input limits, resolve a bounded policy view containing all
+  applicable rules, or reject the operation; never keep only a permissive prefix.
+- Missing policy differs from an explicitly empty value. An empty allowlist
+  denies all; an explicitly empty frame-constraint list adds no frame rules but
+  does not remove global constraints or host permission checks.
+- Admission requires all applicable checks. Neither a motivational mode nor a
+  higher score can override rejection. Final checks use the actual handler,
+  arguments, target, destination, and prospective cost.
+
+For example, shortening a displayed description from “allow local lookup;
+deny external send” to “allow local lookup…” must not change the denial of
+external send. The machine check uses the intact typed policy in both cases.
+
+### Implementation status and acceptance
+
+The current legacy projection compacts global budget, global constraints, and
+current-frame constraints into text in `contexts/context_projection.metta`.
+The current-frame budget is preserved structurally, but existing feasibility
+checks do not enforce the full policy above. Core's default `Constraint ID TEXT`
+values also need explicit check mappings; retaining their shape alone does not
+implement their meaning. The v1 wire validator validates policy reference shapes,
+not their resolved contents. Runtime preservation, resolution, and enforcement
+remain pending; this specification does not establish safety parity.
+
+Acceptance tests must show that changing/truncating display summaries never
+changes admission, a denial beyond the old text cutoff remains enforced,
+missing/unknown policy blocks work, empty allowlists deny work, global denials
+survive permissive frame rules, and dispatch checks the actual operation and
+current policy. Oversized policy must reject without partial admission. Tests
+must exercise both projection and the consumer, not just record shape validation.
 
 ## Identity, causality, and revision rules
 
@@ -336,8 +505,9 @@ Budget and constraint references are respectively
 to immutable, typed host policy data within the envelope's policy revision.
 No permission is inferred from a reference's presence: admission requires the
 referenced data to be available and validated. Missing policy means rejection
-of work requiring that policy. Defining the policy payload and its enforcement
-belongs to the remaining Phase 2 policy-data task and Phase 3.
+of work requiring that policy. See [Typed policy data and display summaries](#typed-policy-data-and-display-summaries)
+for preservation and interpretation rules. Native adapter mappings, reference
+resolution, and enforcement remain Phase 2/3 implementation work.
 
 The current frame ID must agree with the root; `current None` requires
 `current-frame-id None`. Runtime budget reference equals the current frame's
