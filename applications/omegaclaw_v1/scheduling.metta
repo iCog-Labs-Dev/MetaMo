@@ -2,6 +2,8 @@
 ;; it consumes existing signal facts and actions, never changes a mode, and
 ;; cannot authorize work. Registry entries are the single source of ranks.
 
+!(import! &self (library MetaMo applications/omegaclaw_v1/mode_triggers))
+
 (= (schedulingPriorityOrder)
    (collapse (match &self (SchedulingPriority $class $_rank) $class)))
 
@@ -16,36 +18,31 @@
       ($lowerRank (schedulingPriorityRank $lower)))
       (and (> $lowerRank 0) (> $higherRank $lowerRank))))
 
-(= (schedulingHasSignal $kind $signals)
-   (if (== $signals ())
-       False
-       (let* (
-          (($head $tail) (decons-atom $signals))
-          ((signal $name $_strength) $head))
-          (if (== $name $kind) True (schedulingHasSignal $kind $tail)))))
-
 (= (schedulingThreat $signals)
-   (or (schedulingHasSignal danger $signals)
-       (schedulingHasSignal user-angry $signals)))
+   (modeSignalGroupActive threat Enter $signals))
 
 (= (schedulingRecovery $signals)
-   (or (schedulingHasSignal failure $signals)
-       (or (schedulingHasSignal repeated-failure $signals)
-           (schedulingHasSignal stalled-progress $signals))))
+   (modeSignalGroupActive recovery Enter $signals))
 
 (= (schedulingBasePriority $candidate)
    (let $classes
          (collapse (match &self (CandidateSchedulingPriority $candidate $class) $class))
       (if (== $classes ()) Unknown (car-atom $classes))))
 
+(= (schedulingPromotedPriority $signals $rows $best)
+   (if (== $rows ()) $best
+       (let* (
+          (($head $tail) (decons-atom $rows))
+          ((SchedulingPromotion $_candidate $group $class) $head)
+          ($promote (and (modeSignalGroupActive $group Enter $signals)
+                        (> (schedulingPriorityRank $class) (schedulingPriorityRank $best)))))
+          (schedulingPromotedPriority $signals $tail (if $promote $class $best)))))
+
 (= (schedulingPriorityForCandidate $signals $candidate)
-   (let $threatWork
-         (collapse (match &self (ThreatRemediationCandidate $candidate) True))
-      (if (and (schedulingThreat $signals) (!= $threatWork ()))
-          Threat-remediation
-          (if (and (== $candidate self-improve) (schedulingRecovery $signals))
-              Recovery
-              (schedulingBasePriority $candidate)))))
+   (schedulingPromotedPriority $signals
+      (collapse (match &self (SchedulingPromotion $candidate $group $class)
+         (SchedulingPromotion $candidate $group $class)))
+      (schedulingBasePriority $candidate)))
 
 (= (schedulingActionRank $signals (action $candidate $_ $_ $_))
    (schedulingPriorityRank (schedulingPriorityForCandidate $signals $candidate)))

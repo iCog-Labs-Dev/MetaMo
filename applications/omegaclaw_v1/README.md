@@ -22,6 +22,8 @@ still unversioned; migration and shared contract tests remain pending.
 | `task_lifecycle.metta` | User-task state, execution continuation, and autonomy phases. |
 | `candidate_selection.metta` | Candidate-condition evaluation and availability. |
 | `scheduling.metta` | Fixed preemption between admitted scheduling classes, before numeric scoring. |
+| `mode_triggers.metta` | Shared registry-driven trigger evaluation over existing signals and snapshot conditions. |
+| `mode_layer.metta` | Four constitutional modes with registry-driven wake, recovery, collision, and transition timing rules. |
 | `omegaclaw_decision.metta` | Candidate scoring and winner selection. |
 | `persistence.metta` | Save, restore, and persistence scheduling. |
 | `bridge.metta` | MetaMo-cycle orchestration, prompt construction, and startup. |
@@ -33,6 +35,8 @@ Scheduling implements **Threat-remediation > Recovery > Interactive > Orienting 
 Engaged > Rumination > Sleep** over admitted candidates. These priorities remain
 separate from the four constitutional modes and ContextFrames Fast/Slow modes.
 See [SCHEDULING.md](SCHEDULING.md) for candidate mappings, trigger handling, and tests.
+Mode triggers, entry/exit thresholds, and cycle-based timing are registry data;
+see [MODE_TRANSITIONS.md](MODE_TRANSITIONS.md) for wake and recovery behavior.
 
 ## Installation
 

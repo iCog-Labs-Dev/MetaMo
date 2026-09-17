@@ -32,7 +32,8 @@
 !(test (get-state &failure-streak) 7)
 !(test (collapse (match &goal-space (composition-sentinel $value) $value)) (preserved))
 !(initMinimalLoopFixture)
-!(test (constitutionalMode) Engaged)
+;; The fixture supplies stalled-progress; registry recovery selects Rumination.
+!(test (constitutionalMode) Rumination)
 !(test (get-state &failure-streak) 0)
 !(change-state! &failure-streak 9)
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))

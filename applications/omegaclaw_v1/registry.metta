@@ -14,6 +14,35 @@
 (ConstitutionalMode Sleep)
 (ConstitutionalModeDefault Engaged)
 
+;; Trigger rows read the existing (signal kind strength) facts. Entry and exit
+;; thresholds are inclusive; zero preserves the previous presence semantics.
+;; Exit thresholds apply while holding the rule's constitutional target mode.
+(ModeSignalTrigger threat danger 0.0 0.0)
+(ModeSignalTrigger threat user-angry 0.0 0.0)
+(ModeSignalTrigger recovery failure 0.0 0.0)
+(ModeSignalTrigger recovery repeated-failure 0.0 0.0)
+(ModeSignalTrigger recovery stalled-progress 0.0 0.0)
+(ModeSignalTrigger wake user-waiting 0.0 0.0)
+(ModeSignalTrigger wake execution-request 0.0 0.0)
+(ModeContextTrigger wake frame-present)
+(ModeContextTrigger sleep frame-absent)
+
+;; Constitutional transition collisions, distinct from SchedulingPriority.
+;; Greater priority wins; declaration order breaks equal-priority ties.
+(ModeTransitionRule threat Threat 40)
+(ModeTransitionRule recovery Rumination 30)
+(ModeTransitionRule wake Engaged 20)
+(ModeTransitionRule sleep Sleep 10)
+
+;; mode, consecutive entry evaluations, minimum held evaluations, cooldown.
+;; These count motivation-cycle refreshes, not wall-clock time or Core wakes.
+(ModeTransitionParameters Engaged 1 0 0)
+(ModeTransitionParameters Threat 1 0 0)
+(ModeTransitionParameters Rumination 1 0 0)
+(ModeTransitionParameters Sleep 1 0 0)
+;; More urgent targets can bypass hold/cooldown, but still require entry evidence.
+(ModeTransitionOption urgent-bypass True)
+
 ;; Scheduling priority classes, highest first. These are neither
 ;; constitutional modes nor ContextFrames Fast/Slow execution modes.
 (SchedulingPriority Threat-remediation 7)
@@ -43,9 +72,10 @@
 
 ;; Elevate only explicit remediation work when existing threat signals fire.
 ;; Being safety-typed, or running in constitutional Threat, is not sufficient.
-(ThreatRemediationCandidate verify-frame-state)
-(ThreatRemediationCandidate defer)
-(ThreatRemediationCandidate ask-clarification)
+(SchedulingPromotion verify-frame-state threat Threat-remediation)
+(SchedulingPromotion defer threat Threat-remediation)
+(SchedulingPromotion ask-clarification threat Threat-remediation)
+(SchedulingPromotion self-improve recovery Recovery)
 
 (ModulatorSpec urgency 0.50)
 (ModulatorSpec caution 0.50)

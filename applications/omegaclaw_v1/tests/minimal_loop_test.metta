@@ -35,7 +35,8 @@
 ;;
 ;; EXPECTED RESULT
 ;; ---------------
-;; The demo prints Engaged mode, the respond candidate, an admitted action, and
+;; The demo prints Rumination mode (its stalled-progress signal selects recovery),
+;; the respond candidate, an admitted action, and
 ;; a feasible AttentionDirective targeting demo-frame. The score is deliberately
 ;; fixed at 0.50 in minimalLoop so repeated runs produce identical output.
 
@@ -59,9 +60,9 @@
 ;; 6. Minimal contract assertions
 ;; ---------------------------------------------------------------------------
 ;; These assertions intentionally verify only the promises made by this file:
-;; a valid default mode, an admitted response candidate, a non-empty result,
+;; a recovery posture, an admitted response candidate, a non-empty result,
 ;; and a non-empty directive. They do not stand in for the full v1 test suite.
-!(test (constitutionalMode) Engaged)
+!(test (constitutionalMode) Rumination)
 !(test (eval (feasibilityGate (minimalDemoBundle) respond))
       (GateDecision Admitted Feasible))
 !(test (!= (car-atom (cdr-atom (demoResult))) ()) True)

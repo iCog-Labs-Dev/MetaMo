@@ -52,9 +52,12 @@ numeric salience state.
 | Rumination | `self-improve` without a recovery trigger. |
 | Sleep | `defer` without a threat trigger, and `none`. These are current fallback candidates; this change does not implement a maintenance sweep. |
 
-Signal presence uses the existing application's presence semantics; scheduling
-does not invent a new strength threshold. Removing a trigger removes its promotion
-on the next selection. A constitutional Threat mode alone does not promote every
+Signal triggers and promotion mappings now live in registry data shared with the
+mode layer. Scheduling uses their entry thresholds; the default threshold of zero
+preserves presence semantics for nonnegative signals. Removing a trigger removes
+its promotion on the next selection. See [MODE_TRANSITIONS.md](MODE_TRANSITIONS.md)
+for thresholds, wake, recovery, and constitutional transition timing. A
+constitutional Threat mode alone does not promote every
 candidate to threat remediation. Candidate type `safety` is also not a scheduling
 rank or an authorization grant.
 

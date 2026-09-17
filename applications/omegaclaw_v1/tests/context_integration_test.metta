@@ -124,7 +124,7 @@
 ;; transition is rejected and leaves the default Engaged state unchanged.
 !(clearSignals)
 !(setConstitutionalMode Engaged)
-!(test (eval (refreshConstitutionalMode (pureTestBundle))) ())
+!(test (eval (refreshConstitutionalMode (pureTestBundle))) True)
 !(test (constitutionalMode) Engaged)
 !(setConstitutionalMode Rumination)
 !(test (constitutionalMode) Rumination)
