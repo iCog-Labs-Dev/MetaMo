@@ -56,14 +56,14 @@
    (and (not (== $status Closed))
         (not (== $status Exhausted))))
 (= (frameBundleBudgetOpenValue open-budget) True)
-
-(= (contextPolicyGate $bundle $candidate)
-   ;; Base policy example:
+;; Base policy example:
    ;;   `(contextPolicyGate $bundle execute-skill)` returns either
    ;;   `(GateDecision Admitted Feasible)` or a typed rejection such as
    ;;   `(GateDecision Rejected BudgetExhausted)`.
    ;; Candidates that do not require a frame, such as `respond`, may be
    ;; admitted even when the current-frame requirement is false.
+(= (contextPolicyGate $bundle $candidate)
+   
    (contextPolicyGateFacts
       (candidateRequiresFrame $candidate)
       (frameBundleHasCurrent $bundle)
@@ -74,11 +74,11 @@
 ;; Constitutional modes are a monotonic tightening layer. They may reject an
 ;; otherwise feasible candidate, but they never admit a candidate rejected by
 ;; the base action-policy gate.
+; Constitutional policy is a tightening layer. Example:
+;;   `(constitutionalModeGate execute-skill)` rejects operational work in
+;;   Sleep mode with `SleepModeOperationalWork`; it never overrides a base
+;;   policy rejection.
 (= (constitutionalModeGate $candidate)
-   ;; Constitutional policy is a tightening layer. Example:
-   ;;   `(constitutionalModeGate execute-skill)` rejects operational work in
-   ;;   Sleep mode with `SleepModeOperationalWork`; it never overrides a base
-   ;;   policy rejection.
    (if (and (== (constitutionalMode) Sleep)
             (candidateRequiresFrame $candidate))
        (GateDecision Rejected SleepModeOperationalWork)
@@ -107,20 +107,20 @@
    (GateDecision Rejected BudgetExhausted))
 (= (contextPolicyGateFacts True True True True True)
    (GateDecision Admitted Feasible))
-
-(= (candidateAdmitted $bundle $candidate)
-   ;; Boolean convenience form:
+;; Boolean convenience form:
    ;;   `(candidateAdmitted $bundle respond)` -> `True` or `False`.
    ;; Use `feasibilityGate` instead when the rejection reason is needed.
+(= (candidateAdmitted $bundle $candidate)
+   
    (let (GateDecision $admission $reason) (feasibilityGate $bundle $candidate)
       (== $admission Admitted)))
 
-(= (feasibilityGateActions $bundle ()) True)
-(= (feasibilityGateActions $bundle $actions)
-   ;; Example with adapter actions:
+;; Example with adapter actions:
    ;;   `(feasibilityGateActions $bundle (action-list))` returns `True` only
    ;;   when every action in the list is admitted. This predicate checks all
    ;;   actions; it does not remove rejected actions from the list.
+(= (feasibilityGateActions $bundle ()) True)
+(= (feasibilityGateActions $bundle $actions)
    (let* (
       (($head $tail) (decons-atom $actions))
       ($gate (feasibilityGate $bundle (actionId $head)))
