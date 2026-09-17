@@ -64,3 +64,37 @@ contractFixtureSet([Name|Path], Value, Record, Updated) :-
     Updated = [Tag|NewFields].
 contract_fixture_replace(Name,Value,Field,New) :-
     (Field = [Name,_] -> New = [Name,Value]; New = Field).
+
+% Ownership cases shared by both language entry points. Expected results are
+% literal contract values, not computed by the validator under test.
+contractOwnershipCase(open_task, 'FrameStateBundle', R,
+                      ['ContractValid','FrameStateBundle',1]) :-
+    contractFixtureRecord('FrameStateBundle', R).
+contractOwnershipCase(completed_task, 'FrameStateBundle', R,
+                      ['ContractValid','FrameStateBundle',1]) :-
+    contractFixtureRecord('FrameStateBundle', Base),
+    contractFixtureSet([payload,runtime,'task-open'],false,Base,R1),
+    contractFixtureSet([payload,runtime,'active-task-summary'],"",R1,R2),
+    contractFixtureSet([payload,runtime,'task-execution-observed'],[],R2,R).
+contractOwnershipCase(policy_cannot_close_task, 'MetaMoPolicyOutput', R,
+                      ['ContractRejection','InvalidValue','MetaMoPolicyOutput',1,'None']) :-
+    contract_fixture_extra('MetaMoPolicyOutput',['task-open',false],R).
+contractOwnershipCase(attention_cannot_mutate_frame, 'AttentionDirective', R,
+                      ['ContractRejection','InvalidValue','AttentionDirective',1,'None']) :-
+    contract_fixture_extra('AttentionDirective',['frame-status','Completed'],R).
+contractOwnershipCase(snapshot_cannot_set_motivation, 'FrameStateBundle', R,
+                      ['ContractRejection','InvalidValue','FrameStateBundle',1,'None']) :-
+    contract_fixture_extra('FrameStateBundle',['modulator',['urgency',1.0]],R).
+contract_fixture_extra(S,Field,R) :-
+    contractFixtureRecord(S,Base), contract_fixture_payload(S,P),
+    append(P,[Field],Extended), contractFixtureSet([payload],Extended,Base,R).
+
+% Check both validation and explicit consumption against the shared expectation.
+% Suites call their own public entry points; these helpers only expose data.
+contractOwnershipRecord(Name, R) :- contractOwnershipCase(Name,_,R,_).
+contractOwnershipSchema(Name, S) :- contractOwnershipCase(Name,S,_,_).
+contractOwnershipExpected(Name, Expected) :- contractOwnershipCase(Name,_,_,Expected).
+contractOwnershipConsumed(Name, Expected) :-
+    contractOwnershipCase(Name,_,R,Validation),
+    (Validation = ['ContractValid',_,1] -> memberchk([payload,Expected],R)
+    ; Expected = Validation).

@@ -2,6 +2,14 @@
 :- ensure_loaded('fixtures/contracts_v1.pl').
 :- begin_tests(contracts_v1).
 
+test(shared_ownership_cases,
+     [forall(contractOwnershipCase(Name,Schema,Record,Expected))]) :-
+    findall(Result,integrationValidateRecord(Record,Result),Results),
+    assertion(Results == [Expected]),
+    contractOwnershipConsumed(Name,Consumed),
+    findall(Payload,integrationConsumeRecord(Schema,Record,Payload),Payloads),
+    assertion(Payloads == [Consumed]).
+
 valid(R) :- integrationValidateRecord(R, ['ContractValid',_,1]).
 invalid(R, Reason) :-
     findall(V,integrationValidateRecord(R,V),Values),

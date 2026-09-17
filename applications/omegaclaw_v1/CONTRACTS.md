@@ -51,6 +51,57 @@ swipl -q -s MetaMo/applications/omegaclaw_v1/tests/contracts_v1_test.pl -g run_t
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/contracts_v1_test.metta
 ```
 
+## State ownership and publication
+
+Ownership follows the state’s meaning, not the file allocating its storage.
+The legacy adapter currently allocates host task slots in `task_lifecycle.metta`;
+that location does not give motivational scoring authority to change tasks.
+
+| State | Authoritative owner | Allowed use across the boundary |
+| --- | --- | --- |
+| Frames, goals/commitments, task open/completed status, active task, execution observations, message ingestion, results/errors | OmegaClaw host | The host updates these before publishing a bounded snapshot. MetaMo reads that snapshot; a score, decay, or restored motivational state cannot terminate a task. |
+| Permissions, constraints, budgets, revisions, dispatch and execution identity | Host scheduler/executor | MetaMo may reject or recommend work. The host resolves policy, checks current authority, dispatches and records actual outcomes. |
+| Relations and accepted verification evidence | Host relation store | MetaMo may request verification or read evidence. A directive or proposal cannot directly rewrite a relation or frame. |
+| Goal weights, motives, modulators, appraisal, extracted signals/history, constitutional mode, homeostatic quantities | MetaMo | Update locally from bounded observations. In particular `goal` weights in `&goal-space` are preferences, not host goals or commitments; constitutional modes are distinct from host Fast/Slow modes. |
+| Autonomy phase/counters, last motivational decision, cached policy/directive, source reliability | MetaMo/adapter local state | Scheduling memory and advisory output only; these cannot authorize execution or serve as authoritative task outcomes. |
+| Active bundle cache | Adapter, as a read-only copy of host publication | All consumers in a cycle use the same value. Changing local motivation does not republish or mutate host state. |
+| Capability/knowledge claims | Host adjudicated store | They must not become authoritative through local self-model writes. Existing `memory_confidence` and performance heuristics still require the Phase 6 ownership cleanup. |
+
+For the current serialized path, `prepareTaskStateForMetaMo` merges host execution
+observations and applies existing terminal-task bookkeeping, then projects and
+caches one bundle. Signals, appraisal, selection, feasibility and directives
+consume that publication. Completion consults current host results/errors, not
+stale motivational signals. This ordering does not supply missing host ingestion
+wiring, correlated outcomes, revision enforcement or a new commitment protocol.
+The legacy terminal-candidate heuristic remains subject to the Phase 4 replacement.
+
+Persistence of local motivational fields must not restore host task status,
+permissions, commitments or relations. Host restart reconstruction and local
+motivational restoration have separate owners; durable reconciliation remains
+pending. A `producer` string identifies a claimed source, not authenticated write
+authority: schema validation cannot enforce ownership inside a shared process.
+
+### Shared ownership fixtures
+
+`tests/fixtures/contracts_v1.pl` is the single executable v1 corpus used by both
+the MeTTa adapter API tests and the standalone host-facing consumer tests.
+`contractOwnershipCase` supplies records and literal expected results:
+
+| Case | Expected interpretation |
+| --- | --- |
+| `open_task` | Consume host task state as open. |
+| `completed_task` | Consume host task state as closed with cleared task summary and execution accumulation. This is a snapshot shape, not proof of an authorized transition. |
+| `policy_cannot_close_task` | Reject a policy output containing a task-state write field. |
+| `attention_cannot_mutate_frame` | Reject a directive containing a frame-status write field. |
+| `snapshot_cannot_set_motivation` | Reject a host snapshot containing a local modulator write field. |
+
+Both suites exercise validation and explicit consumption against the same
+expectations. Exact schema rejection prevents these extra fields crossing the
+wire; it does not authenticate producers or implement a live host consumer.
+`tests/task_snapshot_test.metta` separately covers the production legacy adapter’s
+publication order and local-state isolation. Workspace JSON design fixtures are
+not this executable corpus and remain unwired, as their README states.
+
 ## Encoding and compatibility
 
 Every boundary message uses this envelope:

@@ -61,3 +61,17 @@
 !(change-state! &lastresults "")
 !(bind! &empty-snapshot (new-state (prepareTaskStateForMetaMo)))
 !(test (frameRuntimeTaskOpen (get-state &empty-snapshot)) True)
+
+;; Local motivational updates cannot close or rewrite authoritative host work
+;; or replace the snapshot already published for this cycle.
+!(change-state! &active-task "host-owned task")
+!(change-state! &task-execution-observed "host-owned observation")
+!(bind! &ownership-snapshot (new-state (prepareTaskStateForMetaMo)))
+!(bind! &ownership-observation (new-state (get-state &task-execution-observed)))
+!(replaceGoal progress 0.0)
+!(replaceModulator urgency 1.0)
+!(setConstitutionalMode Sleep)
+!(test (get-state &task-open) True)
+!(test (get-state &active-task) "host-owned task")
+!(test (get-state &task-execution-observed) (get-state &ownership-observation))
+!(test (== (activeFrameBundle) (get-state &ownership-snapshot)) True)

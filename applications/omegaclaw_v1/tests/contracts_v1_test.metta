@@ -5,7 +5,21 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/contracts))
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/contracts_v1.pl)
-   (contractFixtureRecord contractFixtureContext))
+   (contractFixtureRecord contractFixtureContext contractOwnershipRecord
+    contractOwnershipSchema contractOwnershipExpected contractOwnershipConsumed))
+
+(= (ownershipFixtureMatches $name)
+   (and
+      (== (integrationValidateRecord (contractOwnershipRecord $name))
+          (contractOwnershipExpected $name))
+      (== (integrationConsumeRecord (contractOwnershipSchema $name)
+             (contractOwnershipRecord $name))
+          (contractOwnershipConsumed $name))))
+!(test (ownershipFixtureMatches open_task) True)
+!(test (ownershipFixtureMatches completed_task) True)
+!(test (ownershipFixtureMatches policy_cannot_close_task) True)
+!(test (ownershipFixtureMatches attention_cannot_mutate_frame) True)
+!(test (ownershipFixtureMatches snapshot_cannot_set_motivation) True)
 
 !(test (integrationValidateRecord (contractFixtureRecord FrameStateBundle)) (ContractValid FrameStateBundle 1))
 !(test (integrationValidateRecord (contractFixtureRecord MetaMoPolicyOutput)) (ContractValid MetaMoPolicyOutput 1))
