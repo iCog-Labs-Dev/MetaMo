@@ -6,6 +6,19 @@
 ;; context_integration imports context_accessors before this module. Leaf
 ;; modules do not reimport dependencies: native PeTTa would compile them twice.
 
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/typed_policy))
+
+;; Concrete-operation path. Both resolved policy scopes and operation metadata
+;; come from the host, never a reasoner claim or a compacted display summary.
+;; The existing candidate-only gate remains a legacy preliminary check.
+(= (feasibilityGateForOperation $bundle $candidate $operation $global $frame)
+   (let (GateDecision $admission $reason)
+           (typedOperationPolicyGate $global $frame $operation $candidate
+              (frameBundleCurrentId $bundle))
+      (if (== $admission Rejected)
+          (GateDecision Rejected $reason)
+          (eval (feasibilityGate $bundle $candidate)))))
+
 (= (cfv2-current-frame-active)
    (or (== (get-state &cfv2-current-status) Active)
        (== (get-state &cfv2-current-status) Focused)))

@@ -1,0 +1,13 @@
+;; Shared typed examples for adapter and host-facing PeTTa consumers.
+(= (typedPolicyFixture $target $skills $permissions $egress $constraints $budgets)
+   (PolicyScope (target $target) (skills $skills) (permissions $permissions)
+      (egress $egress) (constraints $constraints) (budgets $budgets)))
+(= (typedBudgetFixture)
+   ((ResourceBudget "commands" "units" 10 Open)))
+(= (typedScopeFixture $target)
+   (typedPolicyFixture $target ("read-file") ("files.read") ("channel:test")
+      () (typedBudgetFixture)))
+(= (typedOperationFixture)
+   (PolicyOperation (candidate execute-skill) (target "policy-frame")
+      (skill "read-file") (permissions ("files.read")) (egress ())
+      (costs ((ResourceCost "commands" "units" 1)))))

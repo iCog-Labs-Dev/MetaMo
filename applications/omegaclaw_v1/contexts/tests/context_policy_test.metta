@@ -13,10 +13,10 @@
 
 (= (policyTestBundle)
    (FrameStateBundle
-      (root (FrameStateRoot policy-root policy-frame (mode Fast)
+      (root (FrameStateRoot policy-root "policy-frame" (mode Fast)
              root-budget root-constraints))
       (current (FrameStateCurrent
-         policy-frame
+         "policy-frame"
          (parent ())
          PolicySource
          (status Active)
@@ -73,3 +73,19 @@
       (GateDecision Admitted Feasible))
 !(test (feasibilityGate (policyTestBundle) execute-skill)
       (GateDecision Admitted Feasible))
+
+;; The concrete-operation API composes host policy with frame and mode gates.
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/typed_policy))
+!(test (feasibilityGateForOperation (policyTestBundle) execute-skill
+   (typedOperationFixture) (typedScopeFixture Global)
+   (typedScopeFixture (FrameTarget "policy-frame")))
+   (GateDecision Admitted Feasible))
+!(setConstitutionalMode Sleep)
+!(test (feasibilityGateForOperation (policyTestBundle) execute-skill
+   (typedOperationFixture) (typedScopeFixture Global)
+   (typedScopeFixture (FrameTarget "policy-frame")))
+   (GateDecision Rejected SleepModeOperationalWork))
+!(test (feasibilityGateForOperation (policyTestBundle) execute-skill
+   (typedOperationFixture) () (typedScopeFixture (FrameTarget "policy-frame")))
+   (GateDecision Rejected InvalidGlobalPolicy))
+!(setConstitutionalMode Engaged)
