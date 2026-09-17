@@ -3,11 +3,14 @@
 ;; These checks neither execute work nor reserve or mutate resource budgets.
 
 (= (tpId $x)
-   (if (== (get-type $x) String) (!= $x "") False))
+   (if (== (get-type $x) String) (!= $x "") False)
+)
+
 (= (tpQuantity $x)
    (if (== (get-type $x) Number)
        ;; Host numeric anomalies must reject, never abort the admission path.
-       (== (catch (if (< $x 0) False (<= $x 9007199254740991))) True) False))
+       (== (catch (if (< $x 0) False (<= $x 9007199254740991))) True) False)
+)
 
 (= (tpContains $items $x)
    (if (== $items ()) False
@@ -77,7 +80,11 @@
                              (tpListValid $kind $tail (- $remaining 1)
                                 (cons-atom $key $seen))))
                       False)))) False))
+
+
 (= (tpList $kind $items) (tpListValid $kind $items 128 ()))
+
+
 (= (tpOperationValid $operation)
    (case $operation (
       ((PolicyOperation (candidate $candidate) (target $target) (skill $skill)
@@ -96,15 +103,20 @@
           (tpList ids $permissions) (tpList ids $egress)
           (tpList constraints $constraints) (tpList budgets $budgets))))
       ($_ False))))
+
+
 (= (tpSubset $required $allowed)
    (if (== $required ()) True
        (let ($head $tail) (decons-atom $required)
           (if (tpContains $allowed $head) (tpSubset $tail $allowed) False))))
+
+
 (= (tpResource $entries $resource)
    (if (== $entries ()) None
        (let ($head $tail) (decons-atom $entries)
           (if (== (index-atom $head 1) $resource) $head
               (tpResource $tail $resource)))))
+
 (= (tpConstraint $constraint $permissions $skill $egress $costs)
    (case $constraint (
       ((DenySkill $denied) (if (== $skill $denied) ConstraintDenied Feasible))

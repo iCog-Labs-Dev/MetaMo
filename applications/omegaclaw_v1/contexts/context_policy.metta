@@ -12,12 +12,10 @@
 ;; come from the host, never a reasoner claim or a compacted display summary.
 ;; The existing candidate-only gate remains a legacy preliminary check.
 (= (feasibilityGateForOperation $bundle $candidate $operation $global $frame)
-   (let (GateDecision $admission $reason)
-           (typedOperationPolicyGate $global $frame $operation $candidate
-              (frameBundleCurrentId $bundle))
-      (if (== $admission Rejected)
-          (GateDecision Rejected $reason)
-          (eval (feasibilityGate $bundle $candidate)))))
+   ;; request_admission is loaded after the legacy context helpers below.
+   (eval (feasibilityGateForRequest $bundle $bundle
+      (AdmissionRequest propose-candidate current-frame $candidate)
+      $operation $global $frame)))
 
 (= (cfv2-current-frame-active)
    (or (== (get-state &cfv2-current-status) Active)
@@ -140,3 +138,5 @@
       ((GateDecision $admission $reason) $gate))
       (and (== $admission Admitted)
            (feasibilityGateActions $bundle $tail))))
+
+!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/request_admission))

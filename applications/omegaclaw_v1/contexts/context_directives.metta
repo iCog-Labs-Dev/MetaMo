@@ -111,3 +111,17 @@
    ;; Example: `(lastAttentionDirective)` reads the most recently published
    ;; directive. It is initialized to a rejected `none` directive at startup.
    (get-state &last-attention-directive))
+
+;; Concrete attention and transition requests use exactly the common gate.
+;; The target is the inspected destination bundle, never the origin by default.
+(= (attentionDirectiveForRequest $origin $target $request $operation $global $frame $score)
+   (let* (
+      ((GateDecision $admission $reason)
+         (feasibilityGateForRequest $origin $target $request $operation $global $frame))
+      ($candidate (if (== $admission Admitted) (index-atom $request 3) none))
+      ($slice (if (== $admission Admitted) (directiveSlice $candidate) None))
+      ($priority (if (== $admission Admitted) (directivePriority $target $score) 0)))
+      (AttentionDirective
+         (target (if (== $admission Admitted) (frameBundleCurrentId $target) ()))
+         (slice $slice) (task $candidate) (admission $admission)
+         (reason $reason) (priority $priority) (source MetaMo))))

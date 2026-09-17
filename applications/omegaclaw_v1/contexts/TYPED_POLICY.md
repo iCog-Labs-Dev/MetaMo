@@ -9,11 +9,20 @@ global frame` to additionally apply the existing frame and constitutional-mode
 gates. Both return one `GateDecision Admitted Feasible` or `GateDecision Rejected
 REASON`. Rejection is never overridden by a mode or motivational score.
 
+Base policy rejection keeps its original reason in every constitutional mode,
+including Threat. Sleep may additionally reject otherwise admitted operational
+work; leaving Sleep does not remove host restrictions. Risk/stability penalties
+and the scorer's `safety` candidate category express preferences only. A raw
+numeric score is not an admission result, and zero score is not a typed denial.
+Callers must retain the gate decision separately and score only admitted work.
+`tests/mode_monotonicity_test.metta` covers all four modes, rejection precedence,
+denied maximum-confidence proposals skipping scoring, and real risk penalties.
+
 The global and frame values are **resolved host-owned policy**, not strings
 extracted from compacted bundle summaries. The frame scope must identify the
-operation's target. The combined gate currently supports the bundle's current
-frame; it rejects a different operation target. Cross-frame admission requires
-the host to supply that target's authoritative snapshot in a later integration.
+operation's target. `feasibilityGateForOperation` supports the bundle's current
+frame. The common request API below also accepts a separate authoritative target
+snapshot for cross-frame requests; it never uses origin-frame policy as a substitute.
 
 ```metta
 (PolicyScope
@@ -74,17 +83,62 @@ quote untrusted literal terms before evaluation, as with the v1 wire APIs.
 
 ## Integration limits
 
+### Common request admission
+
+`feasibilityGateForRequest origin target request operation global frame` is the
+shared concrete gate for native candidates, proposals, attention and transitions.
+Requests have the shape `(AdmissionRequest kind requested-target candidate)`.
+Kinds are `propose-candidate`, `request-attention`, `request-frame-switch`, and
+`request-mode-change`. The candidate must be known, the operation's candidate and
+frame must match, and both snapshots must provide valid frame identity/status/mode.
+Every concrete path requires an active/focused target, including attention and
+operations whose legacy candidate-name checks did not require a frame.
+
+| Entry point | Use of the common gate |
+| --- | --- |
+| `candidateAdmissionForOperation`, `feasibilityGateForOperation` | Same-frame native operation with explicit host metadata. |
+| `generateCandidatesForOperations bundle rows` | Applies existing availability rules and the common gate before adding candidates. Rows are `(CandidateOperation candidate operation global frame)` supplied by the host, with one resolved operation per candidate. Empty rows yield no candidates; there is no legacy fallback. |
+| `reasonerProposalAdmissionForOperation origin target proposal operation global frame` | Validates proposal shape, then checks its actual kind, target and candidate against the host operation. |
+| `reasonerProposalToActionForOperation`, `reasonerProposalScoreForOperation` | Rejected proposals become no-action/zero score; the scorer is not invoked. Accepted proposals use the target bundle for scoring. |
+| `attentionDirectiveForRequest origin target request operation global frame score` | Uses the common gate and destination frame. Rejection produces `task none`, no slice/target, priority zero and the typed reason, regardless of score. |
+
+For native work and attention, `current-frame` must resolve to the origin frame;
+`(FrameTarget id)` must match the supplied target snapshot. The target's frame
+mode must match the origin's root mode. A frame switch additionally requires
+the `switch-frame` handler and explicit `frames.switch-frame` permission metadata.
+It cannot be admitted by using an unrelated handler with candidate `defer`.
+
+A mode request uses `(ModeTarget Fast)` or `(ModeTarget Slow)` and requires
+`(ModeOperation mode policy-operation)` with the identical requested mode. The
+inner operation must identify the actual target frame, handler `switch-mode`,
+and permission `frames.switch-mode`. The destination frame must be active and
+compatible with the requested mode. Both transition types are operational work
+under Sleep, even when their motivational candidate is `defer`. Transition
+handlers cannot be hidden inside ordinary candidate or attention requests.
+
+The host must retain the admitted request and operation alongside the advisory
+directive; a legacy directive alone does not encode the transition mode or
+concrete command. MetaMo performs no frame mutation. Host policy resolution,
+snapshot consistency, revision checks and final dispatch remain host duties.
+
+### Production wiring still required
+
 The legacy `feasibilityGate bundle candidate` still performs preliminary checks
-only. Production candidates currently lack trusted concrete handler metadata,
+only. Legacy reasoner admission now rejects attention, cross-frame and transition
+requests with `MissingOperationContext`; only current-frame candidate suggestions
+remain on its preliminary path. Production candidates lack trusted handler metadata,
 and the legacy projection still compacts policy summaries. This change therefore
 does **not** claim that production dispatch enforces the new checks. Core must
 resolve policy and derive metadata from the actual handler/arguments, wire the
-concrete-operation gate into scheduling, revalidate current policy, and reserve
+concrete request APIs into scheduling, revalidate current policy, and reserve
 and account for resources before execution. These are separate Phase 3 items.
 
 `tests/fixtures/typed_policy.metta` provides reusable policy/operation examples.
 `tests/typed_policy_test.metta` exercises the pure gate through PeTTa; the focused
 context policy suite exercises composition with the existing frame/mode gate.
+`tests/request_admission_test.metta` checks all concrete entry paths, cross-frame
+targets, blocked destinations, mode/handler mismatches, transition permissions,
+Sleep, maximum-confidence proposals and no-action output at maximum priority.
 
 ```sh
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/typed_policy_test.metta

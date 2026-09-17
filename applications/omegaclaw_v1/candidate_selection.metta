@@ -2,6 +2,13 @@
 
 !(bind! &candidateSpace (new-space))
 
+;; Native concrete-operation admission uses the same request gate as proposals
+;; and scheduler attention. The operation metadata is resolved by the host.
+(= (candidateAdmissionForOperation $bundle $candidate $operation $global $frame)
+   (feasibilityGateForRequest $bundle $bundle
+      (AdmissionRequest propose-candidate current-frame $candidate)
+      $operation $global $frame))
+
 (= (evalCondition $bundle $type $param $thresh)
    (case $type (
       (always True)
@@ -129,3 +136,18 @@
                     (add-atom &candidateSpace (candidate $n))
                     (empty)))))
    ) True))
+
+;; Host rows bind each native candidate to one concrete operation and policy.
+;; No rows means no executable candidate; this API never falls back to legacy
+;; candidate-name-only admission. Availability still uses the existing rules.
+(= (generateCandidatesForOperations $bundle $rows)
+   (let* (
+      ($_ (clearSpace &candidateSpace))
+      ($_ (collapse
+         (let (CandidateOperation $candidate $operation $global $frame) (superpose $rows)
+            (let (GateDecision $admission $_reason)
+                    (candidateAdmissionForOperation $bundle $candidate $operation $global $frame)
+               (if (== $admission Admitted)
+                   (if (candidateIsAvailable $bundle $candidate)
+                       (add-atom &candidateSpace (candidate $candidate)) (empty))
+                   (empty))))))) True))

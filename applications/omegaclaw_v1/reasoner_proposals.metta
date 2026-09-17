@@ -177,15 +177,56 @@
                         (not (== $prediction ()))))))))))
       ($_ False))))
 
+(= (legacyReasonerProposalGate $bundle $proposal)
+   ;; Legacy inference smoke tests can appraise current-frame suggestions only.
+   ;; Attention, cross-frame work and transitions require concrete host context.
+   (if (!= (getProposalKind $proposal) propose-candidate)
+       (GateDecision Rejected MissingOperationContext)
+       (if (!= (requestFrameReason $bundle $bundle (getProposalTarget $proposal)) Feasible)
+           (GateDecision Rejected MissingOperationContext)
+           (feasibilityGate $bundle (getProposalCandidate $proposal)))))
+
 (= (reasonerProposalAdmission $bundle $proposal)
    (if (not (reasonerProposalValid $proposal))
        (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none 0.0)
        (let* (
           ($candidate (getProposalCandidate $proposal))
-          ((GateDecision $admission $reason) (feasibilityGate $bundle $candidate)))
+          ((GateDecision $admission $reason) (legacyReasonerProposalGate $bundle $proposal)))
           (if (== $admission Admitted)
               (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate 0.0)
               (ReasonerMotivationalDecision Rejected $reason $proposal $candidate 0.0)))))
+
+;; The concrete path validates the request kind/target, not merely its candidate.
+;; A transition cannot gain admission through the legacy defer candidate gate.
+(= (reasonerProposalAdmissionForOperation $origin $target $proposal $operation $global $frame)
+   (if (not (reasonerProposalValid $proposal))
+       (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none 0.0)
+       (let* (
+          ($candidate (getProposalCandidate $proposal))
+          ((GateDecision $admission $reason)
+             (feasibilityGateForRequest $origin $target
+                (AdmissionRequest (getProposalKind $proposal)
+                   (getProposalTarget $proposal) $candidate)
+                $operation $global $frame)))
+          (ReasonerMotivationalDecision
+             (if (== $admission Admitted) Accepted Rejected)
+             $reason $proposal $candidate 0.0))))
+
+(= (reasonerProposalToActionForOperation $origin $target $proposal $operation $global $frame)
+   (let* (
+      ($decision (reasonerProposalAdmissionForOperation $origin $target $proposal $operation $global $frame))
+      ($status (getStatus $decision))
+      ($candidate (getCandidate $decision)))
+      (if (== $status Accepted)
+          (ReasonerProposalActionResult Accepted Feasible $candidate (candidateToAction $candidate))
+          (ReasonerProposalActionResult $status (getReason $decision) none (action none () 0.0 ())))))
+
+(= (reasonerProposalScoreForOperation $origin $target $state $proposal $operation $global $frame)
+   (let $conversion
+           (reasonerProposalToActionForOperation $origin $target $proposal $operation $global $frame)
+      (if (== (getStatus $conversion) Accepted)
+          (omegaclawScoreForBundle $target $state (getAction $conversion))
+          0.0)))
 
 ;; Convert only an admitted, registered candidate into MetaMo's existing
 ;; typed `action` representation. The proposal's claim, support, evidence,
