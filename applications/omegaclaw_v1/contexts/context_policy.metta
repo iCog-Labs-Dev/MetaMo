@@ -145,13 +145,20 @@
 
 ;; Compatibility predicate: True only when every action is admitted. Selection
 ;; must use pruneActionsForBundle instead of discarding the entire list.
-(= (feasibilityGateActions $bundle ()) True)
+
+
 (= (feasibilityGateActions $bundle $actions)
-   (let* (
-      (($head $tail) (decons-atom $actions))
-      ($gate (feasibilityGate $bundle (actionId $head)))
-      ((GateDecision $admission $reason) $gate))
-      (and (== $admission Admitted)
-           (feasibilityGateActions $bundle $tail))))
+   (if (== $actions ())
+       True
+      (let* (
+         (($head $tail) (decons-atom $actions))
+         ($gate (feasibilityGate $bundle (actionId $head)))
+         ((GateDecision $admission $reason) $gate)
+         ($rest (feasibilityGateActions $bundle $tail))
+      )
+         (and (== $admission Admitted) $rest)
+      )
+   )
+)
 
 !(import! &self (library MetaMo applications/omegaclaw_v1/contexts/request_admission))
