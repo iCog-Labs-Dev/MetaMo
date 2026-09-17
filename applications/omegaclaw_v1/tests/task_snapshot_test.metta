@@ -5,17 +5,18 @@
 !(initMinimalLoopFixture)
 
 ;; A stale bundle says a new message arrived; the current host says it did not.
-;; Current successful terminal execution must close the task in this snapshot,
-;; even when stale motivational signals claim failure.
+;; Result text and a terminal-looking candidate cannot close a commitment.
+;; Legacy tasks without a host commitment ID also remain open until migrated.
 !(change-state! &new-msg-flag False)
 !(change-state! &lastresults "response delivered")
 !(change-state! &last-motivation-decision (decision respond execute execute 0.5))
 !(addSignal failure 0.8)
 !(bind! &completed-snapshot (new-state (prepareTaskStateForMetaMo)))
-!(test (frameRuntimeTaskOpen (get-state &completed-snapshot)) False)
-!(test (frameRuntimeActiveTask (get-state &completed-snapshot)) (cfv2-compact-limited "" 500))
-!(test (frameRuntimeExecutionObserved (get-state &completed-snapshot)) (cfv2-compact-limited "" 1200))
-!(test (idleAutonomyActiveForBundle (get-state &completed-snapshot)) True)
+!(test (frameRuntimeTaskOpen (get-state &completed-snapshot)) True)
+!(test (frameRuntimeActiveTask (get-state &completed-snapshot)) (cfv2-compact-limited "answer-user" 500))
+!(test (frameRuntimeExecutionObserved (get-state &completed-snapshot))
+   (cfv2-compact-limited (py-call (helper.merge_observed_execution_commands "" "response delivered")) 1200))
+!(test (idleAutonomyActiveForBundle (get-state &completed-snapshot)) False)
 !(test (activeFrameBundle) (get-state &completed-snapshot))
 
 ;; A current failure must preserve the task despite stale success signals.

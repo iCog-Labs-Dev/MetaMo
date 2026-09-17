@@ -20,6 +20,7 @@ still unversioned; migration and shared contract tests remain pending.
 | `omegaclaw_appraisal.metta` | Appraisal-driven updates to the modulator vector. |
 | `homeostasis.metta` | Self-model updates and homeostatic rules. |
 | `task_lifecycle.metta` | User-task state, execution continuation, and autonomy phases. |
+| `commitments.pl`, `commitments.metta` | Host-owned commitment events and a read-only adapter; motivation cannot implicitly terminate work. |
 | `candidate_selection.metta` | Candidate-condition evaluation and availability. |
 | `scheduling.metta` | Fixed preemption between admitted scheduling classes, before numeric scoring. |
 | `mode_triggers.metta` | Shared registry-driven trigger evaluation over existing signals and snapshot conditions. |
@@ -37,6 +38,8 @@ separate from the four constitutional modes and ContextFrames Fast/Slow modes.
 See [SCHEDULING.md](SCHEDULING.md) for candidate mappings, trigger handling, and tests.
 Mode triggers, entry/exit thresholds, and cycle-based timing are registry data;
 see [MODE_TRANSITIONS.md](MODE_TRANSITIONS.md) for wake and recovery behavior.
+Commitments terminate only through explicit completed, abandoned-with-reason, or
+superseded events; see [COMMITMENTS.md](COMMITMENTS.md) for host APIs and scope.
 
 ## Installation
 

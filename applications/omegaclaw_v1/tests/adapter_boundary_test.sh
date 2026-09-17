@@ -60,7 +60,7 @@ steps = [
 positions = [source.index(step) for step in steps]
 assert positions == sorted(positions), positions
 lifecycle = Path(sys.argv[2]).read_text().split('(= (prepareTaskStateForMetaMo)', 1)[1]
-steps = ['(refreshTaskExecutionObserved)', '(completePreviousTaskIfSuccessful)',
+steps = ['(refreshTaskExecutionObserved)', '(refreshTaskCommitment)',
          '(frameStateForMetaMo)', '(setActiveFrameBundle $bundle)']
 positions = [lifecycle.index(step) for step in steps]
 assert positions == sorted(positions), positions

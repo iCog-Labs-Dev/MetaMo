@@ -68,12 +68,13 @@ that location does not give motivational scoring authority to change tasks.
 | Capability/knowledge claims | Host adjudicated store | They must not become authoritative through local self-model writes. Existing `memory_confidence` and performance heuristics still require the Phase 6 ownership cleanup. |
 
 For the current serialized path, `prepareTaskStateForMetaMo` merges host execution
-observations and applies existing terminal-task bookkeeping, then projects and
+observations and mirrors explicit host commitment state, then projects and
 caches one bundle. Signals, appraisal, selection, feasibility and directives
-consume that publication. Completion consults current host results/errors, not
-stale motivational signals. This ordering does not supply missing host ingestion
-wiring, correlated outcomes, revision enforcement or a new commitment protocol.
-The legacy terminal-candidate heuristic remains subject to the Phase 4 replacement.
+consume that publication. The terminal-candidate heuristic has been removed:
+completion requires an explicit host event tied to a confirmed outcome, abandonment
+requires a reason, and supersession names a replacement. See [COMMITMENTS.md](COMMITMENTS.md)
+for the session-only host APIs and replay/revision checks. These local records do
+not migrate the live wire protocol or provide durable ingestion/outcome recovery.
 
 Persistence of local motivational fields must not restore host task status,
 permissions, commitments or relations. Host restart reconstruction and local

@@ -1,5 +1,8 @@
 ;; User-task state, execution continuation, and idle-autonomy phases.
 
+!(import! &self (library MetaMo applications/omegaclaw_v1/commitments))
+!(bind! &task-commitment-id (new-state ()))
+
 !(bind! &active-task              (new-state ""))
 !(bind! &task-open                (new-state False))
 !(bind! &last-motivation-decision
@@ -169,32 +172,31 @@
         (py-call (helper.is_result_status_question
                   (frameRuntimeText (frameRuntimeMessage $bundle))))))
 
-(= (completeTaskIfTerminal $candidate)
-   (if (or (== $candidate respond)
-           (or (== $candidate repair-failure)
-               (or (== $candidate defer) (== $candidate none))))
-       (let* (
-          ($_ (change-state! &task-open False))
-          ($_ (change-state! &active-task ""))
-          ($_ (change-state! &task-execution-observed ""))
-       ) True)
-       False))
+;; Historical entry points cannot infer commitment completion from candidates,
+;; motivation, or result text. Hosts must publish an explicit commitment event.
+(= (completeTaskIfTerminal $_candidate) False)
 
 (= (hostTaskValuePresent $value)
    (and (!= $value "") (!= $value ())))
 
 (= (completePreviousTaskIfSuccessful)
-   ;; Completion uses current host observations, never appraisal signals from
-   ;; an earlier cycle. Preserve the existing terminal-candidate rule.
-   (if (and (not (get-state &new-msg-flag))
-            (and (hostTaskValuePresent (get-state &lastresults))
-                 (not (hostTaskValuePresent (get-state &error)))))
-       (let* (
-          ($lastDecision (get-state &last-motivation-decision))
-          ((decision $candidate $_mode $_directive $_score) $lastDecision)
-       )
-          (completeTaskIfTerminal $candidate))
-       False))
+   False)
+
+;; Mirror authoritative host commitment state into the legacy task projection.
+;; No host record means preserve legacy state, never invent an identity or close
+;; a task. A new message alone cannot abandon or supersede an open commitment.
+(= (refreshTaskCommitment)
+   (let $snapshot (commitmentSnapshot)
+      (case $snapshot (
+         ((CommitmentSnapshot $id $_frame $_revision $status $summary)
+          (let* (
+             ($open (== $status Open))
+             ($_ (if (or (not $open) (!= (get-state &task-commitment-id) $id))
+                     (change-state! &task-execution-observed "") True))
+             ($_ (change-state! &task-commitment-id $id))
+             ($_ (change-state! &task-open $open))
+             ($_ (change-state! &active-task (if $open $summary "")))) True))
+         (NoCommitment False)))))
 
 ;; Host adapter publication boundary for the serialized OmegaClaw loop.
 ;; Ingestion has already updated host state. Finish bookkeeping, then publish
@@ -202,7 +204,7 @@
 (= (prepareTaskStateForMetaMo)
    (let* (
       ($_ (refreshTaskExecutionObserved))
-      ($_ (completePreviousTaskIfSuccessful))
+      ($_ (refreshTaskCommitment))
       ($bundle (frameStateForMetaMo))
       ;; The decision module providing this setter loads after lifecycle.
       ($_ (eval (setActiveFrameBundle $bundle)))
