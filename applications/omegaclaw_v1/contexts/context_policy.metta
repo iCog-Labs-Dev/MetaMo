@@ -126,10 +126,25 @@
    (let (GateDecision $admission $reason) (feasibilityGate $bundle $candidate)
       (== $admission Admitted)))
 
-;; Example with adapter actions:
-   ;;   `(feasibilityGateActions $bundle (action-list))` returns `True` only
-   ;;   when every action in the list is admitted. This predicate checks all
-   ;;   actions; it does not remove rejected actions from the list.
+;; Partition without scoring. Preserve input order for deterministic ties and
+;; keep rejection separate from numeric preference (a zero score may still win).
+(= (pruneActionsForBundle $bundle $actions)
+   (if (== $actions ())
+       (CandidatePruning (admitted ()) (rejected ()))
+       (let* (
+          (($head $tail) (decons-atom $actions))
+          ($candidate (actionId $head))
+          ((GateDecision $admission $reason) (feasibilityGate $bundle $candidate))
+          ((CandidatePruning (admitted $admitted) (rejected $rejected))
+             (pruneActionsForBundle $bundle $tail)))
+          (if (== $admission Admitted)
+              (CandidatePruning (admitted (cons-atom $head $admitted))
+                 (rejected $rejected))
+              (CandidatePruning (admitted $admitted)
+                 (rejected (cons-atom (CandidateRejection $candidate $reason) $rejected)))))))
+
+;; Compatibility predicate: True only when every action is admitted. Selection
+;; must use pruneActionsForBundle instead of discarding the entire list.
 (= (feasibilityGateActions $bundle ()) True)
 (= (feasibilityGateActions $bundle $actions)
    (let* (

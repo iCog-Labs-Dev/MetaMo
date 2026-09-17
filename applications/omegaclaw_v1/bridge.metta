@@ -30,8 +30,9 @@
       ($_ (generateCandidates $bundle))
       ($actions (eval (candidatesToActions)))
       ;; Hard feasibility is complete before the MetaMo decision/mode step.
-      ($feasibility (feasibilityGateActions $bundle $actions))
-      ($admittedActions (if $feasibility $actions ()))
+      ((CandidatePruning (admitted $admittedActions) (rejected $rejections))
+         (pruneActionsForBundle $bundle $actions))
+      ($_ (recordCandidateRejections $rejections))
       ($sysStates
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
       ($cycleResult

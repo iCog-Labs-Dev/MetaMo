@@ -1,6 +1,25 @@
 ;; Candidate availability and conversion of registry rules into runtime choices.
 
 !(bind! &candidateSpace (new-space))
+!(bind! &candidate-rejection-space (new-space))
+
+;; Local diagnostics for the most recent generation, not execution authority.
+(= (candidateRejections)
+   (collapse (match &candidate-rejection-space
+      (CandidateRejection $candidate $reason) (CandidateRejection $candidate $reason))))
+
+(= (recordCandidateRejections $rejections)
+   (if (== $rejections ()) True
+       (let* (
+          (($head $tail) (decons-atom $rejections))
+          ($_ (add-atom &candidate-rejection-space $head)))
+          (recordCandidateRejections $tail))))
+
+(= (recordCandidateGate $candidate $gate)
+   (let (GateDecision $admission $reason) $gate
+      (if (== $admission Admitted)
+          (add-atom &candidateSpace (candidate $candidate))
+          (add-atom &candidate-rejection-space (CandidateRejection $candidate $reason)))))
 
 ;; Native concrete-operation admission uses the same request gate as proposals
 ;; and scheduler attention. The operation metadata is resolved by the host.
@@ -127,13 +146,13 @@
 (= (generateCandidates $bundle)
    (let* (
       ($_ (clearSpace &candidateSpace))
+      ($_ (clearSpace &candidate-rejection-space))
       ($allCandidates
          (collapse (match &self (CandidateSpec $n $_type) $n)))
       ($_ (collapse
              (let $n (superpose $allCandidates)
-                (if (and (candidateIsAvailable $bundle $n)
-                         (candidateAdmitted $bundle $n))
-                    (add-atom &candidateSpace (candidate $n))
+                (if (candidateIsAvailable $bundle $n)
+                    (recordCandidateGate $n (feasibilityGate $bundle $n))
                     (empty)))))
    ) True))
 
@@ -143,11 +162,13 @@
 (= (generateCandidatesForOperations $bundle $rows)
    (let* (
       ($_ (clearSpace &candidateSpace))
+      ($_ (clearSpace &candidate-rejection-space))
       ($_ (collapse
          (let (CandidateOperation $candidate $operation $global $frame) (superpose $rows)
-            (let (GateDecision $admission $_reason)
+            (let (GateDecision $admission $reason)
                     (candidateAdmissionForOperation $bundle $candidate $operation $global $frame)
                (if (== $admission Admitted)
                    (if (candidateIsAvailable $bundle $candidate)
                        (add-atom &candidateSpace (candidate $candidate)) (empty))
-                   (empty))))))) True))
+                   (add-atom &candidate-rejection-space
+                      (CandidateRejection $candidate $reason)))))))) True))

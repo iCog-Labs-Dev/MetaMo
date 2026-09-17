@@ -166,6 +166,12 @@
 )
 
 (= (omegaclawDecideForBundle $bundle $state $candidates)
+   (let (CandidatePruning (admitted $admitted) (rejected $_rejections))
+           (pruneActionsForBundle $bundle $candidates)
+      (omegaclawDecideAdmittedForBundle $bundle $state $admitted)))
+
+;; Internal scoring traversal: callers must supply already admitted actions.
+(= (omegaclawDecideAdmittedForBundle $bundle $state $candidates)
    (if (== (frameBundleCurrentId $bundle) ())
        (decisionResult (action none () 0.0 ()) ())
        (if (== $candidates ())

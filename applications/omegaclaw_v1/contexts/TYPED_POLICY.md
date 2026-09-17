@@ -83,6 +83,30 @@ quote untrusted literal terms before evaluation, as with the v1 wire APIs.
 
 ## Integration limits
 
+### Candidate pruning and diagnostics
+
+`pruneActionsForBundle bundle actions` returns
+`(CandidatePruning (admitted (...)) (rejected ((CandidateRejection candidate reason) ...)))`.
+It applies the preliminary frame/mode gate individually, preserves action order
+and payloads, and never scores rejected actions. The bridge passes the admitted
+list into the motivational cycle; `omegaclawDecideForBundle` also prunes before
+scoring. Empty or entirely rejected lists yield the existing no-action decision.
+These local records do not extend the versioned wire contracts.
+
+`generateCandidates` records policy rejection for available native candidates;
+`generateCandidatesForOperations` records concrete gate rejection for supplied
+operation rows. Read `(candidateRejections)` after generation for typed reasons.
+Both generators clear previous diagnostics, including on empty input. Candidates
+omitted by availability heuristics are not reported as policy rejections. The
+bridge appends any additional rejection from its pre-cycle action check.
+
+The concrete generator retains the full host-resolved policy gate; preliminary
+list pruning is not a substitute for permission/egress/budget enforcement at
+dispatch. Low risk or a high score cannot restore a removed candidate, and an
+admitted zero-score candidate remains eligible. Tests in
+`tests/candidate_pruning_test.metta` cover mixed lists, ordering, typed reasons,
+scorer exclusion, diagnostic reset, and no-action behavior.
+
 ### Common request admission
 
 `feasibilityGateForRequest origin target request operation global frame` is the

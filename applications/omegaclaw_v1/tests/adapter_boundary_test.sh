@@ -52,7 +52,7 @@ steps = [
     "($bundle (prepareTaskStateForMetaMo))",
     "refreshSignals $bundle",
     "computeAllDimensions",
-    "feasibilityGateActions $bundle",
+    "pruneActionsForBundle $bundle",
     "schedulerAttentionDirective $bundle",
 ]
 positions = [source.index(step) for step in steps]
@@ -66,4 +66,7 @@ assert lifecycle.count('(frameStateForMetaMo)') == 1
 assert '(frameStateForMetaMo)' not in source
 assert '(refreshTaskExecutionObserved)' not in source
 assert '(completePreviousTaskIfSuccessful)' not in source
+assert 'feasibilityGateActions $bundle' not in source
+assert '($admittedActions (if $feasibility $actions ()))' not in source
+assert 'recordCandidateRejections $rejections' in source
 PY
