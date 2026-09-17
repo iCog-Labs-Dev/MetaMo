@@ -40,6 +40,12 @@ entries. Duplicate allowlist entries or duplicate resource names are malformed.
 Budgets and costs must be numbers in `[0, 9007199254740991]`; booleans and numeric
 strings are rejected. A budget status is exactly `Open`, `Closed`, or `Exhausted`.
 
+Use `resourceBudgetFromAccounting resource unit limit spent reserved status`
+to derive validated availability after both consumption and pending reservations.
+The host atomic reservation, settlement, replay and uncertain-outcome rules are
+defined in [BUDGET_ACCOUNTING.md](BUDGET_ACCOUNTING.md). This pure helper does not
+implement or mutate a host ledger.
+
 Both scopes must allow the skill, every required permission and every actual
 egress destination. Matching is exact; there are no wildcards, URL-prefix
 inference, or grants inferred from prose. Empty allowlists grant nothing.

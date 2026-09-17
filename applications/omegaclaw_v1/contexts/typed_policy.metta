@@ -6,11 +6,41 @@
    (if (== (get-type $x) String) (!= $x "") False))
 (= (tpQuantity $x)
    (if (== (get-type $x) Number)
-       (and (>= $x 0) (<= $x 9007199254740991)) False))
+       ;; Host numeric anomalies must reject, never abort the admission path.
+       (== (catch (if (< $x 0) False (<= $x 9007199254740991))) True) False))
+
 (= (tpContains $items $x)
    (if (== $items ()) False
        (let ($head $tail) (decons-atom $items)
           (if (== $head $x) True (tpContains $tail $x)))))
+;; Validate a flat list of already-safe boolean checks without nested logic.
+(= (tpAllTrue $checks)
+   (if (== $checks ()) True
+       (let ($head $tail) (decons-atom $checks)
+          (if (== $head True) (tpAllTrue $tail) False))))
+
+(= (tpAccountingValid $resource $unit $limit $spent $reserved $status)
+   (tpAllTrue ((tpId $resource) (tpId $unit)
+      (tpQuantity $limit) (tpQuantity $spent) (tpQuantity $reserved)
+      (tpContains (Open Closed Exhausted) $status))))
+
+(= (tpAccountingBudget $resource $unit $limit $spent $reserved $status)
+   (if (> $spent $limit)
+       (BudgetAccountingRejected BudgetOvercommitted)
+       (let $remaining (- $limit $spent)
+          (if (> $reserved $remaining)
+              (BudgetAccountingRejected BudgetOvercommitted)
+              (ResourceBudget $resource $unit (- $remaining $reserved) $status)))))
+
+;; Pure host-accounting projection. All values must come from one host revision.
+;; Available excludes spent AND reserved amounts. No host state is mutated.
+(= (resourceBudgetFromAccounting $resource $unit $limit $spent $reserved $status)
+   (if (not (is-ground ($resource $unit $limit $spent $reserved $status)))
+       (BudgetAccountingRejected InvalidBudgetAccounting)
+       (if (tpAccountingValid $resource $unit $limit $spent $reserved $status)
+           (tpAccountingBudget $resource $unit $limit $spent $reserved $status)
+           (BudgetAccountingRejected InvalidBudgetAccounting))))
+
 (= (tpKey $kind $entry)
    (if (== $kind ids) $entry (index-atom $entry 1)))
 (= (tpEntryValid $kind $entry)
@@ -18,21 +48,19 @@
       (ids (tpId $entry))
       (costs (case $entry (
          ((ResourceCost $resource $unit $amount)
-          (and (tpId $resource) (and (tpId $unit) (tpQuantity $amount))))
+          (tpAllTrue ((tpId $resource) (tpId $unit) (tpQuantity $amount))))
          ($_ False))))
       (budgets (case $entry (
          ((ResourceBudget $resource $unit $amount $status)
-          (and (tpId $resource)
-             (and (tpId $unit)
-                (and (tpQuantity $amount)
-                     (tpContains (Open Closed Exhausted) $status)))))
+          (tpAllTrue ((tpId $resource) (tpId $unit) (tpQuantity $amount)
+             (tpContains (Open Closed Exhausted) $status))))
          ($_ False))))
       (constraints (case $entry (
          ((DenySkill $skill) (tpId $skill))
          ((RequirePermission $permission) (tpId $permission))
          ((DenyEgress $destination) (tpId $destination))
          ((MaxCost $resource $unit $amount)
-          (and (tpId $resource) (and (tpId $unit) (tpQuantity $amount))))
+          (tpAllTrue ((tpId $resource) (tpId $unit) (tpQuantity $amount))))
          ($_ False))))
       ($_ False))))
 
@@ -54,11 +82,9 @@
    (case $operation (
       ((PolicyOperation (candidate $candidate) (target $target) (skill $skill)
           (permissions $permissions) (egress $egress) (costs $costs))
-       (and (== (get-metatype $candidate) Symbol)
-          (and (tpId $target)
-             (and (tpId $skill)
-                (and (tpList ids $permissions)
-                   (and (tpList ids $egress) (tpList costs $costs)))))))
+       (tpAllTrue ((== (get-metatype $candidate) Symbol)
+          (tpId $target) (tpId $skill) (tpList ids $permissions)
+          (tpList ids $egress) (tpList costs $costs))))
       ($_ False))))
 
       
@@ -66,11 +92,9 @@
    (case $scope (
       ((PolicyScope (target $actual) (skills $skills) (permissions $permissions)
           (egress $egress) (constraints $constraints) (budgets $budgets))
-       (and (== $actual $target)
-          (and (tpList ids $skills)
-             (and (tpList ids $permissions)
-                (and (tpList ids $egress)
-                   (and (tpList constraints $constraints) (tpList budgets $budgets)))))))
+       (tpAllTrue ((== $actual $target) (tpList ids $skills)
+          (tpList ids $permissions) (tpList ids $egress)
+          (tpList constraints $constraints) (tpList budgets $budgets))))
       ($_ False))))
 (= (tpSubset $required $allowed)
    (if (== $required ()) True
