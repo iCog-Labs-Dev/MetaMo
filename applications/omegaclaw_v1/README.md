@@ -41,6 +41,12 @@ The offline baseline is not yet a verified full live-runtime installation.
 
 After configuring dependencies and credentials, run from the PeTTa workspace root:
 
+The v1 runtime also requires trusted host command bindings and typed policies
+for the session dispatch boundary described in [DISPATCH.md](DISPATCH.md).
+Without them, commands return explicit no-action results. Stale or revoked
+decisions cannot fall back to direct evaluation. The invocation below does not
+provision policy; configure it in trusted host startup code first.
+
 ```bash
 OMEGACLAW_AUTH_SECRET=<channel-secret> python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>"
 ```

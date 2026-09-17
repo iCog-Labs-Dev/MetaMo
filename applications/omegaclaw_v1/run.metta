@@ -22,5 +22,7 @@
 !(import! &self (library petta_lib_chromadb lib_chromadb))
 
 !(import! &self (library MetaMo applications/omegaclaw_v1/composition))
+!(import! &self (library MetaMo applications/omegaclaw_v1/dispatch))
+!(initMetaMoDispatch)
 !(bind! &error (new-state ""))
 !(motivatedOmegaclaw)
