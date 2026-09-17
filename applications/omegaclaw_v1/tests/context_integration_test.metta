@@ -113,11 +113,12 @@
 !(test (eval (constitutionalModeFromSignalFacts False False True True)) Sleep)
 !(test (eval (constitutionalModeFromSignalFacts False False False True)) Engaged)
 
-;; Preemption is strict: equal modes and unknown modes do not preempt.
+;; Compatibility aliases refer to scheduling classes, not constitutional modes.
+;; Preemption is strict; an unknown class on either side cannot preempt.
 !(test (eval (constitutionalModePreempts Threat Threat)) False)
 !(test (eval (constitutionalModePreempts Engaged Engaged)) False)
 !(test (eval (constitutionalModePreempts Unknown Engaged)) False)
-!(test (eval (constitutionalModePreempts Engaged Unknown)) True)
+!(test (eval (constitutionalModePreempts Engaged Unknown)) False)
 
 ;; Signal-driven transitions update the runtime mode, while an invalid mode
 ;; transition is rejected and leaves the default Engaged state unchanged.

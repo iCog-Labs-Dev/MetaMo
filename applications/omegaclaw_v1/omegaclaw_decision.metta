@@ -172,6 +172,11 @@
 
 ;; Internal scoring traversal: callers must supply already admitted actions.
 (= (omegaclawDecideAdmittedForBundle $bundle $state $candidates)
+   (let $scheduled (scheduleAdmittedActions (getSignals) $candidates)
+      (omegaclawDecideScheduledForBundle $bundle $state $scheduled)))
+
+;; Only the winning scheduling class reaches the numeric scorer.
+(= (omegaclawDecideScheduledForBundle $bundle $state $candidates)
    (if (== (frameBundleCurrentId $bundle) ())
        (decisionResult (action none () 0.0 ()) ())
        (if (== $candidates ())

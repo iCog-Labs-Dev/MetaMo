@@ -33,11 +33,14 @@
       ((CandidatePruning (admitted $admittedActions) (rejected $rejections))
          (pruneActionsForBundle $bundle $actions))
       ($_ (recordCandidateRejections $rejections))
+      ;; Scheduling precedence is separate from admission, numeric score,
+      ;; constitutional posture, and ContextFrames Fast/Slow execution mode.
+      ($scheduledActions (scheduleAdmittedActions (getSignals) $admittedActions))
       ($sysStates
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
       ($cycleResult
          (runMetaMoCycleDefault
-            (omegaclawBimonad) $sysStates $stimulus $admittedActions () ()))
+            (omegaclawBimonad) $sysStates $stimulus $scheduledActions () ()))
 
       ($finalAction (cycleFinalAction $cycleResult))
       ($nextSysStates (cycleNextStates $cycleResult))

@@ -53,6 +53,8 @@ steps = [
     "refreshSignals $bundle",
     "computeAllDimensions",
     "pruneActionsForBundle $bundle",
+    "scheduleAdmittedActions (getSignals) $admittedActions",
+    "runMetaMoCycleDefault",
     "schedulerAttentionDirective $bundle",
 ]
 positions = [source.index(step) for step in steps]
@@ -69,4 +71,5 @@ assert '(completePreviousTaskIfSuccessful)' not in source
 assert 'feasibilityGateActions $bundle' not in source
 assert '($admittedActions (if $feasibility $actions ()))' not in source
 assert 'recordCandidateRejections $rejections' in source
+assert '(omegaclawBimonad) $sysStates $stimulus $scheduledActions () ()' in source
 PY

@@ -21,12 +21,18 @@ still unversioned; migration and shared contract tests remain pending.
 | `homeostasis.metta` | Self-model updates and homeostatic rules. |
 | `task_lifecycle.metta` | User-task state, execution continuation, and autonomy phases. |
 | `candidate_selection.metta` | Candidate-condition evaluation and availability. |
+| `scheduling.metta` | Fixed preemption between admitted scheduling classes, before numeric scoring. |
 | `omegaclaw_decision.metta` | Candidate scoring and winner selection. |
 | `persistence.metta` | Save, restore, and persistence scheduling. |
 | `bridge.metta` | MetaMo-cycle orchestration, prompt construction, and startup. |
 | `composition.metta` | Shared application imports in dependency order; no channel startup. |
 | `run.metta` | Host imports and explicit application startup. |
 | `tests/` | Isolated integration and scoring diagnostics. |
+
+Scheduling implements **Threat-remediation > Recovery > Interactive > Orienting >
+Engaged > Rumination > Sleep** over admitted candidates. These priorities remain
+separate from the four constitutional modes and ContextFrames Fast/Slow modes.
+See [SCHEDULING.md](SCHEDULING.md) for candidate mappings, trigger handling, and tests.
 
 ## Installation
 

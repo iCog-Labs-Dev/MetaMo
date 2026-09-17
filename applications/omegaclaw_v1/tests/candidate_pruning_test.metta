@@ -58,7 +58,8 @@
    (pruningAction respond 0.1) (pruningAction retrieve-memory 0.1))) respond)
 
 !(setConstitutionalMode Engaged)
-!(test (pruningWinner ((pruningAction execute-skill 1.0) (pruningAction respond 0.1))) execute-skill)
+;; Interactive work now preempts Engaged work, regardless of its score.
+!(test (pruningWinner ((pruningAction execute-skill 1.0) (pruningAction respond 0.1))) respond)
 !(test (pruneActionsForBundle (pruningBundle) ((pruningAction respond 0.1)))
    (CandidatePruning (admitted ((pruningAction respond 0.1))) (rejected ())))
 

@@ -14,6 +14,8 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
 !(import! &self (library MetaMo applications/omegaclaw_v1/bridge))
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
+!(import! &self (library MetaMo applications/omegaclaw_v1/scheduling))
+!(import! &self (library MetaMo applications/omegaclaw_v1/signals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_decision))
 
 

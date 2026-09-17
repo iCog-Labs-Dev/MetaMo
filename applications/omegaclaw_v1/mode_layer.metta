@@ -3,6 +3,8 @@
 ;; These modes are distinct from ContextFrames' Fast/Slow frame execution mode
 ;; and from MetaMo's operation directives (orient/execute/verify/recover).
 
+!(import! &self (library MetaMo applications/omegaclaw_v1/scheduling))
+
 !(bind! &constitutional-mode (new-state Engaged))
 
 (= (constitutionalModeSet)
@@ -11,28 +13,12 @@
 (= (constitutionalModeDefault)
    Engaged)
 
-(= (constitutionalModePreemptionOrder)
-   (cons Threat-remediation
-      (cons Recovery
-         (cons Interactive
-            (cons Orienting
-               (cons Engaged
-                  (cons Rumination (cons Sleep ()))))))))
-
-(= (constitutionalModePreemptionRank $mode)
-   (case $mode
-      ((Threat-remediation 7)
-       (Recovery 6)
-       (Interactive 5)
-       (Orienting 4)
-       (Engaged 3)
-       (Rumination 2)
-       (Sleep 1)
-       ($_ 0))))
-
+;; Historical API aliases. These describe scheduling classes, NOT members of
+;; constitutionalModeSet. New callers should use schedulingPriority* names.
+(= (constitutionalModePreemptionOrder) (schedulingPriorityOrder))
+(= (constitutionalModePreemptionRank $class) (schedulingPriorityRank $class))
 (= (constitutionalModePreempts $higher $lower)
-   (> (constitutionalModePreemptionRank $higher)
-      (constitutionalModePreemptionRank $lower)))
+   (schedulingPriorityPreempts $higher $lower))
 
 ;; MVP mode selection consumes the existing typed signal substrate. It does
 ;; not create a second salience or scoring space.
