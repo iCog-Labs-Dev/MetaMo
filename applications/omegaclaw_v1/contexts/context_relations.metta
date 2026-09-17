@@ -65,25 +65,41 @@
 (= (frameStateBoundRelations $relations)
    (let* (
       (($head $tail) (decons-atom $relations))
-      ($projected (frameStateProjectRelation $head)))
-      (cons-atom $projected
-            (frameStateBoundRelations
-               (eval (frameStateTake (- (frameStateMaxRelations) 1) $tail))))))
+      ($projected (frameStateProjectRelation $head))
+      ($rest (frameStateBoundRelations
+               (eval (frameStateTake (- (frameStateMaxRelations) 1) $tail))))
+   )
+      (cons-atom $projected $rest)))
 
 ;; A same-frame relation is evidence requiring verification, never permission
 ;; to merge or rewrite either frame.
 ;; Keep this as one structural rule. A broad fallback rule would overlap the
 ;; VerificationRequired pattern in MeTTa and produce both True and False,
 ;; allowing an unsafe same-frame branch to survive nondeterministic matching.
-(= (relationNeedsVerification
-      (FrameStateRelation $_ $_ $_ $_ $_ (evidence-status $status)))
-   (== $status VerificationRequired))
-(= (relationsNeedVerification ()) False)
+(= (relationNeedsVerification (FrameStateRelation $_ $_ $_ $_ $_ (evidence-status $status)))
+   (== $status VerificationRequired)
+)
+
+
+
+
 (= (relationsNeedVerification $relations)
-   (let* ((($head $tail) (decons-atom $relations)))
-      (if (eval (relationNeedsVerification $head))
+   (if (== $relations ())
+       False
+   (let* (
+         (($head $tail) (decons-atom $relations))
+         ($verificationResult (eval (relationNeedsVerification $head)))
+      
+      )
+      (if $verificationResult
           True
-          (eval (relationsNeedVerification $tail)))))
+          (eval (relationsNeedVerification $tail))
+      )
+   )  
+   )
+)
+
+
 (= (bundleNeedsRelationVerification $bundle)
    (let (FrameStateBundle $_ $_ $_ (relations $relations) $_)
         (eval $bundle)
@@ -117,7 +133,9 @@
       (relation-type $type)
       (reason $reason)
       (prior-confidence $confidence)
-      (evidence-status (verificationEvidenceStatus $result))))
+      (evidence-status (verificationEvidenceStatus $result))
+   )
+)
 
 (= (frameVerificationStatus $evidence)
    (let (FrameVerificationEvidence $_ $_ $_ $_ $_ (evidence-status $status))
