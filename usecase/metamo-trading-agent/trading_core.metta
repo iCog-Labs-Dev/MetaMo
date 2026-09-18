@@ -214,6 +214,22 @@
     )
 )
 
+
+;; validateActionShape: checks an action tuple has the framework's
+;; expected shape - a symbol name, an 8-element goal-correlation
+;; vector, a numeric confidence, and an 8-element delta vector.
+;; Example: (validateActionShape (buyCandidate 0.3)) -> True
+(: validateActionShape (-> Expression Bool))
+(= (validateActionShape (action $name $goalCorr $confidence $delta))
+    (if (== (size-atom $goalCorr) 8)
+        (if (== (size-atom $delta) 8)
+            True
+            False
+        )
+        False
+    )
+)
+
 ;; The actions offered to the MetaMo cycle. Only actions that make sense
 ;; for the current position are offered: buy or hold when flat, sell or
 ;; hold when holding. Takes the remembered turbulence from
