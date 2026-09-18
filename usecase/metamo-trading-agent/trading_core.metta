@@ -143,6 +143,20 @@
     )
 )
 
+;; getStimulus: generic field accessor for an openPsiStimulus tuple.
+;; Example: (getStimulus (openPsiStimulus 1.0 1.0 1.0 0.1) risk) -> 1.0
+(: getStimulus (-> Expression Symbol Number))
+(= (getStimulus (openPsiStimulus $novelty $conduciveness $risk $effort) $field)
+    (case $field
+        (
+            (novelty $novelty)
+            (conduciveness $conduciveness)
+            (risk $risk)
+            (effort $effort)
+        )
+    )
+)
+
 ;; Part 3. The trade actions offered to the framework
 
 ;; The goal correlations use the framework's 8-goal layout. In the MAGUS
@@ -197,6 +211,22 @@
         (0.25 0.05 0.00 0.00 -0.10 0.10 0.20 0.00)
         0.08
         (0.005 -0.005 0.0 0.0 0.0 0.0 0.0 0.0)
+    )
+)
+
+
+;; validateActionShape: checks an action tuple has the framework's
+;; expected shape - a symbol name, an 8-element goal-correlation
+;; vector, a numeric confidence, and an 8-element delta vector.
+;; Example: (validateActionShape (buyCandidate 0.3)) -> True
+(: validateActionShape (-> Expression Bool))
+(= (validateActionShape (action $name $goalCorr $confidence $delta))
+    (if (== (size-atom $goalCorr) 8)
+        (if (== (size-atom $delta) 8)
+            True
+            False
+        )
+        False
     )
 )
 
