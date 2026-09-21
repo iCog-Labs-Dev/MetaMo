@@ -1,4 +1,6 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/composition))
+;; This test explicitly exercises optional proposal admission; no inference.
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/typed_policy))
 
 (= (requestBundle $id $status $mode)

@@ -102,6 +102,11 @@ fixed score; the real bundle feasibility gate is still exercised and asserted.
 
 ## NARS / PLN proposal integration
 
+Live reasoner integration is deferred. The default `composition.metta` and
+`run.metta` do not import the MetaMo proposal adapter or inference extension.
+Native candidates, scoring, policy and dispatch operate independently. Existing
+reasoner code/tests are retained as an explicit optional extension.
+
 `reasoner_integration.metta` loads PeTTa's local `lib_nars` and `lib_pln`
 through `reasoner_engines.pl`. The loader prefixes all library-defined function
 names because PeTTa compiles functions globally even across imported spaces.
@@ -109,9 +114,10 @@ It uses the local PeTTa parser/compiler and rejects runnable library forms.
 The original libraries are not modified or copied. These are distinct from
 OmegaClaw-Core's `lib_nal` and `lib_pln` rule libraries.
 
-Load the application composition once, then its inference extension.
-`composition.metta` owns the proposal definitions and import helpers; the
-extension must not reload them under native PeTTa. If the host has already
+For offline extension development, load the application composition once, then
+its inference extension. `reasoner_integration.metta` owns the proposal adapter
+and engine imports. Do not import `reasoner_proposals` separately when loading
+that extension under native PeTTa. If the host has already
 loaded the composition, add only the second import:
 
 ```metta
@@ -141,7 +147,8 @@ state and calls the existing validation, feasibility, scoring, and audit path.
 It returns an advisory scheduler directive; it does not execute anything.
 
 Automatic frame-to-fact extraction, proposal collection in the live bridge,
-and scheduler outcome callbacks remain host integration work.
+and scheduler outcome callbacks remain deferred host integration work. Shared
+wire contracts may still represent proposals without loading an adapter or engine.
 
 From the PeTTa workspace root, run the offline integration checks:
 

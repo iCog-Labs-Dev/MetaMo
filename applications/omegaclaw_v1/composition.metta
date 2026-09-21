@@ -30,6 +30,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/task_lifecycle))
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_decision))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
+;; Proposal adapters and inference are opt-in extensions. The native loop
+;; does not load reasoner functions, audit spaces, or engine state.
 !(import! &self (library MetaMo applications/omegaclaw_v1/persistence))
 !(import! &self (library MetaMo applications/omegaclaw_v1/bridge))

@@ -47,8 +47,15 @@ error on `omegaclawScoreForBundle`.
 
 `composition.metta` owns the application import order: shared core, configuration
 and state adapters, modes/signals/appraisal, homeostasis/lifecycle, context facade,
-candidate generation, decision scoring, proposals, persistence, and bridge.
-The scorer is imported before the proposal functions that call it.
+candidate generation, decision scoring, persistence, and bridge. It does not
+import the optional proposal adapter or inference engines.
+
+Reasoner integration is deferred. `reasoner_integration.metta` is an opt-in
+extension loaded after composition; it owns `reasoner_proposals` and engine
+loading. Tests needing proposal admission without inference import only
+`reasoner_proposals` after composition. The dependency points from the optional
+adapter into the core's policy/scoring APIs; the core does not call the adapter.
+Wire schemas and optional proposal references remain shared data contracts.
 
 `run.metta` imports the host dependencies and this common composition, then calls
 `motivatedOmegaclaw` explicitly. Importing `composition.metta` allocates defaults
@@ -82,8 +89,11 @@ call setup once, in their own process.
 The native reasoner test previously returned sixteen `nars` alternatives for
 its first scalar assertion: `reasoner_integration` reimported both `lib_import`
 and `reasoner_proposals` after the fixture's composition had loaded them.
-The extension now requires composition first and imports only its engine adapter.
-This removes repeated compilation and proposal-state allocation at their source.
+The extension requires composition first. Proposal imports now belong exclusively
+to the extension, alongside its engine adapter; composition no longer loads them.
+This preserves one-time compilation and proposal-state allocation under native
+PeTTa. Do not separately import the proposal module and the full inference
+extension into the same native process.
 
 Host helper and ContextFrames imports live at each test entry point, using
 explicit source paths. They are no longer hidden behind a package alias that
@@ -106,6 +116,7 @@ From the MetaMo repository root:
 ```bash
 python3 scripts/run-tests.py --root applications/omegaclaw_v1 --import-report-dir /tmp/omegaclaw-imports
 python3 scripts/import-resolution-test.py
+python3 applications/omegaclaw_v1/tests/reasoner_boundary_test.py
 python3 scripts/run-omegaclaw.py applications/omegaclaw_v1/run.metta --audit --report /tmp/omegaclaw-run-imports.json
 ```
 
