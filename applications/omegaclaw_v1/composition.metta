@@ -21,10 +21,11 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/registry))
 !(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
 !(import! &self (library MetaMo applications/omegaclaw_v1/mode_layer))
+;; Signal extraction calls bundle accessors; compile those before its definitions.
+!(import! &self (library MetaMo applications/omegaclaw_v1/context_integration))
 !(import! &self (library MetaMo applications/omegaclaw_v1/signals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_appraisal))
 !(import! &self (library MetaMo applications/omegaclaw_v1/homeostasis))
-!(import! &self (library MetaMo applications/omegaclaw_v1/context_integration))
 !(import! &self (library MetaMo applications/omegaclaw_v1/resurfacing))
 !(import! &self (library MetaMo applications/omegaclaw_v1/task_lifecycle))
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))

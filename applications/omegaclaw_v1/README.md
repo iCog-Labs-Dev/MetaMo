@@ -71,6 +71,12 @@ OMEGACLAW_AUTH_SECRET=<channel-secret> python3 MetaMo/scripts/run-omegaclaw.py M
 
 ## Minimal loop demo
 
+For real message ingestion without ChromaDB or LLM services, see
+[offline service tests](tests/OFFLINE_SERVICES.md). These use test-only provider
+doubles while retaining Core frame creation and MetaMo projection, signal
+extraction, appraisal, scoring, and policy. They are separate from the fixed-score
+demo below and do not establish a complete execution-feedback loop.
+
 The deterministic vertical-slice demo exercises the v1 path from one bounded
 `FrameStateBundle` through adapter projection, signal refresh, constitutional
 mode selection, candidate generation, feasibility checking, and action/directive
