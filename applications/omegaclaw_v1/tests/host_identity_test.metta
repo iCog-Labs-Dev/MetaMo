@@ -1,0 +1,210 @@
+!(import! &self (library lib_import))
+!(import_prolog_function swrite)
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_identity))
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/identity_fixture.py))
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/identity_v1))
+
+!(test (identityAll (True True)) True)
+!(test (identityAll (True False True)) False)
+!(test (identityAll ((unresolved-check))) False)
+!(test (identityAll ()) True)
+!(identityOpen (py-call (identity_fixture.ledger_path)) "")
+!(test (identityFixtureEntities) True)
+!(test (identityOK (identityAdoptEntity RelationRef "relation-native" 0 (identityFixtureRelation))) True)
+!(test (identitySnapshotLinks (identityFixturePayload)) True)
+!(bind! &identity-test-snapshot (new-state (identityCapture 42 7 (identityFixturePayload))))
+(= (identityTestContext) (identityField (get-state &identity-test-snapshot) context))
+!(test (integrationValidateRecord (get-state &identity-test-snapshot)) (ContractValid FrameStateBundle 1))
+!(test (identitySnapshotPayload (identityTestContext)) (identityFixturePayload))
+!(test (identityFrameAt (identityTestContext) "Frame-20260921T091500000001Z")
+   (FrameRef (identityProducer host) "Frame-20260921T091500000001Z" 4))
+
+!(bind! &identity-test-decision (new-state
+   (identityPublish metamo (identityTestContext) (identityFixtureDecision None execute-skill))))
+(= (identityTestDecision) (integrationRecordReference (get-state &identity-test-decision)))
+!(test (integrationValidateRecord (get-state &identity-test-decision)) (ContractValid MetaMoPolicyOutput 1))
+!(bind! &identity-test-directive (new-state
+   (identityPublish scheduler (identityTestContext)
+      (identityFixtureDirective (identityTestDecision) execute-skill "Frame-20260921T091500000001Z"))))
+(= (identityTestDirective) (integrationRecordReference (get-state &identity-test-directive)))
+!(test (integrationValidateRecord (get-state &identity-test-directive)) (ContractValid AttentionDirective 1))
+!(bind! &identity-test-dispatch (new-state (identityDispatch (identityTestDirective) 42 7)))
+(= (identityTestDispatch) (identityField (get-state &identity-test-dispatch) id))
+!(test (identityField (get-state &identity-test-dispatch) decision) (identityTestDecision))
+!(test (identityField (get-state &identity-test-dispatch) target)
+   (FrameRef (identityProducer host) "Frame-20260921T091500000001Z" 4))
+!(bind! &identity-test-execution (new-state (identityExecution (identityTestDispatch))))
+(= (identityTestExecution) (identityField (get-state &identity-test-execution) id))
+!(test (identityField (get-state &identity-test-execution) dispatch) (identityTestDispatch))
+!(bind! &identity-test-observation (new-state
+   (identityObserve (identityTestContext) (identityFixtureFrames) (identityFixtureRelations)
+      (identityTestExecution) (HandlerResult "Observed success"))))
+(= (identityTestObservation) (identityField (get-state &identity-test-observation) id))
+!(test (identityField (get-state &identity-test-observation) execution) (identityTestExecution))
+!(bind! &identity-test-evidence (new-state
+   (identityPublish verification (identityTestContext)
+      (identityFixtureEvidence (identityTestExecution) (identityTestObservation)))))
+(= (identityTestEvidence) (integrationRecordReference (get-state &identity-test-evidence)))
+!(test (integrationValidateRecord (get-state &identity-test-evidence)) (ContractValid FrameVerificationEvidence 1))
+(= (identityTestOutcomePayload)
+   (identityFixtureOutcome (identityTestDecision) (identityTestDirective) None
+      (identityTestDispatch) (identityTestExecution) ((identityTestObservation)) ((identityTestEvidence))))
+!(bind! &identity-test-outcome (new-state (identityPublish executor (identityTestContext) (identityTestOutcomePayload))))
+!(test (integrationValidateRecord (get-state &identity-test-outcome)) (ContractValid ExecutionOutcome 1))
+!(test (identityResolve ExecutionOutcome (integrationRecordReference (get-state &identity-test-outcome)))
+   (get-state &identity-test-outcome))
+
+;; Native/reasoner publication share the same typed consumer path.
+!(bind! &identity-test-prior (new-state
+   (identityObserve (identityTestContext) (identityFixtureFrames) () None (Sensor "Failure"))))
+!(bind! &identity-test-proposal (new-state
+   (identityPublish nars (identityTestContext)
+      (identityFixtureProposal (identityField (get-state &identity-test-prior) id)))))
+!(test (integrationValidateRecord (get-state &identity-test-proposal)) (ContractValid ReasonerMotivationalProposal 1))
+!(bind! &identity-test-proposal-decision (new-state
+   (identityPublish metamo (identityTestContext)
+      (identityFixtureDecision (integrationRecordReference (get-state &identity-test-proposal)) repair-failure))))
+!(test (integrationValidateRecord (get-state &identity-test-proposal-decision)) (ContractValid MetaMoPolicyOutput 1))
+
+;; Identity/type errors, exact snapshot matching, producer ownership.
+!(test (identityResolve ReasonerMotivationalProposal (identityTestDecision))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityResolve FrameRef (FrameRef "another-host" "Frame-20260921T091500000001Z" 4))
+   (ContractRejection MissingReference None None None))
+!(test (identityResolve FrameRef (FrameRef (identityProducer host) "unknown" 0))
+   (ContractRejection MissingReference None None None))
+!(test (identityPublish nars (identityTestContext) (identityFixtureDecision None execute-skill))
+   (ContractRejection InvalidProducer None None None))
+!(test (identityPublish pln (identityTestContext)
+   (identityFixtureProposal (identityField (get-state &identity-test-prior) id)))
+   (ContractRejection InvalidProducer None None None))
+!(test (identityRedeliver (get-state &identity-test-outcome)) (get-state &identity-test-outcome))
+!(test (identityRedeliver (identityFixtureSet (get-state &identity-test-decision) payload
+   (identityFixtureSet (identityFixtureDecision None execute-skill) priority 0.9)))
+   (ContractRejection IdentityConflict None None None))
+!(test (identityPublish scheduler (identityTestContext)
+   (identityFixtureDirective (identityTestDecision) repair-failure "Frame-20260921T091500000001Z"))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityPublish scheduler (identityTestContext)
+   (identityFixtureDirective (identityTestDecision) execute-skill "unadmitted"))
+   (ContractRejection MissingReference None None None))
+!(test (identityPublish verification (identityTestContext)
+   (identityFixtureSet (identityFixtureEvidence (identityTestExecution) (identityTestObservation)) prior-confidence 0.99))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityPublish executor (identityTestContext)
+   (identityFixtureSet (identityTestOutcomePayload) execution-evidence ((identityField (get-state &identity-test-prior) id))))
+   (ContractRejection MalformedRecord None None None))
+
+;; A new capture gets a fresh identity even at identical host revisions.
+!(bind! &identity-test-new-snapshot (new-state (identityCapture 42 7 (identityFixturePayload))))
+!(test (!= (get-state &identity-test-snapshot) (get-state &identity-test-new-snapshot)) True)
+!(test (identityPublish scheduler (identityField (get-state &identity-test-new-snapshot) context)
+   (identityFixtureDirective (identityTestDecision) execute-skill "Frame-20260921T091500000001Z"))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityPublish executor (identityField (get-state &identity-test-new-snapshot) context) (identityTestOutcomePayload))
+   (ContractRejection MalformedRecord None None None))
+
+;; Proposal-derived dispatch retains the exact optional proposal reference.
+!(bind! &identity-test-proposal-directive (new-state
+   (identityPublish scheduler (identityTestContext)
+      (identityFixtureDirective (integrationRecordReference (get-state &identity-test-proposal-decision))
+         repair-failure "Frame-20260921T091500000001Z"))))
+!(bind! &identity-test-proposal-dispatch (new-state
+   (identityDispatch (integrationRecordReference (get-state &identity-test-proposal-directive)) 42 7)))
+!(test (identityField (get-state &identity-test-proposal-dispatch) proposal)
+   (integrationRecordReference (get-state &identity-test-proposal)))
+!(bind! &identity-test-other-execution (new-state
+   (identityExecution (identityField (get-state &identity-test-proposal-dispatch) id))))
+!(test (identityPublish executor (identityTestContext)
+   (identityFixtureSet (identityTestOutcomePayload) execution (identityField (get-state &identity-test-other-execution) id)))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityPublish executor (identityTestContext)
+   (identityFixtureSet (identityTestOutcomePayload) proposal (integrationRecordReference (get-state &identity-test-proposal))))
+   (ContractRejection MalformedRecord None None None))
+
+;; Blocked attempts are linked even without execution. An allocated execution
+;; may not subsequently be hidden by publishing execution=None.
+(= (identityTestBlockedPayload $dispatch $decision $directive)
+   (ExecutionOutcome (decision $decision) (directive $directive) (proposal None)
+      (dispatch $dispatch) (execution None) (frame "Frame-20260921T091500000001Z")
+      (status Blocked) (reason StaleSnapshot) (observed-at 1800000000001)
+      (execution-evidence ()) (verification ())))
+!(bind! &identity-test-block-decision (new-state
+   (identityPublish metamo (identityTestContext) (identityFixtureDecision None execute-skill))))
+!(bind! &identity-test-block-directive (new-state
+   (identityPublish scheduler (identityTestContext)
+      (identityFixtureDirective (integrationRecordReference (get-state &identity-test-block-decision))
+         execute-skill "Frame-20260921T091500000001Z"))))
+!(bind! &identity-test-block-dispatch (new-state
+   (identityDispatch (integrationRecordReference (get-state &identity-test-block-directive)) 43 8)))
+!(test (integrationValidateRecord (identityPublish executor (identityTestContext)
+   (identityTestBlockedPayload (identityField (get-state &identity-test-block-dispatch) id)
+      (integrationRecordReference (get-state &identity-test-block-decision))
+      (integrationRecordReference (get-state &identity-test-block-directive))))) (ContractValid ExecutionOutcome 1))
+!(test (identityField (get-state &identity-test-block-dispatch) checked-state-revision) 43)
+!(test (identityPublish executor (identityTestContext)
+   (identityTestBlockedPayload (identityTestDispatch) (identityTestDecision) (identityTestDirective)))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityDispatch (identityTestDirective) -1 7) (ContractRejection InvalidValue None None None))
+!(test (identityDispatch (identityTestDirective) 42.5 7) (ContractRejection InvalidValue None None None))
+!(test (identityDispatch (identityTestDirective) "42" 7) (ContractRejection InvalidValue None None None))
+!(test (identityPublish metamo (identityTestContext) broken) (ContractRejection MalformedRecord None None None))
+!(test (identityPublish metamo (identityTestContext) ()) (ContractRejection MalformedRecord None None None))
+!(test (identityResolve ExecutionRef (ExecutionRef (identityProducer host) "missing"))
+   (ContractRejection MissingReference None None None))
+
+;; Standalone relation verification has no execution but retains observations.
+!(bind! &identity-test-standalone-observation (new-state
+   (identityObserve (identityTestContext) (identityFixtureFrames) (identityFixtureRelations) None (Sensor "Verified"))))
+!(test (integrationValidateRecord (identityPublish verification (identityTestContext)
+   (identityFixtureEvidence None (identityField (get-state &identity-test-standalone-observation) id))))
+   (ContractValid FrameVerificationEvidence 1))
+!(test (identityPublish verification (identityTestContext)
+   (identityFixtureEvidence None (identityTestObservation))) (ContractRejection MalformedRecord None None None))
+
+;; Results can describe later retained versions while retaining their original
+;; decision snapshot. A new proposal may not consume mismatched observed versions.
+!(test (identityOK (identityAdoptEntity FrameRef "Frame-20260921T091500000001Z" 5 (NativeEntity ResultRecorded))) True)
+(= (identityTestLatePayload)
+   (let* (($payload (identityFixturePayload))
+          ($current (identityFixtureSet (identityField $payload current) revision 5))
+          ($index (identityField $payload index))
+          ($rows (map-atom (identityField $index active) $row
+             (if (== (identityField $row id) "Frame-20260921T091500000001Z")
+                 (identityFixtureSet $row revision 5) $row))))
+      (identityFixtureSet (identityFixtureSet $payload current $current) index
+         (identityFixtureSet $index active $rows))))
+!(bind! &identity-test-late-snapshot (new-state (identityCapture 43 7 (identityTestLatePayload))))
+!(test (integrationValidateRecord (get-state &identity-test-late-snapshot)) (ContractValid FrameStateBundle 1))
+!(bind! &identity-test-late-observation (new-state
+   (identityObserve (identityTestContext)
+      ((FrameRef (identityProducer host) "Frame-20260921T091500000001Z" 5)) ()
+      (identityTestExecution) (HandlerResult "Late result"))))
+!(test (identityField (get-state &identity-test-late-observation) context) (identityTestContext))
+!(test (integrationValidateRecord (identityPublish executor (identityTestContext)
+   (identityFixtureSet (identityTestOutcomePayload) execution-evidence
+      ((identityField (get-state &identity-test-late-observation) id))))) (ContractValid ExecutionOutcome 1))
+!(test (identityPublish nars (identityTestContext)
+   (identityFixtureProposal (identityField (get-state &identity-test-late-observation) id)))
+   (ContractRejection MalformedRecord None None None))
+!(test (identitySnapshotPayload
+   (let (SnapshotRef $h $id $_ $p) (identityTestContext) (SnapshotRef $h $id 43 $p)))
+   (ContractRejection StaleSnapshot None None None))
+!(test (integrationValidateRecord (identityPublish metamo NoSnapshot
+   (MetaMoPolicyOutput (mode Engaged) (operation-class none) (feasibility Rejected)
+      (reason NotInitialized) (priority 0) (proposal None)))) (ContractValid MetaMoPolicyOutput 1))
+
+;; Ordinary restart retains namespaces, record content, and allocation causes.
+!(bind! &identity-test-host (new-state (identityProducer host)))
+!(bind! &identity-test-producer (new-state (identityProducer metamo)))
+!(test (identityClose) True)
+!(test (identityOpen (py-call (identity_fixture.ledger_path)) (get-state &identity-test-host))
+   (IdentityHost (get-state &identity-test-host)))
+!(test (identityProducer metamo) (get-state &identity-test-producer))
+!(test (identityResolve ExecutionOutcome (integrationRecordReference (get-state &identity-test-outcome)))
+   (get-state &identity-test-outcome))
+!(test (identityDispatch (identityTestDirective) 99 10) (get-state &identity-test-dispatch))
+!(test (identityExecution (identityTestDispatch)) (get-state &identity-test-execution))
+!(test (identityRedeliver (get-state &identity-test-evidence)) (get-state &identity-test-evidence))
+!(test (identityClose) True)
+!(test (sread (py-call (identity_fixture.cleanup))) True)

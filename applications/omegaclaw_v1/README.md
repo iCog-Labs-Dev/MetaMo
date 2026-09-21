@@ -6,7 +6,8 @@ This directory contains the MetaMo adapter and motivation logic for OmegaClaw.
 
 [CONTRACTS.md](CONTRACTS.md) specifies the proposed version 1 records shared by
 ContextFrames, MetaMo, reasoner adapters, and the scheduler. Runtime records are
-still unversioned; migration and shared contract tests remain pending.
+still unversioned; production migration remains pending. Shared wire tests and
+trusted host identity/causal-link APIs are implemented; see [IDENTITY.md](IDENTITY.md).
 
 ## Module Structure
 
@@ -16,6 +17,7 @@ still unversioned; migration and shared contract tests remain pending.
 | `registry.metta` | Declarative goals, signals, candidates, weights, thresholds, and dynamics. |
 | `utils.metta` | Generic utilities shared across application modules. |
 | `adapter.metta` | OmegaClaw motivation spaces and conversion to and from MetaMo state/actions. |
+| `host_identity.metta`, `identity_store.py` | Trusted host identity/publication and causal checks in MeTTa; UUIDs and durable opaque storage in Python. |
 | `signals.metta` | Runtime signal extraction and signal-to-appraisal aggregation. |
 | `omegaclaw_appraisal.metta` | Appraisal-driven updates to the modulator vector. |
 | `homeostasis.metta` | Self-model updates and homeostatic rules. |

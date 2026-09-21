@@ -2,7 +2,9 @@
 
 Status: v1 wire constructors, shape validation, explicit consumers, shared wire
 fixtures, and startup/default constructors implemented 16 September 2026.
-Live host migration and identity/revision enforcement remain pending. This
+Host identity allocation and causal-link APIs are implemented in MeTTa; see
+[IDENTITY.md](IDENTITY.md). Live host migration and authoritative revision/
+transactional dispatch enforcement remain pending. This
 document specifies the six Phase 2 boundary records. Existing
 unversioned MeTTa records are legacy v0; they are not implicitly v1.
 
@@ -26,8 +28,13 @@ that could otherwise be evaluated by the language before the boundary call.
 Validation never evaluates the supplied claim, support, or prediction.
 
 `ContractValid` establishes representation validity, **not authorization**.
-The implementation does not allocate durable IDs, resolve references, authenticate
+These shape-only APIs do not allocate durable IDs, resolve references, authenticate
 producers, enforce state/policy revisions, or implement the host dispatch ledger.
+The opt-in trusted host APIs in `host_identity.metta` allocate persisted IDs and
+producer namespaces, preserve native frame IDs, and validate causal links using
+these constructors. `identity_store.py` supplies UUIDs and opaque durable storage;
+the causal rules remain MeTTa. They do not authorize execution or replace current
+host policy checks; see [IDENTITY.md](IDENTITY.md) for API and durability scope.
 Relation-type and producer/source registration, deployment collection/text limits,
 and resolution of typed policy references remain explicit host validation gates.
 A caller must not dispatch solely because shape validation succeeded.
