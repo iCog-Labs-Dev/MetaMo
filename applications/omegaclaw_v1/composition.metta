@@ -9,6 +9,7 @@
 !(import! &self (library MetaMo core/state_accessors))
 !(import! &self (library MetaMo core/helper))
 !(import! &self (library MetaMo core/helpers.py))
+!(import! &self (library MetaMo applications/omegaclaw_v1/helpers))
 !(import! &self (library MetaMo category/functors))
 !(import! &self (library MetaMo category/bimonad))
 !(import! &self (library MetaMo dynamics/stability))
