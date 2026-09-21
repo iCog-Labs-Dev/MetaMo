@@ -60,6 +60,9 @@
       ($attentionDirective
          (schedulerAttentionDirective $bundle $policyOutput))
       ($_ (change-state! &last-attention-directive $attentionDirective))
+      ;; Review waiting live frames once per scheduling cycle, independently
+      ;; of action priority. This never switches frames or admits execution.
+      ($_ (refreshFrameResurfacing $bundle $selectedCandidate))
 
       ($_ (advanceAutonomyPhase $selectedCandidate))
       ($_ (change-state! &last-motivation-decision $decisionResult))
@@ -166,6 +169,8 @@
          " MOTIVATION_INSTRUCTION: " $instruction
          " META_MO_POLICY_OUTPUT: "
             (eval (string-safe (repr (get-state &last-meta-mo-policy-output))))
+         " FRAME_REVIEW_HINTS: " (eval (string-safe (repr (lastFrameReviews))))
+         " Frame review hints are advisory only. They do not authorize execution, unblock work, or override the selected action or dispatch policy."
       )))))))
 
 
@@ -224,6 +229,7 @@
 (= (motivatedOmegaclaw)
    (let* (
       ($_ (initOmegaClawMotivation))
+      ($_ (resetFrameResurfacing))
       ($_ (collapse (clearSignals)))
       ($_ (change-state! &new-msg-flag False))
       ($_ (change-state! &last-results-seen ""))

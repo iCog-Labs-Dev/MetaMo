@@ -13,6 +13,10 @@ ContextFrames execution modes:
 | Constitutional mode | Engaged, Threat, Rumination, Sleep | Motivational posture and additional policy restrictions. |
 | ContextFrames execution mode | Fast, Slow | Host/frame execution context and compatibility. |
 
+The bridge also publishes bounded review hints for blocked/deferred live frames
+each cycle. This separate queue cannot promote work or bypass admission; see
+[RESURFACING.md](RESURFACING.md) for its cooldown and fairness bounds.
+
 Names such as Engaged and Sleep overlap, but their meanings and APIs remain
 separate. Selecting Interactive work does not set the constitutional mode to
 Interactive; that value is still rejected by `setConstitutionalMode`.

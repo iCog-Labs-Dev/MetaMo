@@ -16,6 +16,15 @@
 ;; keeps a large number of short refs/relations from bypassing text limits.
 (= (frameStateMaxIndexRefs) 20)
 
+;; Separate host review projection: compacted index text is not a complete
+;; backlog. The helper validates/caps live rows and reports overflow explicitly.
+;; eval defers resolution until the optional resurfacing module is loaded.
+(= (frameStateResurfacingRows $bundle $candidate)
+   (eval (frameResurfacingRows (frameResurfacingConfig)
+      (get-state &cfv2-frame-indexspace)
+      (frameBundleCurrentId $bundle) (frameBundleCurrentStatus $bundle)
+      $candidate)))
+
 (= (frameStateBoundRefs $status)
    (if (== (get-state &cfv2-frame-indexspace) ())
        ()

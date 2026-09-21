@@ -23,6 +23,7 @@ still unversioned; migration and shared contract tests remain pending.
 | `commitments.pl`, `commitments.metta` | Host-owned commitment events and a read-only adapter; motivation cannot implicitly terminate work. |
 | `candidate_selection.metta` | Candidate-condition evaluation and availability. |
 | `scheduling.metta` | Fixed preemption between admitted scheduling classes, before numeric scoring. |
+| `resurfacing.metta` | Bounded, periodic review hints for blocked and deferred live frames, without execution authority. |
 | `mode_triggers.metta` | Shared registry-driven trigger evaluation over existing signals and snapshot conditions. |
 | `mode_layer.metta` | Four constitutional modes with registry-driven wake, recovery, collision, and transition timing rules. |
 | `omegaclaw_decision.metta` | Candidate scoring and winner selection. |
@@ -40,6 +41,8 @@ Mode triggers, entry/exit thresholds, and cycle-based timing are registry data;
 see [MODE_TRANSITIONS.md](MODE_TRANSITIONS.md) for wake and recovery behavior.
 Commitments terminate only through explicit completed, abandoned-with-reason, or
 superseded events; see [COMMITMENTS.md](COMMITMENTS.md) for host APIs and scope.
+Blocked/deferred live frames resurface through a bounded MeTTa review queue;
+see [RESURFACING.md](RESURFACING.md) for cycle bounds and multi-cycle tests.
 
 ## Installation
 

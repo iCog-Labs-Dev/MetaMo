@@ -68,6 +68,9 @@
 (CandidateSchedulingPriority plan-goal Engaged)
 (CandidateSchedulingPriority self-improve Rumination)
 (CandidateSchedulingPriority defer Sleep)
+
+;; Maximum tracked review frames, hints per cycle, initial/repeat delay.
+(FrameResurfacingPolicy 128 2 3)
 (CandidateSchedulingPriority none Sleep)
 
 ;; Elevate only explicit remediation work when existing threat signals fire.
