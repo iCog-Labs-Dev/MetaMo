@@ -8,6 +8,7 @@
 !(test (identityAll (True False True)) False)
 !(test (identityAll ((unresolved-check))) False)
 !(test (identityAll ()) True)
+!(test (identityEvery identityCheck () malformed) False)
 !(identityOpen (py-call (identity_fixture.ledger_path)) "")
 !(test (identityFixtureEntities) True)
 !(test (identityOK (identityAdoptEntity RelationRef "relation-native" 0 (identityFixtureRelation))) True)
@@ -152,6 +153,10 @@
 !(test (identityPublish metamo (identityTestContext) ()) (ContractRejection MalformedRecord None None None))
 !(test (identityResolve ExecutionRef (ExecutionRef (identityProducer host) "missing"))
    (ContractRejection MissingReference None None None))
+!(test (identityObserve (identityTestContext) malformed () None (Sensor "x"))
+   (ContractRejection MalformedRecord None None None))
+!(test (identityObserve (identityTestContext) () () None None)
+   (ContractRejection MalformedRecord None None None))
 
 ;; Standalone relation verification has no execution but retains observations.
 !(bind! &identity-test-standalone-observation (new-state
