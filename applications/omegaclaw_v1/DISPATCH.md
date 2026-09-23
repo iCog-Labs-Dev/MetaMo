@@ -196,11 +196,58 @@ Operation success does not complete a task. Only the existing trusted host
 commitment adjudication/event path can close it, and that state is mirrored before
 the next snapshot. New messages do not discard matching operation feedback.
 
+### Validated session callbacks
+
+`ingestOperationOutcome` is the trusted MeTTa host entry point for an
+`OperationOutcome`. Dispatch routes observations through it; host callers must
+pass literal records as quoted data. It is not a model skill or an authenticated
+network endpoint. Call it in the existing serialized host loop, before the next
+snapshot publication; concurrent callback threads must hand off to that loop.
+
+Validation requires the current session/cycle/frame context and the exact retained
+selected decision, including action, command arguments and ticket. The attempted
+command must equal the selected command. The dispatch result must have the
+recognized shape/status, and the reported outcome status must match
+`operationOutcomeStatus`. Unknown or malformed records are rejected. For no-action
+selections, dispatch records a canonical empty attempted command with
+`Blocked MissingDecision none`; arbitrary rejected model commands cannot replace
+that observation.
+
+| Result | Meaning |
+| --- | --- |
+| `OutcomeAccepted` | First valid observation for this decision stored; feedback is applied only during pre-snapshot bookkeeping. |
+| `OutcomeDuplicate` | Identical current-decision redelivery; no state changes, before or after consumption. |
+| `(OutcomeRejected ConflictingReplay)` | A different valid observation for the same decision; the first observation remains unchanged. |
+| `(OutcomeRejected WrongSession)` | Callback belongs to another session, including one that ended before reset. |
+| `(OutcomeRejected StaleCycle)` | Callback cycle differs from the current cycle, including future cycles. |
+| `(OutcomeRejected MismatchedDecision)` | Frame, action, selected command or ticket does not match the retained decision/context. |
+| `(OutcomeRejected MismatchedCommand)` | Attempted command differs from the decision's exact command. |
+| `(OutcomeRejected MalformedOutcome)` / `(OutcomeRejected InconsistentStatus)` | Invalid record/result shape or status inconsistent with the observation. |
+| `(OutcomeRejected MissingSession)` | No initialized operation context. |
+
+All rejections leave the pending observation, consumption marker, failure streak,
+feedback and motivation unchanged. `applyOperationOutcome` revalidates before
+consuming and retains the applied-decision marker, so repeated application cannot
+increment the streak twice. New decisions returning identical result text still
+count separately. After the cycle advances, even identical old callbacks are
+rejected as stale rather than reopening feedback. A frame change before consumption
+excludes the old feedback. Unknown execution remains `Unobserved`; later amendments
+to an accepted observation are outside this MVP.
+
 This remains one in-memory latest-observation slot for the serialized selected
 invocation, not a durable ledger or asynchronous callback queue. Session reset
-clears its feedback and consumption marker. General callback ingestion and active
-multi-step continuation remain separate Task 3 work. No Core or Prolog source
-changes are required.
+clears its feedback and consumption marker. This completes session callback
+validation/deduplication; active multi-step continuation remains separate Task 3
+work. No Core or Prolog source changes are required.
+
+`tests/outcome_ingestion_test.metta` covers mismatched identity fields, malformed
+and inconsistent records, duplicates before/after consumption, conflicting replay,
+late cycles, reset, inert callback expressions and identical results from distinct
+decisions. Run it through the common launcher:
+
+```sh
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/outcome_ingestion_test.metta
+```
 
 ## Verification and limits
 

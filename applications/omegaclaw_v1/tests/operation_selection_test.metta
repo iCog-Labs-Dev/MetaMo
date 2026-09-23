@@ -69,7 +69,7 @@
 !(test (get-state &hook-probe-count) 1)
 !(test (get-state &last-operation-outcome)
    (OperationOutcome (get-state &selected-operation-decision)
-      (attempted-command (quote (hook-probe))) Blocked
+      (attempted-command ()) Blocked
       (DispatchResult Blocked MissingDecision none)))
 
 !(py-call (host_dispatch_config.provision (get-state &config-path)))
