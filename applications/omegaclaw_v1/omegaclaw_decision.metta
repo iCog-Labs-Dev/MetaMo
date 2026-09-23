@@ -210,3 +210,10 @@
 (= (omegaclawDecision)
     (decisionMonad omegaclawUnit omegaclawDecideBound omegaclawScoreBound)
 )
+
+;; Capture the cycle's immutable bundle in both callbacks. Shared MetaMo
+;; dynamics may call them repeatedly; none may re-read the active-bundle cache.
+(= (omegaclawDecisionForBundle $bundle)
+   (decisionMonad omegaclawUnit
+      (omegaclawDecideForBundle $bundle)
+      (omegaclawScoreForBundle $bundle)))

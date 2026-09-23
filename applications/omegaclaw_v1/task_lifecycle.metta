@@ -60,7 +60,10 @@
       ))))
 
 (= (advanceAutonomyPhase $candidate)
-   (if (idleAutonomyActive)
+   (eval (advanceAutonomyPhaseForBundle (activeFrameBundle) $candidate)))
+
+(= (advanceAutonomyPhaseForBundle $bundle $candidate)
+   (if (idleAutonomyActiveForBundle $bundle)
        (case $candidate (
           (recall-goals
              (let* (

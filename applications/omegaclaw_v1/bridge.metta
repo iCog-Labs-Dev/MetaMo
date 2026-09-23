@@ -2,9 +2,12 @@
 ;; Construct the MetaMo bimonad from the OmegaClaw appraisal and decision
 ;; implementations plus the shared stability controls.
 (= (omegaclawBimonad)
+   (omegaclawBimonadWithDecision (omegaclawDecision)))
+
+(= (omegaclawBimonadWithDecision $decision)
    (metaMoPseudoBimonad
       (omegaclawAppraisal)
-      (omegaclawDecision)
+      $decision
       applyHomeostaticDamping
       raiseBoundaryCaution
       projectToSafeRegion
@@ -19,6 +22,13 @@
       ;; Host bookkeeping completes before the single snapshot is published.
       ;; Keep this same bundle through signals, selection, and directives.
       ($bundle (prepareTaskStateForMetaMo))
+   )
+      (motivationContextBlockForBundle $bundle)))
+
+;; Consume one already-published snapshot throughout the motivational cycle.
+;; Only the entry point above performs host bookkeeping and snapshot capture.
+(= (motivationContextBlockForBundle $bundle)
+   (let* (
       ($_ (eval (refreshSignals $bundle)))
       ($_ (eval (refreshConstitutionalMode $bundle)))
       ($_ (eval (clearSpace &appraisal-space)))
@@ -40,7 +50,8 @@
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
       ($cycleResult
          (runMetaMoCycleDefault
-            (omegaclawBimonad) $sysStates $stimulus $scheduledActions () ()))
+            (omegaclawBimonadWithDecision (omegaclawDecisionForBundle $bundle))
+            $sysStates $stimulus $scheduledActions () ()))
 
       ($finalAction (cycleFinalAction $cycleResult))
       ($nextSysStates (cycleNextStates $cycleResult))
@@ -64,7 +75,7 @@
       ;; of action priority. This never switches frames or admits execution.
       ($_ (refreshFrameResurfacing $bundle $selectedCandidate))
 
-      ($_ (advanceAutonomyPhase $selectedCandidate))
+      ($_ (advanceAutonomyPhaseForBundle $bundle $selectedCandidate))
       ($_ (change-state! &last-motivation-decision $decisionResult))
       ($_ (updateSelfModel (hasErrors) (hasResults)))
       ($_ (runHomeostasis))

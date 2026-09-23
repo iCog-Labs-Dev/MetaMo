@@ -19,6 +19,8 @@ rg -q 'omegaclawScoreForBundle \$bundle' "$bridge"
 rg -q 'omegaclawScoreForBundle \$bundle' "$decision"
 rg -q 'setActiveFrameBundle \$bundle' "$lifecycle"
 rg -q 'omegaclawDecideBound' "$decision"
+rg -q 'omegaclawDecisionForBundle \$bundle' "$bridge"
+rg -q 'advanceAutonomyPhaseForBundle \$bundle' "$bridge"
 
 # MetaMo modules may not read arbitrary OmegaClaw runtime state themselves.
 if rg -q 'get-state &(prevmsg|lastresults|error|new-msg-flag|task-open|active-task|cfv2-)' \
@@ -71,5 +73,11 @@ assert '(completePreviousTaskIfSuccessful)' not in source
 assert 'feasibilityGateActions $bundle' not in source
 assert '($admittedActions (if $feasibility $actions ()))' not in source
 assert 'recordCandidateRejections $rejections' in source
-assert '(omegaclawBimonad) $sysStates $stimulus $scheduledActions () ()' in source
+assert '(omegaclawBimonadWithDecision (omegaclawDecisionForBundle $bundle))' in source
+assert '$sysStates $stimulus $scheduledActions () ()' in source
+assert source.count('(prepareTaskStateForMetaMo)') == 1
+cycle = source.split('(= (motivationContextBlockForBundle $bundle)', 1)[1].split(
+    ';; Map the selected candidate', 1)[0]
+assert '(activeFrameBundle)' not in cycle
+assert '(prepareTaskStateForMetaMo)' not in cycle
 PY

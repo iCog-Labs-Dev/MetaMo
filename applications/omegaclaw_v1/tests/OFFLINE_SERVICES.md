@@ -6,6 +6,7 @@ Run from the PeTTa workspace root:
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/offline_ingestion_test.metta
 python3 MetaMo/applications/omegaclaw_v1/tests/offline_services_test.py
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/bridge_cycle_test.metta
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/bridge_snapshot_test.metta
 ```
 
 The MeTTa test is also discovered by `scripts/run-tests.py`. It loads the actual
@@ -81,3 +82,24 @@ separate probe of an active-task continuation without a fresh message reaches
 there. Those host continuation interfaces still need implementation/integration
 before claiming the successive execution-feedback scenarios. Live providers,
 channels and restart recovery remain unverified. CI is unchanged.
+
+## Snapshot consistency regression
+
+`bridge_snapshot_test.metta` uses real ingestion and the existing trusted host
+commitment test APIs. It verifies that `prepareTaskStateForMetaMo` refreshes
+execution observations and commitment state before publishing the bundle.
+The production entry point then passes that one value to
+`motivationContextBlockForBundle`; decision/scoring callbacks retain it through
+`omegaclawDecisionForBundle`, and autonomy bookkeeping receives it explicitly.
+
+After capture, the test changes host frame/task/error/result state and replaces
+the active-bundle cache. The original snapshot still determines appraisal,
+candidate admission, numeric scoring, selection and the directive target. A later
+publication sees the updated observations and an explicit commitment completion,
+without changing the earlier snapshot. No motivational functions are doubled.
+
+All 34 assertions pass, alongside 37 focused MeTTa files, 32 Python tests, eight
+import regressions and four shell guards. These deliberately adversarial mutations
+test snapshot isolation within the serialized motivational calculation; they do
+not authorize execution against stale host state. The dispatcher must still
+revalidate current state and policy before invoking a handler.
