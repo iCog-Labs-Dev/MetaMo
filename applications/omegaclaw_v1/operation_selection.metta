@@ -61,7 +61,8 @@
 ;; The model may repeat only the exact selected command. The ticket predates
 ;; scoring, so final Core checks also reject mutations during/after selection.
 (= (dispatchSelectedHostCommand $ticket $command)
-   (if (and (== $ticket (selectedHostTicket))
-            (and (!= (selectedHostCommand) ()) (== $command (selectedHostCommand))))
-       (eval (coreDispatchCommand (quote $ticket) (quote $command)))
-       (DispatchResult Blocked UnselectedOperation none)))
+   (if (== (selectedHostCommand) ())
+       (DispatchResult Blocked MissingDecision none)
+       (if (and (== $ticket (selectedHostTicket)) (== $command (selectedHostCommand)))
+           (eval (coreDispatchCommand (quote $ticket) (quote $command)))
+           (DispatchResult Blocked UnselectedOperation none))))

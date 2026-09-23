@@ -46,10 +46,18 @@
 
 ;; No trusted configuration: no candidate reaches scheduling/scoring.
 !(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (policyOutputFeasibility (get-state &last-meta-mo-policy-output)) Rejected)
+!(test (policyOutputPriority (get-state &last-meta-mo-policy-output)) 0)
+!(test (lastAttentionDirective)
+   (AttentionDirective (target "configured-frame") (slice CurrentFrameSummary)
+      (task none) (admission Rejected) (reason NoAction) (priority 0) (source MetaMo)))
 !(test (get-state &operation-admitted-actions) ())
 !(test (selectedHostCommand) ())
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (show-current-frame)))
-   (DispatchResult Blocked UnselectedOperation none))
+   (DispatchResult Blocked MissingDecision none))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (hook-probe)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &hook-probe-count) 1)
 
 !(py-call (host_dispatch_config.provision (get-state &config-path)))
 !(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
@@ -96,11 +104,16 @@
 !(test (get-state &operation-admitted-actions) ())
 !(test (tpContains (candidateRejections) (CandidateRejection search-knowledge PermissionDenied)) True)
 !(test (selectedHostCommand) ())
+!(test (policyOutputFeasibility (get-state &last-meta-mo-policy-output)) Rejected)
+!(test (policyOutputPriority (get-state &last-meta-mo-policy-output)) 0)
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (hook-probe)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &hook-probe-count) 1)
 
 ;; Argument expressions remain inert until the exact selected handler runs.
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin)
    (quote (change-state! &error "must-not-run")))
-   (DispatchResult Blocked UnselectedOperation none))
+   (DispatchResult Blocked MissingDecision none))
 !(test (get-state &error) "")
 
 ;; Prospective command cost is checked before scoring, too.
@@ -110,6 +123,16 @@
 !(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "cost-denied"))))
 !(test (policyOutputOperation (motivationContextBlock)) none)
 !(test (tpContains (candidateRejections) (CandidateRejection search-knowledge ConstraintDenied)) True)
+
+;; Configured policies with no supported command bindings are also no-action.
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "empty"))))
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (policyOutputFeasibility (get-state &last-meta-mo-policy-output)) Rejected)
+!(test (policyOutputPriority (get-state &last-meta-mo-policy-output)) 0)
+!(test (tpContains (candidateRejections) (CandidateRejection search-knowledge UnsupportedOperation)) True)
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (hook-probe)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &hook-probe-count) 1)
 
 ;; Exercise the other supported handler with its real candidate/scorer and
 ;; exact quoted filename. Availability is covered by the full bridge above.

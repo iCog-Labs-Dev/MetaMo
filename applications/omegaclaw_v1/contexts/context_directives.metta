@@ -39,7 +39,9 @@
    ;;   AttentionDirective containing target, slice, task, admission, reason,
    ;;   bounded priority, and source fields.
    (let* (
-      ($gate (feasibilityGate $bundle $candidate))
+      ($gate (if (== $candidate none)
+                 (GateDecision Rejected NoAction)
+                 (feasibilityGate $bundle $candidate)))
       ((GateDecision $admission $reason) $gate)
       ($target (if (!= (frameBundleCurrentId $bundle) ())
                    (frameBundleCurrentId $bundle)
@@ -103,7 +105,8 @@
       (slice (directiveSlice $operation))
       (task $operation)
       (admission $feasibility)
-      (reason (if (== $feasibility Admitted) Feasible PolicyRejected))
+      (reason (if (== $operation none) NoAction
+                  (if (== $feasibility Admitted) Feasible PolicyRejected)))
       (priority $priority)
       (source MetaMo)))
 

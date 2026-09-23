@@ -125,6 +125,8 @@ including concurrent policy-writer serialization; the existing ledger is reused.
 
 | Situation | Result |
 | --- | --- |
+| No command selected, including all candidates denied or no configured bindings | `(DispatchResult Blocked MissingDecision none)`; policy/directive report `none`, `Rejected`, zero priority, and directive reason `NoAction` |
+| Command or ticket differs from the retained selection | `(DispatchResult Blocked UnselectedOperation none)` |
 | Changed context/revision, including revocation through the host API | `(DispatchResult Blocked StaleSnapshot none)` |
 | Fresh context but current policy denies work | `(DispatchResult Blocked REASON none)`, retaining the typed gate reason |
 | Unknown ticket, unsupported command, missing/invalid policy or failed validation | Typed `Blocked` result with `none`; handler never invoked |
@@ -135,6 +137,10 @@ including concurrent policy-writer serialization; the existing ledger is reused.
 blocked/uncertain results in `&error` so lifecycle bookkeeping cannot mistake
 them for successful completion. Stale decisions are never refreshed in place:
 recompute from current state and issue a new ticket on a subsequent cycle.
+Candidate diagnostics retain the individual permission, budget, constraint, or
+unsupported-operation reasons when admission produces no selected command.
+The selected-path regression passes 58 assertions, including observable checks
+that denied, unsupported, and unconfigured work never invokes a fallback handler.
 
 Each ticket permits at most one invocation. Identical redelivery returns the
 recorded result without repeating effects; a changed command returns
