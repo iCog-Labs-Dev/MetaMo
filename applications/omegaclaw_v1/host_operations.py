@@ -5,6 +5,11 @@ permissions nor executes commands. Use only in the serialized host interpreter.
 """
 
 
+def new_session():
+    from uuid import uuid4
+    return '"' + str(uuid4()) + '"'  # Preserve String type through PeTTa's Python bridge.
+
+
 def capture():
     import janus
     result = janus.query_once("""

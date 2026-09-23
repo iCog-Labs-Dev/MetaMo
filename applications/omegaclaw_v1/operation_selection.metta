@@ -4,6 +4,31 @@
 !(bind! &operation-provider (new-state ()))
 !(bind! &selected-host-operation (new-state ()))
 !(bind! &operation-admitted-actions (new-state ()))
+!(bind! &operation-context (new-state ()))
+!(bind! &selected-operation-decision (new-state ()))
+!(bind! &last-operation-outcome (new-state ()))
+
+;; Session-only correlation, separate from the versioned durable wire contract.
+;; Pure motivational composition never needs a host identity provider.
+(= (initOperationSession)
+   (if (== (get-state &operation-provider) ()) False
+       (progn
+          (change-state! &operation-context
+             (OperationContext (sread (py-call (host_operations.new_session))) 0 ()))
+          (change-state! &selected-host-operation ())
+          (change-state! &selected-operation-decision ())
+          (change-state! &last-operation-outcome ()) True)))
+
+(= (beginOperationCycle $bundle)
+   (if (== (get-state &operation-provider) ()) False
+       (let* (
+          ($_ (if (== (get-state &operation-context) ()) (initOperationSession) True))
+          ((OperationContext $session $cycle $_frame) (get-state &operation-context)))
+          (progn
+             (change-state! &selected-host-operation ())
+             (change-state! &selected-operation-decision ())
+             (change-state! &operation-context
+                (OperationContext $session (+ $cycle 1) (frameBundleCurrentId $bundle)))))))
 
 (= (captureCandidateOperations $bundle)
    (let $provider (get-state &operation-provider)
@@ -42,12 +67,6 @@
        (CandidatePruning (admitted $actions) (rejected ()))
        (pruneHostOperations $bundle $actions $rows)))
 
-(= (retainSelectedOperation $candidate $rows)
-   (change-state! &selected-host-operation
-      (if (or (== $rows LegacyCandidateAdmission) (== $candidate none)) ()
-          (let $matches (hostRowsForCandidate $candidate $rows)
-             (if (== (size-atom $matches) 1) (car-atom $matches) ())))))
-
 (= (selectedHostCommand)
    (case (get-state &selected-host-operation) (
       ((HostOperation $_ $command $_ $_ $_ $_) $command)
@@ -58,11 +77,49 @@
       ((HostOperation $_ $_ $_ $_ $_ $ticket) $ticket)
       ($_ (DispatchUnavailable MissingDecision)))))
 
+(= (retainSelectedOperation $candidate $rows)
+   (let $_ (change-state! &selected-host-operation
+      (if (or (== $rows LegacyCandidateAdmission) (== $candidate none)) ()
+          (let $matches (hostRowsForCandidate $candidate $rows)
+             (if (== (size-atom $matches) 1) (car-atom $matches) ()))))
+      (change-state! &selected-operation-decision
+         (if (== (get-state &operation-context) ()) ()
+             (OperationDecision (get-state &operation-context) $candidate
+                (selectedHostCommand) (selectedHostTicket))))))
+
+;; Only documented handler observations establish success; invocation alone
+;; does not. Keep the raw result, including error/rejection reasons, untouched.
+(= (operationOutcomeStatus $command $result)
+   (case $result (
+      ((DispatchResult Blocked $_ $_) Blocked)
+      ((DispatchResult Executed $_ (Error $_ $_)) Failure)
+      ((DispatchResult Executed $_ $value)
+       (case (car-atom $command) (
+          (read-file (if (== (get-type $value) String) Success Unobserved))
+          (show-current-frame
+           (if (== (get-metatype $value) Expression)
+               (if (== $value ()) Unobserved
+                   (if (== (car-atom $value) Frame) Success Unobserved)) Unobserved))
+          ($_ Unobserved))))
+      ($_ Unobserved))))
+
 ;; The model may repeat only the exact selected command. The ticket predates
 ;; scoring, so final Core checks also reject mutations during/after selection.
 (= (dispatchSelectedHostCommand $ticket $command)
-   (if (== (selectedHostCommand) ())
+   (let* (
+      ($decision (get-state &selected-operation-decision))
+      ($selectedCommand (selectedHostCommand))
+      ($matches (and (== $ticket (selectedHostTicket))
+                    (or (== $selectedCommand ()) (== $command $selectedCommand))))
+      ($result (if (== $selectedCommand ())
        (DispatchResult Blocked MissingDecision none)
-       (if (and (== $ticket (selectedHostTicket)) (== $command (selectedHostCommand)))
+       (if $matches
            (eval (coreDispatchCommand (quote $ticket) (quote $command)))
            (DispatchResult Blocked UnselectedOperation none))))
+      ;; Unmatched tickets/commands are rejected attempts, not observations of
+      ;; the selected action. Never relabel them with the current decision.
+      ($_ (if (and $matches (!= $decision ()))
+              (change-state! &last-operation-outcome
+                 (OperationOutcome $decision (attempted-command $command)
+                    (operationOutcomeStatus $command $result) $result)) True)))
+      $result))

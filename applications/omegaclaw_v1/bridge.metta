@@ -251,6 +251,7 @@
 ;; Initialize the motivational runtime, then start the OmegaClaw loop.
 (= (motivatedOmegaclaw)
    (let* (
+      ($_ (initOperationSession))
       ($_ (initOmegaClawMotivation))
       ($_ (resetFrameResurfacing))
       ($_ (collapse (clearSignals)))

@@ -46,6 +46,11 @@
 
 ;; No trusted configuration: no candidate reaches scheduling/scoring.
 !(test (policyOutputOperation (motivationContextBlock)) none)
+!(bind! &first-context (new-state (get-state &operation-context)))
+!(test (let (OperationContext $session $cycle $frame) (get-state &first-context)
+   ((get-type $session) $cycle $frame)) (String 1 "configured-frame"))
+!(test (get-state &selected-operation-decision)
+   (OperationDecision (get-state &first-context) none () (DispatchUnavailable MissingDecision)))
 !(test (policyOutputFeasibility (get-state &last-meta-mo-policy-output)) Rejected)
 !(test (policyOutputPriority (get-state &last-meta-mo-policy-output)) 0)
 !(test (lastAttentionDirective)
@@ -58,9 +63,18 @@
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (hook-probe)))
    (DispatchResult Blocked MissingDecision none))
 !(test (get-state &hook-probe-count) 1)
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &selected-operation-decision)
+      (attempted-command (quote (hook-probe))) Blocked
+      (DispatchResult Blocked MissingDecision none)))
 
 !(py-call (host_dispatch_config.provision (get-state &config-path)))
 !(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
+!(test (get-state &operation-context)
+   (let (OperationContext $session $_ $_) (get-state &first-context)
+      (OperationContext $session 2 "configured-frame")))
+!(bind! &selected-decision (new-state (get-state &selected-operation-decision)))
+!(bind! &prior-outcome (new-state (get-state &last-operation-outcome)))
 !(test (map-atom (get-state &operation-admitted-actions) $a (actionId $a)) (search-knowledge))
 !(test (selectedHostCommand) (quote (show-current-frame)))
 !(test (tpContains (candidateRejections) (CandidateRejection respond UnsupportedOperation)) True)
@@ -69,10 +83,33 @@
 !(test (coreLoopDispatchCommand (get-state &chosen-ticket)
          (sread (py-call (host_config_fixture.command))))
    (DispatchResult Blocked UnselectedOperation none))
+!(test (get-state &last-operation-outcome) (get-state &prior-outcome))
 !(test (coreLoopDispatchCommand (get-state &chosen-ticket) (selectedHostCommand))
    (DispatchResult Executed Feasible (cfv2-current-frame)))
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &selected-decision)
+      (attempted-command (quote (show-current-frame))) Success
+      (DispatchResult Executed Feasible (cfv2-current-frame))))
+!(bind! &first-outcome (new-state (get-state &last-operation-outcome)))
 !(test (coreLoopDispatchCommand (get-state &chosen-ticket) (selectedHostCommand))
    (DispatchResult Executed Feasible (cfv2-current-frame)))
+!(test (get-state &last-operation-outcome) (get-state &first-outcome))
+
+;; Current host frame can move after selection; the blocked observation still
+;; belongs to the original frame/cycle, never to the new current frame.
+!(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
+!(test (coreLoopDispatchCommand (get-state &chosen-ticket) (selectedHostCommand))
+   (DispatchResult Blocked UnselectedOperation none))
+!(test (get-state &last-operation-outcome) (get-state &first-outcome))
+!(bind! &origin-decision (new-state (get-state &selected-operation-decision)))
+!(change-state! &cfv2-current-frame-id "different-frame")
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Blocked StaleSnapshot none))
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &origin-decision)
+      (attempted-command (quote (show-current-frame))) Blocked
+      (DispatchResult Blocked StaleSnapshot none)))
+!(change-state! &cfv2-current-frame-id "configured-frame")
 
 ;; Host mutations use Core's existing mutex/revision API. Even changing and
 ;; restoring the same frame invalidates a decision whose snapshot looks equal.
@@ -149,10 +186,44 @@
 !(retainSelectedOperation execute-skill (get-state &file-rows))
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible "observed local file content"))
+!(bind! &file-outcome (new-state (get-state &last-operation-outcome)))
+!(test (get-state &file-outcome)
+   (OperationOutcome (get-state &selected-operation-decision)
+      (attempted-command (selectedHostCommand)) Success
+      (DispatchResult Executed Feasible "observed local file content")))
 ;; A repeated ticket returns the original observation, not a second file read.
 !(test (py-call (host_config_fixture.replace_file_content)) 1)
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible "observed local file content"))
+!(test (get-state &last-operation-outcome) (get-state &file-outcome))
+
+;; A failure after invocation began is uncertain, not an invented success.
+!(bind! &uncertain-bundle (new-state (prepareTaskStateForMetaMo)))
+!(retainSelectedOperation execute-skill (captureCandidateOperations (get-state &uncertain-bundle)))
+!(test (py-call (host_config_fixture.remove_file)) 1)
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Unobserved ExecutionUncertain none))
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &selected-operation-decision)
+      (attempted-command (selectedHostCommand)) Unobserved
+      (DispatchResult Unobserved ExecutionUncertain none)))
+!(test (py-call (host_config_fixture.replace_file_content)) 1)
+
+;; An explicitly observed handler error is Failure. The handler is a test
+;; double; the policy gate, dispatcher, and correlation path remain real.
+(= (outcome-test-failure) (quote (Error test-handler failed)))
+!(test (py-call (host_config_fixture.install_failure_handler)) 1)
+!(bind! &failure-bundle (new-state (prepareTaskStateForMetaMo)))
+!(retainSelectedOperation execute-skill (captureCandidateOperations (get-state &failure-bundle)))
+;; Compare as data so expected Error records are not interpreter diagnostics.
+!(test (== (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error test-handler failed))) True)
+!(test (== (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &selected-operation-decision)
+      (attempted-command (quote (outcome-test-failure))) Failure
+      (DispatchResult Executed Feasible (Error test-handler failed)))) True)
+!(test (operationOutcomeStatus (quote (unknown-handler))
+   (DispatchResult Executed Feasible "returned")) Unobserved)
 
 ;; Multiple exact argument bindings cannot collapse into one candidate score.
 !(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "ambiguous"))))
@@ -162,4 +233,14 @@
    (GateDecision Rejected AmbiguousOperation))
 !(test (hostOperationGate (get-state &bundle) search-knowledge (get-state &rows))
    (GateDecision Admitted Feasible))
+;; A fresh host session rotates identity and clears correlation state.
+!(test (initOperationSession) True)
+!(test (let (OperationContext $old $_ $_) (get-state &first-context)
+   (let (OperationContext $new $cycle $_) (get-state &operation-context)
+      ((!= $old $new) $cycle))) (True 0))
+!(test (get-state &selected-operation-decision) ())
+!(test (get-state &last-operation-outcome) ())
+!(test (coreLoopDispatchCommand (get-state &chosen-ticket) (quote (show-current-frame)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &last-operation-outcome) ())
 !(test (py-call (host_config_fixture.cleanup)) 1)

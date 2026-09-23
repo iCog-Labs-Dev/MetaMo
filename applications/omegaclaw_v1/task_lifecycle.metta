@@ -222,6 +222,7 @@
       ($_ (refreshTaskExecutionObserved))
       ($_ (refreshTaskCommitment))
       ($bundle (frameStateForMetaMo))
+      ($_ (eval (beginOperationCycle $bundle)))
       ;; The decision module providing this setter loads after lifecycle.
       ($_ (eval (setActiveFrameBundle $bundle)))
    ) $bundle))

@@ -149,6 +149,40 @@ to start additional work. Every invocation advances the session revision, making
 other outstanding tickets stale. Reinitialization invalidates all old tickets.
 An uncertain attempt is not automatically retried.
 
+## Session outcome correlation
+
+The existing host adapter publishes `&operation-context` alongside each snapshot
+after lifecycle bookkeeping: `(OperationContext SESSION CYCLE FRAME)`. Startup
+allocates a UUID session; publication increments the cycle. Native frame IDs and
+the existing bundle shape are unchanged. Pure motivational fixtures do not need
+this host context.
+
+Selection freezes `(OperationDecision CONTEXT ACTION COMMAND TICKET)` in
+`&selected-operation-decision`. The dispatch hook records the typed observation
+in `&last-operation-outcome` before Core formats result text:
+
+```metta
+(OperationOutcome
+  (OperationDecision (OperationContext "session-id" 3 "frame-id")
+    execute-skill (read-file "/allowed/file") (DispatchTicket ticket-id))
+  (attempted-command (read-file "/allowed/file"))
+  Success
+  (DispatchResult Executed Feasible "observed content"))
+```
+
+`Success` means an observed string from `read-file` or a frame from
+`show-current-frame`; it does not mean task completion. An explicit returned
+`Error` is `Failure`, a denied invocation is `Blocked`, and uncertain execution
+or an unrecognized handler result is `Unobserved`. The raw result is preserved.
+Outcome context comes from the retained decision, never the current frame.
+Mismatched commands/tickets remain blocked and do not overwrite the selected
+action's observation. Repeated delivery retains the same correlation identity.
+
+This is one in-memory latest-observation slot, not a durable ledger or a callback
+queue. Session reset clears it. Consuming outcomes once before the next snapshot,
+updating motivation, callback deduplication, and completion adjudication remain
+separate Task 3 work. The existing Core loop and Prolog sources are unchanged.
+
 ## Verification and limits
 
 Run from the workspace root:

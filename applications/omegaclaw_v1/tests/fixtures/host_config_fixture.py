@@ -80,6 +80,22 @@ def replace_file_content():
     return 1
 
 
+def install_failure_handler():
+    import janus
+    return int(janus.query_once("""
+oc_dispatch_mutate((
+    mm_dispatch_binding(_Command, _Request, _Operation), _Command=['read-file',_],
+    mm_dispatch_revoke(_Command),
+    mm_dispatch_register(['outcome-test-failure'], _Request, _Operation)
+))
+""")["truth"])
+
+
+def remove_file():
+    Path(_config["allowed_files"][0]).unlink()
+    return 1
+
+
 def rejects_invalid():
     import host_dispatch_config
     try:
