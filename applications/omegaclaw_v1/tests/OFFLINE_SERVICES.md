@@ -7,6 +7,7 @@ python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/o
 python3 MetaMo/applications/omegaclaw_v1/tests/offline_services_test.py
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/bridge_cycle_test.metta
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/bridge_snapshot_test.metta
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/multiple_candidates_test.metta
 ```
 
 The MeTTa test is also discovered by `scripts/run-tests.py`. It loads the actual
@@ -103,3 +104,31 @@ import regressions and four shell guards. These deliberately adversarial mutatio
 test snapshot isolation within the serialized motivational calculation; they do
 not authorize execution against stale host state. The dispatcher must still
 revalidate current state and policy before invoking a handler.
+
+## Multiple feasible candidates
+
+`multiple_candidates_test.metta` ingests a real Core task and exercises its open,
+awaiting-first-execution state: the message has been ingested, no fresh message is
+pending, and there are no execution observations. Existing registry rules generate
+five feasible candidates. Scheduling retains `respond` and `ask-clarification`
+in the Interactive class, so both reach the unchanged numeric scorer.
+
+The first full bridge call selects `respond` under the default 1.0 score tie.
+The test then lowers responsiveness and cooperation goals through `replaceGoal`;
+it does not change registry rules, inject candidates, or replace scoring functions.
+The resulting decision-context scores are approximately 0.567 for `respond` and
+0.967 for `ask-clarification`. A second full bridge call selects the latter while
+the host snapshot and generated candidates remain unchanged. Printed candidate,
+score, and policy traces make the comparison inspectable.
+
+Lifecycle bookkeeping now skips merging absent results, preserving the empty
+observation. Status-question classification only runs for a waiting user, and
+continuation classification requires an open task, no new message, and an actual
+execution observation. Lazy guards prevent irrelevant eager Python calls. The
+missing host classifiers documented above still need integration for scenarios
+that require them; this test supplies no replacements for those functions.
+
+All 30 assertions pass. The focused suite now passes 38 MeTTa files, with 32 Python
+tests, eight import regressions and four shell boundary checks. The goal change is
+a controlled motivational input, not an observed execution outcome; this verifies
+Task 1's candidate competition requirement, not the execution-feedback MVP.

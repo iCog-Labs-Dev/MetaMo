@@ -103,20 +103,30 @@
    ;; the previous cycle's bounded (and possibly truncated) bundle.
       (if (get-state &new-msg-flag)
           (let $_ (change-state! &task-execution-observed "") True)
-          (let $merged (py-call (helper.merge_observed_execution_commands
+          ;; No new result means no merge. In particular, do not round-trip
+          ;; the empty MeTTa string through Python into a nonempty digest.
+          (if (or (== (get-state &lastresults) "") (== (get-state &lastresults) ()))
+              True
+              (let $merged (py-call (helper.merge_observed_execution_commands
                                  (get-state &task-execution-observed)
                                  (get-state &lastresults)))
-             (change-state! &task-execution-observed $merged))))
+                 (change-state! &task-execution-observed $merged)))))
 
 (= (executionContinuationNeeded)
    (executionContinuationNeededForBundle (activeFrameBundle)))
 
 (= (executionContinuationNeededForBundle $bundle)
-   (and (frameRuntimeTaskOpen $bundle)
-        (and (not (bundle-runtime-has-new-message $bundle))
-             (py-call (helper.task_needs_more_execution
-                       (frameRuntimeText (frameRuntimeActiveTask $bundle))
-                       (frameRuntimeExecutionObserved $bundle))))))
+   ;; Continuation requires an execution observation. A newly admitted task
+   ;; with none yet falls through to ordinary registry candidate generation.
+   ;; Use if: and evaluates its arguments, including the optional host call.
+   (if (and (frameRuntimeTaskOpen $bundle)
+            (not (bundle-runtime-has-new-message $bundle)))
+       (let $observed (frameRuntimeText (frameRuntimeExecutionObserved $bundle))
+          (if (== $observed "")
+              False
+              (py-call (helper.task_needs_more_execution
+                 (frameRuntimeText (frameRuntimeActiveTask $bundle)) $observed))))
+       False))
 
 (= (awaitingClarificationResponse)
    (awaitingClarificationResponseForBundle (activeFrameBundle)))
@@ -173,9 +183,10 @@
    (resultQuestionNeedsResponseForBundle (activeFrameBundle)))
 
 (= (resultQuestionNeedsResponseForBundle $bundle)
-   (and (hasSignal user-waiting)
+   (if (hasSignal user-waiting)
         (py-call (helper.is_result_status_question
-                  (frameRuntimeText (frameRuntimeMessage $bundle))))))
+                  (frameRuntimeText (frameRuntimeMessage $bundle))))
+        False))
 
 ;; Historical entry points cannot infer commitment completion from candidates,
 ;; motivation, or result text. Hosts must publish an explicit commitment event.
