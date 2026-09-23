@@ -8,8 +8,8 @@ permissions nor executes commands. Use only in the serialized host interpreter.
 def capture():
     import janus
     result = janus.query_once("""
-eval(['get-state','&active-frame-bundle'], _Bundle),
 with_mutex(omegaclaw_dispatch, (
+    eval(['get-state','&active-frame-bundle'], _Bundle),
     (oc_dispatch_hooks(mm_dispatch_snapshot, mm_dispatch_resolve,
                        mm_dispatch_gate, mm_dispatch_execute),
      eval([frameStateForMetaMo], _Current), _Current == _Bundle,

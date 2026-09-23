@@ -117,6 +117,11 @@ and context, resolves exact command metadata, reruns the typed gate, records an
 invocation claim, and invokes the handler. The current serialized interpreter
 holds the mutex through synchronous completion. Relevant external writers must
 use the same mutation API; arbitrary concurrent `change-state!` is unsupported.
+Reading the published bundle also occurs inside that mutex during capture.
+The selected-path regression now passes 43 assertions, including host
+change-and-restore, explicit revocation followed by restored grants, and file
+replay returning the original observation. Core's 17 dispatcher tests also pass,
+including concurrent policy-writer serialization; the existing ledger is reused.
 
 | Situation | Result |
 | --- | --- |

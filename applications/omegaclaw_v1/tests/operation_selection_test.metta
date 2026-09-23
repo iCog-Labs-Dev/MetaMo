@@ -66,6 +66,26 @@
 !(test (coreLoopDispatchCommand (get-state &chosen-ticket) (selectedHostCommand))
    (DispatchResult Executed Feasible (cfv2-current-frame)))
 
+;; Host mutations use Core's existing mutex/revision API. Even changing and
+;; restoring the same frame invalidates a decision whose snapshot looks equal.
+!(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
+!(bind! &before-mutation (new-state (frameStateForMetaMo)))
+!(test (py-call (host_config_fixture.set_frame_status "Blocked")) 1)
+!(test (py-call (host_config_fixture.set_frame_status "Active")) 1)
+!(test (frameStateForMetaMo) (get-state &before-mutation))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Blocked StaleSnapshot none))
+
+;; Explicit revocation after selection rejects the original ticket. Restoring
+;; the grant cannot revive it; only a new motivational cycle may select again.
+!(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
+!(test (py-call (host_config_fixture.revoke_frame_command)) 1)
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Blocked StaleSnapshot none))
+!(py-call (host_dispatch_config.provision (get-state &config-path)))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Blocked StaleSnapshot none))
+
 ;; Mutation after scoring but BEFORE Core begins dispatch cannot refresh the
 ;; ticket. The original pre-scoring ticket must become stale.
 !(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
@@ -104,6 +124,10 @@
    (motivosToMetamoState) ((candidateToAction execute-skill)))))
 !(test (let (decisionResult $action $_) (get-state &file-decision) (actionId $action)) execute-skill)
 !(retainSelectedOperation execute-skill (get-state &file-rows))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible "observed local file content"))
+;; A repeated ticket returns the original observation, not a second file read.
+!(test (py-call (host_config_fixture.replace_file_content)) 1)
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible "observed local file content"))
 

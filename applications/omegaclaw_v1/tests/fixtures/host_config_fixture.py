@@ -60,6 +60,26 @@ def command():
     return '(read-file ' + json.dumps(_config["allowed_files"][0]) + ')'
 
 
+def revoke_frame_command():
+    import janus
+    return int(janus.query_once("mm_dispatch_revoke(['show-current-frame'])")["truth"])
+
+
+def set_frame_status(status):
+    import janus
+    if status not in ("Blocked", "Active"):
+        raise ValueError("unsupported fixture status")
+    return int(janus.query_once(
+        "sread(Source, _Command), oc_dispatch_mutate(eval(_Command, _))",
+        {"Source": "(change-state! &cfv2-current-status " + status + ")"},
+    )["truth"])
+
+
+def replace_file_content():
+    Path(_config["allowed_files"][0]).write_text("changed after invocation", encoding="utf-8")
+    return 1
+
+
 def rejects_invalid():
     import host_dispatch_config
     try:
