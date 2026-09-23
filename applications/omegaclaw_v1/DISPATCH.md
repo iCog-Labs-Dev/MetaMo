@@ -2,7 +2,8 @@
 
 The v1 entry point initializes Core's session dispatcher before starting the
 loop. Model commands and the loop's idle mode-switch request go through
-`coreDispatchCommand`; v1 never falls back to arbitrary `eval` on missing policy
+`coreLoopDispatchCommand`, whose v1 hook checks the selected exact command before
+calling `coreDispatchCommand`; v1 never falls back to arbitrary `eval` on missing policy
 or unsupported work. Standalone Core without this explicitly enabled integration
 retains its legacy behavior.
 
@@ -86,8 +87,25 @@ automatic transition authorization or fallback through a `defer` candidate.
 
 ## Final check and outcomes
 
-After prompt/decision construction, Core captures an opaque ticket containing
-intent, the session revision and current context. The v1 context includes a
+Before scheduling or scoring, `host_operations.py` reads the installed policies
+and exact bindings under Core's dispatch mutex and captures the existing Core
+tickets. It verifies the published bundle still equals current host state;
+the raw bundle stays inside the host instead of being round-tripped through text.
+`operation_selection.metta` applies `candidateAdmissionForOperation` to each
+available candidate using this captured metadata. Missing bindings reject with
+`UnsupportedOperation`; more than one binding for a candidate rejects with
+`AmbiguousOperation`. The current candidate scorer cannot select between multiple
+argument sets, so configure one exact command per candidate for this slice.
+Denied candidates never enter scheduling or numeric comparison.
+
+Selection retains the exact command and its original ticket. Core's MeTTa loop
+hooks return that ticket after prompting, without recapturing or refreshing it.
+Only the selected command and arguments reach the existing Core dispatcher;
+substitutions receive `UnselectedOperation`. The prompt requests one exact command.
+The default Core hooks continue to use its existing dispatcher when v1 is absent.
+V1 refuses startup with a Core revision lacking these hooks.
+
+The captured ticket contains intent, session revision and current context. The v1 context includes a
 fresh frame bundle, complete installed policies, constitutional mode and raw
 `&cfv2-*` state values. The raw values are retained by the host dispatcher, not
 exposed to motivational scoring. Namespace mutations and external policy/state
@@ -129,6 +147,7 @@ swipl -q -s repos/OmegaClaw-Core/Autotests/dispatch/dispatch_test.pl
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/dispatch_test.metta
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/host_dispatch_config_test.metta
 python3 MetaMo/applications/omegaclaw_v1/tests/host_dispatch_config_test.py
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/operation_selection_test.metta
 bash MetaMo/applications/omegaclaw_v1/tests/dispatch_boundary_test.sh
 ```
 
@@ -141,8 +160,23 @@ Other MeTTa tests use the real typed gate and an
 observable fixture handler to cover permission, budget and mode denial without
 effects. External services and live channels are not exercised.
 
+The operation-selection regression exercises the real bridge/scorer with trusted
+configuration and a typed current frame, followed by real Core frame inspection.
+It also checks the real file reader, missing configuration, permission/budget/cost
+rejection before scoring, exact-command enforcement, inert command expressions,
+replay, ambiguous bindings, and policy replacement between selection and dispatch.
+External providers and memory are doubled. Production startup provisioning and
+native symbol-to-typed-frame mapping remain pending; this is not live acceptance
+or execution-outcome feedback.
+
+Verified locally on 23 September 2026: all 40 focused MeTTa files pass, including
+32 operation-selection assertions; eight import regressions, ten provisioning
+Python tests, 17 Core dispatch tests, and four shell boundary guards pass.
+The host checkout requires the updated `src/dispatch.metta` loop hooks and the
+three corresponding `src/loop.metta` call sites alongside the MetaMo changes.
+
 Durable identity/claims, resource reservations and settlement, additional trusted
-handler catalogs, pre-scoring concrete-operation wiring, native frame-ID mapping,
+handler catalogs, native frame-ID mapping,
 multi-frame transition dispatch, and restart
 reconciliation remain separate integration work. Host ingestion, bookkeeping and
 frame audit updates are host lifecycle operations, not model-selected commands;

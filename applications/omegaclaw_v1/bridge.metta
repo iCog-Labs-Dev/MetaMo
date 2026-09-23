@@ -31,6 +31,8 @@
    (let* (
       ($_ (eval (refreshSignals $bundle)))
       ($_ (eval (refreshConstitutionalMode $bundle)))
+      ($_ (change-state! &selected-host-operation ()))
+      ($operationRows (captureCandidateOperations $bundle))
       ($_ (eval (clearSpace &appraisal-space)))
       ($_ (eval (computeAllDimensions)))
 
@@ -40,9 +42,13 @@
       ($_ (generateCandidates $bundle))
       ($actions (eval (candidatesToActions)))
       ;; Hard feasibility is complete before the MetaMo decision/mode step.
-      ((CandidatePruning (admitted $admittedActions) (rejected $rejections))
+      ((CandidatePruning (admitted $baseActions) (rejected $rejections))
          (pruneActionsForBundle $bundle $actions))
       ($_ (recordCandidateRejections $rejections))
+      ((CandidatePruning (admitted $admittedActions) (rejected $operationRejections))
+         (admitCapturedOperations $bundle $baseActions $operationRows))
+      ($_ (recordCandidateRejections $operationRejections))
+      ($_ (change-state! &operation-admitted-actions $admittedActions))
       ;; Scheduling precedence is separate from admission, numeric score,
       ;; constitutional posture, and ContextFrames Fast/Slow execution mode.
       ($scheduledActions (scheduleAdmittedActions (getSignals) $admittedActions))
@@ -64,6 +70,7 @@
          (eval (metamoActionToDecision $finalAction $score)))
       ((decision $selectedCandidate $_mode $_directive $_score)
          $decisionResult)
+      ($_ (retainSelectedOperation $selectedCandidate $operationRows))
       ;; Expose only the bounded policy contract to the scheduler/reasoner.
       ($policyOutput
          (metaMoPolicyOutput $bundle $selectedCandidate $score))
@@ -141,7 +148,10 @@
              (execute execute)
              $operationMapping))
       ($guidance (directiveGuidance $directive))
-      ($instruction (candidateInstruction $selectedCandidate))
+      ($instruction
+         (if (== (get-state &operation-provider) ())
+             (candidateInstruction $selectedCandidate)
+             "REQUIRED: Output exactly SELECTED_HOST_COMMAND inside a one-command list. If it is empty, output (). Do not substitute commands or arguments."))
       ($activeTask (frameRuntimeActiveTask $bundle))
       ($autonomyPhase (autonomyPhaseForCandidate $selectedCandidate))
       ($nextAutonomyPhase (get-state &autonomy-phase))
@@ -178,6 +188,8 @@
          " STEP_POLICY: " $guidance
          " CONSTITUTIONAL_MODE: " (eval (constitutionalMode))
          " MOTIVATION_INSTRUCTION: " $instruction
+         " SELECTED_HOST_COMMAND: " (eval (repr (selectedHostCommand)))
+         " When SELECTED_HOST_COMMAND is nonempty, output exactly that command in a one-command list. Other commands are rejected."
          " META_MO_POLICY_OUTPUT: "
             (eval (string-safe (repr (get-state &last-meta-mo-policy-output))))
          " FRAME_REVIEW_HINTS: " (eval (string-safe (repr (lastFrameReviews))))

@@ -24,6 +24,7 @@ trusted host identity/causal-link APIs are implemented; see [IDENTITY.md](IDENTI
 | `task_lifecycle.metta` | User-task state, execution continuation, and autonomy phases. |
 | `commitments.pl`, `commitments.metta` | Host-owned commitment events and a read-only adapter; motivation cannot implicitly terminate work. |
 | `candidate_selection.metta` | Candidate-condition evaluation and availability. |
+| `operation_selection.metta`, `host_operations.py` | Concrete-operation admission before scoring, retaining the exact selected command and Core dispatch ticket. |
 | `scheduling.metta` | Fixed preemption between admitted scheduling classes, before numeric scoring. |
 | `resurfacing.metta` | Bounded, periodic review hints for blocked and deferred live frames, without execution authority. |
 | `mode_triggers.metta` | Shared registry-driven trigger evaluation over existing signals and snapshot conditions. |

@@ -29,6 +29,15 @@ def write(variant):
     config = copy.deepcopy(_config)
     if variant == "permission-denied":
         config["frame"]["permissions"] = ["frames.read"]
+    elif variant == "frame-denied":
+        config["frame"]["permissions"] = ["files.read"]
+    elif variant == "ambiguous":
+        other = _path.parent / "other.txt"
+        other.write_text("other content", encoding="utf-8")
+        config["allowed_files"].append(str(other))
+        config["commands"].append({"skill": "read-file", "arguments": [str(other)]})
+        for scope in ("global", "frame"):
+            config[scope]["permissions"].append("files.read:" + str(other))
     elif variant == "global-denied":
         config["global"]["skills"] = []
     elif variant == "budget-denied":
