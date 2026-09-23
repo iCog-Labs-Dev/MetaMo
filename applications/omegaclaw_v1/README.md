@@ -64,6 +64,9 @@ for the session dispatch boundary described in [DISPATCH.md](DISPATCH.md).
 Without them, commands return explicit no-action results. Stale or revoked
 decisions cannot fall back to direct evaluation. The invocation below does not
 provision policy; configure it in trusted host startup code first.
+The [host configuration template](host_dispatch.example.json) and
+[provisioning instructions](DISPATCH.md#trusted-host-configuration) cover exact
+`read-file` and `show-current-frame` commands with explicit global/frame policies.
 
 ```bash
 OMEGACLAW_AUTH_SECRET=<channel-secret> python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/run.metta IRC_channel="<irc-channel>"

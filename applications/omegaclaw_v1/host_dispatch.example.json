@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "frame_id": "replace-with-host-frame-id",
+  "allowed_files": ["/absolute/path/to/input.txt"],
+  "global": {
+    "skills": ["read-file", "show-current-frame"],
+    "permissions": ["files.read", "files.read:/absolute/path/to/input.txt", "frames.read"],
+    "egress": [],
+    "constraints": [["DenySkill", "shell"], ["DenySkill", "write-file"], ["MaxCost", "commands", "units", 1]],
+    "budgets": [{"resource": "commands", "unit": "units", "available": 10, "status": "Open"}]
+  },
+  "frame": {
+    "skills": ["read-file", "show-current-frame"],
+    "permissions": ["files.read", "files.read:/absolute/path/to/input.txt", "frames.read"],
+    "egress": [],
+    "constraints": [["RequirePermission", "frames.read"], ["MaxCost", "commands", "units", 1]],
+    "budgets": [{"resource": "commands", "unit": "units", "available": 2, "status": "Open"}]
+  },
+  "commands": [
+    {"skill": "read-file", "arguments": ["/absolute/path/to/input.txt"]},
+    {"skill": "show-current-frame", "arguments": []}
+  ]
+}

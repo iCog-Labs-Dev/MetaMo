@@ -15,6 +15,52 @@ implementation, not the durable v1 dispatch ledger in `CONTRACTS.md`.
 
 ## Trusted host configuration
 
+`host_dispatch_config.py` provisions a bounded set of real Core read commands.
+Copy `host_dispatch.example.json` into host-owned configuration, replace its
+frame ID and absolute file paths, and explicitly set both policy scopes. The
+example is a template; importing the module installs nothing.
+
+| Exact command | Candidate | Required permissions | Egress | Prospective cost |
+| --- | --- | --- | --- | --- |
+| `(read-file "/canonical/allowed/file")` | `execute-skill` | `files.read` and `files.read:/canonical/allowed/file` | None | 1 `commands` / `units` |
+| `(show-current-frame)` | `search-knowledge` | `frames.read` | None | 1 `commands` / `units` |
+
+The host supplies actual arguments, while the supported-handler catalog derives
+the candidate, target, permissions, egress, and costs. Command entries cannot
+override these requirements. File arguments must exactly match an explicitly
+allowlisted canonical regular file. Other skills, arities, nested expressions,
+and unregistered paths receive no binding.
+
+Each global/frame scope must explicitly include `skills`, `permissions`,
+`egress`, `constraints`, and `budgets`. Constraints support `DenySkill`,
+`RequirePermission`, `DenyEgress`, and `MaxCost`; unknown constraints are rejected.
+Budgets declare resource, unit, available amount, and `Open`, `Closed`, or
+`Exhausted` status. Empty grants stay empty. The gate checks both scopes;
+registration alone does not make an operation feasible.
+
+In trusted startup/admission code, after loading composition and dispatch and
+establishing the current frame, initialize dispatch and provision before starting
+the loop:
+
+```metta
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_dispatch_config.py))
+!(initMetaMoDispatch)
+!(sread (py-call (host_dispatch_config.provision "/absolute/path/host.json")))
+```
+
+Provisioning validates the complete configuration and typed records, then
+atomically replaces policies and exact bindings under the existing dispatch
+mutex. Successful replacement invalidates outstanding tickets. Invalid
+configuration preserves the previous policies and bindings. This is an explicit
+host API, not a model skill or automatic configuration in `run.metta`.
+
+The frame ID must match the typed snapshot target. The integration fixture uses
+an explicit string ID; mapping native Core symbol IDs to this contract remains
+pending. The host must keep allowlisted paths under its control throughout the
+session: provisioning-time path validation is not a filesystem sandbox.
+Costs currently account for command units only, not file bytes, memory, or time;
+budgets are checked prospectively without reservation or consumption settlement.
+
 `dispatch.pl` supplies these Prolog host APIs (not exported as model skills):
 
 | API | Responsibility |
@@ -81,17 +127,23 @@ Run from the workspace root:
 ```sh
 swipl -q -s repos/OmegaClaw-Core/Autotests/dispatch/dispatch_test.pl
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/dispatch_test.metta
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/host_dispatch_config_test.metta
+python3 MetaMo/applications/omegaclaw_v1/tests/host_dispatch_config_test.py
 bash MetaMo/applications/omegaclaw_v1/tests/dispatch_boundary_test.sh
 ```
 
 Core tests cover stale/revoked work, mutation handlers, unknown commands, replay,
 reinitialization, partial failure, malformed gate output, missing configuration,
-and policy-writer serialization. MeTTa tests use the real typed gate and an
+and policy-writer serialization. Provisioning tests invoke real Core file and
+frame readers and cover exact arguments, permission/skill denial, budget and
+maximum-cost denial, policy replacement, invalid configuration, and replay.
+Other MeTTa tests use the real typed gate and an
 observable fixture handler to cover permission, budget and mode denial without
 effects. External services and live channels are not exercised.
 
-Durable identity/claims, resource reservations and settlement, automatic trusted
-handler metadata derivation, multi-frame transition dispatch, and restart
+Durable identity/claims, resource reservations and settlement, additional trusted
+handler catalogs, pre-scoring concrete-operation wiring, native frame-ID mapping,
+multi-frame transition dispatch, and restart
 reconciliation remain separate integration work. Host ingestion, bookkeeping and
 frame audit updates are host lifecycle operations, not model-selected commands;
 this boundary does not turn them into MetaMo-owned mutations.
