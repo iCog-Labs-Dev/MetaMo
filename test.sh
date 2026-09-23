@@ -41,7 +41,11 @@ run_metta_file() {
   dir="$(dirname "$test_file")"
   name="$(basename "$test_file")"
 
-  output="$(cd "$dir" && petta "$name" 2>&1)"
+  if [[ "$test_file" == applications/omegaclaw_v1/* ]]; then
+    output="$(python3 "$ROOT_DIR/scripts/run-omegaclaw.py" "$ROOT_DIR/$test_file" 2>&1)"
+  else
+    output="$(cd "$dir" && petta "$name" 2>&1)"
+  fi
   code=$?
 
   if [[ -n "$output" ]]; then
@@ -91,7 +95,7 @@ for test_file in "${tests[@]}"; do
 
   case "$test_file" in
     *.metta)
-      if ! command -v petta >/dev/null 2>&1; then
+      if [[ "$test_file" != applications/omegaclaw_v1/* ]] && ! command -v petta >/dev/null 2>&1; then
         echo "petta command not found; cannot run $test_file" >&2
         status=127
         continue
