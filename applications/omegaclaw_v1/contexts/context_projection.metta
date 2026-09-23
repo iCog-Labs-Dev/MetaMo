@@ -16,6 +16,13 @@
 ;; keeps a large number of short refs/relations from bypassing text limits.
 (= (frameStateMaxIndexRefs) 20)
 
+;; Preserve absence before adding a display digest. Otherwise an empty error
+;; or result becomes nonempty text and is misread as an observed event.
+(= (frameStateRuntimeSummary $value $limit)
+   (if (or (== $value "") (== $value ()))
+       ""
+       (cfv2-compact-limited $value $limit)))
+
 ;; Separate host review projection: compacted index text is not a complete
 ;; backlog. The helper validates/caps live rows and reports overflow explicitly.
 ;; eval defers resolution until the optional resurfacing module is loaded.
@@ -84,11 +91,11 @@
    ;; those modules should not read `&cfv2-*` or OmegaClaw runtime states.
    (let* (
       ($currentID (get-state &cfv2-current-frame-id))
+      ;; Consumers inspect relation records structurally. Keep the bounded list
+      ;; typed; frameStateProjectRelation already compacts each display reason.
       ($relations (if (== $currentID ()) ()
-                     (cfv2-compact-limited
-                        (frameStateBoundRelations
-                           (cfv2-get-relation $currentID))
-                        1200)))
+                     (frameStateBoundRelations
+                        (cfv2-get-relation $currentID))))
       ($root (frameStateRootProjection))
       ($current (frameStateCurrentProjection))
       ($index (frameStateIndexProjection))
@@ -97,20 +104,20 @@
             (new-message (get-state &new-msg-flag))
             (message-present (not (== (get-state &prevmsg) "")))
             (message-summary
-               (cfv2-compact-limited (get-state &prevmsg) 1200))
+               (frameStateRuntimeSummary (get-state &prevmsg) 1200))
             ;; Task lifecycle fields are exposed only as bounded, typed
             ;; projections. MetaMo must not read the OmegaClaw states below.
             (task-open (get-state &task-open))
             (task-execution-observed
-               (cfv2-compact-limited
+               (frameStateRuntimeSummary
                   (get-state &task-execution-observed) 1200))
             (active-task-summary
-               (cfv2-compact-limited (get-state &active-task) 500))
+               (frameStateRuntimeSummary (get-state &active-task) 500))
             (last-results-summary
-               (cfv2-compact-limited
+               (frameStateRuntimeSummary
                   (get-state &lastresults) 1200))
             (error
-               (cfv2-compact-limited
+               (frameStateRuntimeSummary
                   (get-state &error) 600))
             (wake-loops (get-state &loops))
             (next-wake-at (get-state &nextWakeAt))

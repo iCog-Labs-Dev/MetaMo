@@ -49,7 +49,7 @@
 !(bind! &new-snapshot (new-state (prepareTaskStateForMetaMo)))
 !(test (frameRuntimeTaskOpen (get-state &new-snapshot)) True)
 !(test (frameRuntimeActiveTask (get-state &new-snapshot)) (cfv2-compact-limited "new request" 500))
-!(test (frameRuntimeExecutionObserved (get-state &new-snapshot)) (cfv2-compact-limited "" 1200))
+!(test (frameRuntimeExecutionObserved (get-state &new-snapshot)) "")
 ;; Later host mutations cannot retroactively change the published bundle.
 !(change-state! &task-open False)
 !(change-state! &active-task "")

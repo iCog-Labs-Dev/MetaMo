@@ -38,7 +38,9 @@
    (seedThreshold execution_caution_limit))
 
 (= (idleAutonomyActive)
-   (idleAutonomyActiveForBundle (activeFrameBundle)))
+   ;; The bundle accessor is supplied by the later-loaded decision module.
+   ;; Resolve this compatibility wrapper at runtime, as the snapshot setter is.
+   (eval (idleAutonomyActiveForBundle (activeFrameBundle))))
 
 ;; Bundle-scoped lifecycle predicates. These are the only variants used by
 ;; candidate selection; the legacy zero-argument helpers remain for startup

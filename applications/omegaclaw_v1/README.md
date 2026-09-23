@@ -73,6 +73,13 @@ OMEGACLAW_AUTH_SECRET=<channel-secret> python3 MetaMo/scripts/run-omegaclaw.py M
 
 ## Minimal loop demo
 
+The full motivational bridge has a separate offline regression:
+`tests/bridge_cycle_test.metta` uses real Core ingestion/projection and calls
+`motivationContextBlock`, including state updates and persistence scheduling,
+with external provider/memory doubles. It covers fresh messages and idle no-action;
+execution continuation and the complete feedback loop remain pending. See
+[offline service tests](tests/OFFLINE_SERVICES.md) for commands and limitations.
+
 For real message ingestion without ChromaDB or LLM services, see
 [offline service tests](tests/OFFLINE_SERVICES.md). These use test-only provider
 doubles while retaining Core frame creation and MetaMo projection, signal

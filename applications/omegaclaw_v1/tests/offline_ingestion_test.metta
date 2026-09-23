@@ -36,15 +36,14 @@
 !(change-state! &new-msg-flag True)
 !(change-state! &task-open True)
 !(change-state! &active-task "Summarize the second task")
-;; A real host error exercises failure appraisal without treating compacted
-;; empty result/error text as evidence of success (a separate projection issue).
+;; A real host error exercises failure appraisal. Empty-observation behavior
+;; through the full bridge is covered separately by bridge_cycle_test.metta.
 !(change-state! &error "observed execution failure")
 !(bind! &offline-bundle (new-state (prepareTaskStateForMetaMo)))
 !(test (frameBundleCurrentId (get-state &offline-bundle)) (get-state &second-offline-frame))
 !(test (size-atom (get-state &cfv2-relational-space)) 1)
 !(test (frameBundleRelations (get-state &offline-bundle))
-   (cfv2-compact-limited
-      (frameStateBoundRelations (cfv2-get-relation (get-state &second-offline-frame))) 1200))
+   (frameStateBoundRelations (cfv2-get-relation (get-state &second-offline-frame))))
 !(test (py-call (frame_relation.call_count)) 2)
 ;; Check endpoint direction and advisory status independently of the summary.
 (= (offlineRelationIdentity $relation)

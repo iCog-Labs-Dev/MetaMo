@@ -5,6 +5,7 @@ Run from the PeTTa workspace root:
 ```bash
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/offline_ingestion_test.metta
 python3 MetaMo/applications/omegaclaw_v1/tests/offline_services_test.py
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/bridge_cycle_test.metta
 ```
 
 The MeTTa test is also discovered by `scripts/run-tests.py`. It loads the actual
@@ -48,11 +49,35 @@ This closes optional-service dependencies for the tested ContextFrames loading
 and message-ingestion path. It does not load all channel integrations or exercise
 embeddings, real semantic classification, memory persistence, execution dispatch,
 relation verification write-back, or the complete bridge execution-feedback loop.
-The test uses an explicit observed host failure for appraisal. Existing projection
-compacts even empty error/result strings into nonempty summaries; the current
-signal helpers can mistake those summaries for observations. That separate
-projection/signal issue remains open and is not hidden by a replacement bundle.
+The ingestion test uses an explicit observed host failure for appraisal.
 
-The earlier full-bridge attempt did not produce a policy result; this test does
-not establish that `motivationContextBlock` completes. Full bridge diagnosis and
-the live vertical slice remain separate work. CI is unchanged.
+## Full bridge regression — 23 September 2026
+
+`bridge_cycle_test.metta` calls the production `motivationContextBlock` after
+real Core message ingestion. It uses the same provider doubles and network guard,
+plus test-only `query`/`remember` functions for the external memory boundary.
+Persistence restoration and save scheduling remain real; the test does not
+restore a previously serialized payload or exercise a storage backend.
+
+The earlier empty-result failure had two causes: `idleAutonomyActive` was compiled
+before its bundle accessor and needed explicit runtime evaluation, and relation
+projection converted a structural list into a display string, leaving candidate
+generation without a result. Projection now retains bounded typed relations and
+preserves empty runtime text before adding any digest. Empty errors/results no
+longer produce false failure/progress signals.
+
+The regression passes 49 assertions across fresh-message cycles with empty and
+nonempty relation lists, an observed error accompanying a fresh message, and idle
+no-action. Each bridge call returns exactly one policy result. Checks cover the
+published directive, real motivational state updates, self-model counters,
+persistence scheduling and final signal cleanup. The focused suite passes 36
+MeTTa files, alongside 32 Python tests, eight import regressions and four shell
+boundary checks.
+
+This does not establish execution dispatch or the complete feedback loop. A
+separate probe of an active-task continuation without a fresh message reaches
+`helper.is_result_status_question`, which is absent from the pinned Core helper;
+`helper.task_needs_more_execution` is also referenced by lifecycle code but absent
+there. Those host continuation interfaces still need implementation/integration
+before claiming the successive execution-feedback scenarios. Live providers,
+channels and restart recovery remain unverified. CI is unchanged.
