@@ -132,3 +132,80 @@ All 30 assertions pass. The focused suite now passes 38 MeTTa files, with 32 Pyt
 tests, eight import regressions and four shell boundary checks. The goal change is
 a controlled motivational input, not an observed execution outcome; this verifies
 Task 1's candidate competition requirement, not the execution-feedback MVP.
+
+
+## Outcome-driven scoring — 23 September 2026
+
+`outcome_scoring_test.metta` demonstrates the Task 3 score-change criterion with
+real Core ingestion, bounded projection, the full bridge, typed admission,
+scheduling, numeric scoring, Core dispatch, callback validation and next-cycle
+feedback consumption. It passes 59 assertions. Run from the workspace root:
+
+```sh
+python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/outcome_scoring_test.metta
+```
+
+Three matched branches start from identical host task state and motivational
+configuration: no execution between cycles, one successful execution, and the
+same success with duplicate dispatch/callback delivery. Session IDs differ by
+construction. The test asserts equal first snapshots, admitted candidates,
+scores, selected policy and post-cycle motivational state. All goal weights start
+at 0.1 except `help_user=0.4`, `responsiveness=0.3`, and `cooperate=0.2`, keeping
+scores below saturation. No goals, modulators or registry rules are changed
+between cycles within a branch.
+
+Initially, `respond` and `ask-clarification` both pass complete typed admission
+and remain in the Interactive scheduling class. Their decision-time scores are
+approximately 0.619500 and 0.410900; `respond` wins. Its exact selected command
+runs through Core and returns an observed string, recorded with the originating
+session/cycle/frame/action/ticket. The next snapshot projects `Success`, producing
+progress appraisal 0.18 and opportunity 0.12 through the existing signal path.
+
+| Measurement | No-outcome control, cycle 2 | Success, cycle 2 |
+| --- | ---: | ---: |
+| Decision-time `respond` score | 0.6973411356 | 0.6964411356 |
+| Bridge-emitted post-transition score | 0.8208626279 | 0.8208240940 |
+| Selected candidate | `respond` | `respond` |
+
+Decision-time scores are inspected through the unchanged `decisionContext` and
+`omegaclawScoreForBundle`, using the saved pre-cycle motivation and the bridge's
+retained appraisal. They are distinct from the later emitted score and mapped
+policy priority. Assertions require the score difference to exceed 0.000001.
+Success slightly lowers the decision-time score here: the registry's progress
+appraisal lowers urgency and raises persistence, with a net negative contribution
+to this execution candidate's modulator bias. Success is not defined to increase
+every candidate's score.
+
+The control includes the same ordinary decay, homeostasis and cycle count, so a
+mere first-to-second-cycle change cannot satisfy the test. Duplicate delivery
+produces exactly the single-delivery scores, motivation and self-model state.
+Changing the file after the first read verifies dispatch replay returns its
+original result. A late callback is rejected; the following cycle has `NoOutcome`
+and does not count success again. The task remains open throughout.
+
+### Test-only host catalog and scope
+
+`fixtures/outcome_scoring.py` supplies trusted test bindings: `respond` uses Core's
+`read-file`, and `ask-clarification` uses `show-current-frame`. These local readers
+stand in for Interactive execution effects; they do not send a response or ask a
+question. The fixture reuses the existing validated atomic installer and complete
+file/frame policies, including actual arguments, permissions and costs. Production
+handler mappings are unchanged. Provider and memory boundaries use the existing
+explicit offline doubles and network guard. No production functions, candidate
+rules, scorer, or Prolog source are replaced or added.
+
+Existing availability rules narrow the successful task's next cycle to `respond`;
+the test claims an outcome-driven score change, not a winner reversal or two
+post-success competitors. It establishes the bounded offline score-change item,
+not live Interactive handler support, active multi-step continuation, commitment
+completion, failure recovery or all constitutional mode transitions. The existing
+ticket-parser `float_overflow` limitation documented in `DISPATCH.md` also applies.
+
+Verification: the 41 existing focused MeTTa files passed via the common launcher,
+as did eight import regressions, six offline-service Python tests, ten host-config
+Python tests, and four shell boundary guards. The suite invocation of the new
+file encountered the documented ticket-parser `float_overflow` after 37 passing
+assertions; a standalone rerun passed all 59. This is not an uninterrupted green
+42-file run. The checkout's `scripts/run-tests.py` still invokes a shell runner,
+so the suite used a temporary shell wrapper delegating to the absolute path of
+`scripts/run-omegaclaw.py`; no runner or CI source was changed.
