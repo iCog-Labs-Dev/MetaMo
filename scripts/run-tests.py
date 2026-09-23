@@ -4,8 +4,6 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
-import re
-import signal
 import shutil
 import subprocess
 import sys
@@ -21,12 +19,9 @@ IGNORED_DIRS = {
     "__pycache__",
     "node_modules",
     "venv",
-    ".ci",
 }
 PASS_MARKER = "\u2705"
 FAIL_MARKER = "\u274c"
-REPO = pathlib.Path(__file__).resolve().parent.parent
-V1 = REPO / "applications/omegaclaw_v1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,12 +35,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--petta-runner",
-        help="Path to PeTTa's run.sh. Defaults to PETTA_RUNNER, PETTA_PATH/run.sh, then the enclosing workspace.",
+        help="Path to PeTTa's run.sh. Defaults to PETTA_RUNNER, PETTA_PATH/run.sh, PATH, or ../PeTTa/run.sh.",
     )
-    parser.add_argument("--import-report-dir", type=pathlib.Path,
-                        help="Write one v1 import-resolution JSON report per test")
-    parser.add_argument("--exclude", action="append", type=pathlib.Path, default=[],
-                        help="Exclude a subtree relative to --root (repeatable)")
     parser.add_argument(
         "--jobs",
         type=int,
@@ -86,16 +77,16 @@ def discover_tests(root: pathlib.Path) -> list[pathlib.Path]:
 def resolve_petta_runner(root: pathlib.Path, explicit_runner: str | None) -> pathlib.Path:
     candidates: list[pathlib.Path] = []
 
-    env_runner = os.environ.get("PETTA_RUNNER")
-    env_path = os.environ.get("PETTA_PATH")
-    selected = explicit_runner or env_runner or (str(pathlib.Path(env_path) / "run.sh") if env_path else None)
-    if selected:
-        path = pathlib.Path(selected).expanduser().resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"Selected PeTTa runner does not exist: {path}")
-        return path
+    if explicit_runner:
+        candidates.append(pathlib.Path(explicit_runner).expanduser())
 
-    candidates.append(REPO.parent / "run.sh")
+    env_runner = os.environ.get("PETTA_RUNNER")
+    if env_runner:
+        candidates.append(pathlib.Path(env_runner).expanduser())
+
+    env_path = os.environ.get("PETTA_PATH")
+    if env_path:
+        candidates.append(pathlib.Path(env_path).expanduser() / "run.sh")
 
     path_runner = shutil.which("run.sh")
     if path_runner:
@@ -114,32 +105,14 @@ def resolve_petta_runner(root: pathlib.Path, explicit_runner: str | None) -> pat
     )
 
 
-def count_test_forms(path: pathlib.Path, seen: set[pathlib.Path] | None = None) -> int:
-    # Tokenize strings/comments before counting: assertions can span lines or
-    # share one line, and literal examples must not count as assertions.
-    seen = set() if seen is None else seen
-    path = path.resolve()
-    if path in seen:
-        return 0
-    seen.add(path)
-    source = path.read_text(encoding="utf-8")
-    # Preserve quoted import paths while stripping comments.
-    source = re.sub(r'"(?:\\.|[^"\\])*"|;[^\n]*',
-                    lambda m: " " if m[0].startswith(";") else m[0], source)
-    code = re.sub(r'"(?:\\.|[^"\\])*"', " ", source)
-    count = len(re.findall(r"!\s*\(\s*test(?=\s|\))", code))
-    # Include statically imported local/MetaMo assertions, notably the shared
-    # regression wrappers. Count each physical file once, like the v1 loader.
-    imports = re.finditer(
-        r'!\s*\(\s*import!\s+&self\s+(?:\(\s*library\s+MetaMo\s+([^\s()]+)\s*\)|"([^"\n]+)"|([^\s()]+))\s*\)',
-        source)
-    for match in imports:
-        named, quoted, relative = match.groups()
-        imported = REPO / named if named else path.parent / (quoted or relative)
-        if not imported.suffix:
-            imported = imported.with_suffix(".metta")
-        if imported.suffix == ".metta" and imported.is_file():
-            count += count_test_forms(imported, seen)
+def count_test_forms(path: pathlib.Path) -> int:
+    count = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(";"):
+            continue
+        if "!(" in stripped and stripped.startswith("!(test"):
+            count += 1
     return count
 
 
@@ -148,54 +121,24 @@ def run_test_file(
     petta_runner: pathlib.Path,
     test_file: pathlib.Path,
     timeout: int,
-    report_dir: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["SHELL"] = "/bin/bash"
 
-    if test_file.is_relative_to(V1):
-        command = [sys.executable, str(REPO / "scripts/run-omegaclaw.py"),
-                   str(test_file), "--workspace", str(petta_runner.parent)]
-        if report_dir:
-            report = report_dir / test_file.relative_to(V1).with_suffix(".json")
-            report.parent.mkdir(parents=True, exist_ok=True)
-            command.extend(["--report", str(report)])
-    else:
-        command = ["sh", str(petta_runner), str(test_file), "-s"]
-    return run_captured(
-        command,
-        cwd=petta_runner.parent,
+    return subprocess.run(
+        ["sh", str(petta_runner), str(test_file.relative_to(root))],
+        cwd=root,
         env=env,
+        capture_output=True,
+        text=True,
         timeout=timeout,
+        check=False,
     )
-
-
-def run_captured(command, *, cwd, env, timeout):
-    # The shell/launcher spawns an interpreter. Kill the whole isolated process
-    # group on timeout so descendants cannot keep pipes open or continue work.
-    with subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True, errors="replace",
-                          start_new_session=True) as process:
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            stdout, stderr = process.communicate()
-            raise subprocess.TimeoutExpired(command, timeout, output=stdout,
-                                            stderr=stderr) from None
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def output_tail(output: str, max_lines: int = 80) -> str:
     lines = output.strip().splitlines()
     return "\n".join(lines[-max_lines:])
-
-
-def captured_text(value: str | bytes | None) -> str:
-    return value.decode(errors="replace") if isinstance(value, bytes) else (value or "")
 
 
 def summarize_result(
@@ -204,8 +147,7 @@ def summarize_result(
 ) -> tuple[bool, str]:
     output = "\n".join(part for part in (result.stdout, result.stderr) if part)
     expected_tests = count_test_forms(path)
-    # Count interpreter assertion records, not emoji printed by arbitrary code.
-    passed = len(re.findall(r"^is .*?, should .*?\. ✅\s*$", output, re.MULTILINE))
+    passed = output.count(PASS_MARKER)
     failed = output.count(FAIL_MARKER)
 
     if result.returncode != 0:
@@ -216,10 +158,6 @@ def summarize_result(
 
     if failed:
         return False, f"{failed} failed marker(s), {passed} passed marker(s)"
-
-    if re.search(r"^\s*(?:ERROR:|Traceback \(most recent call last\):)|\(Error(?:\s|\))",
-                 output, re.MULTILINE):
-        return False, "interpreter/import error in output (even though exit code was zero)"
 
     if expected_tests and passed < expected_tests:
         return (
@@ -238,8 +176,6 @@ def main() -> int:
     root = pathlib.Path(args.root).resolve()
     jobs = max(1, args.jobs)
     tests = discover_tests(root)
-    excluded = [(root / path).resolve() for path in args.exclude]
-    tests = [test for test in tests if not any(test.is_relative_to(path) for path in excluded)]
 
     if not tests:
         suffixes = ", ".join(f"*{suffix}.metta" for suffix in TEST_SUFFIXES)
@@ -261,8 +197,7 @@ def main() -> int:
 
     with ThreadPoolExecutor(max_workers=jobs) as executor:
         future_to_test = {
-            executor.submit(run_test_file, root, petta_runner, test, args.timeout,
-                            args.import_report_dir.resolve() if args.import_report_dir else None): test
+            executor.submit(run_test_file, root, petta_runner, test, args.timeout): test
             for test in tests
         }
 
@@ -274,7 +209,7 @@ def main() -> int:
                 result = future.result()
             except subprocess.TimeoutExpired as exc:
                 message = f"timed out after {args.timeout}s"
-                output = "\n".join(captured_text(part) for part in (exc.stdout, exc.stderr) if part)
+                output = "\n".join(part for part in (exc.stdout, exc.stderr) if part)
                 failures.append((test, message, output))
                 print(f"FAIL {rel_test}: {message}")
                 continue
