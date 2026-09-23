@@ -59,8 +59,13 @@
       ($isNewMsg   (frameRuntimeNewMessage $bundle))
       ($hasMsg     (hasTextContent $msg))
       ($hasResults (hasTextContent $results))
-      ($freshResults (and $hasResults (!= $results (get-state &last-results-seen))))
-      ($hasError   (bundle-runtime-has-error $bundle))
+      ($feedback (frameRuntimeOperationFeedback $bundle))
+      ($legacy (== $feedback LegacyFeedback))
+      ($freshResults (if $legacy
+                         (and $hasResults (!= $results (get-state &last-results-seen)))
+                         (let (OperationFeedback $status $_) $feedback (== $status Success))))
+      ($hasError (if $legacy (bundle-runtime-has-error $bundle)
+                     (let (OperationFeedback $status $_) $feedback (== $status Failure))))
       ($resultsLen (eval (string_length (eval (string-safe $results)))))
       ($prov       (provider))
       ($confirmScore (if $isNewMsg
@@ -68,10 +73,13 @@
                          0.0))
       ($executionFollowup (and $isNewMsg (> $confirmScore 0.75)))
 
-      ;; Failure streak: updated based on error presence.
-      ($_ (if $hasError
-              (change-state! &failure-streak (+ (get-state &failure-streak) 1))
-              (change-state! &failure-streak 0)))
+      ;; Concrete streaks advance once at publication, never on snapshot rereads.
+      ($_ (if $legacy
+              (if $hasError
+                  (change-state! &failure-streak (+ (get-state &failure-streak) 1))
+                  (change-state! &failure-streak 0))
+              (let (OperationFeedback $_ $streak) $feedback
+                 (change-state! &failure-streak $streak))))
       ($failureStreak (get-state &failure-streak))
       ($repeatThresh  (signalThreshold failure-streak-repeat 1))
 

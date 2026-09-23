@@ -8,6 +8,11 @@
 !(bind! &selected-operation-decision (new-state ()))
 !(bind! &last-operation-outcome (new-state ()))
 
+!(bind! &applied-operation-decision (new-state ()))
+!(bind! &operation-failure-streak (new-state 0))
+
+(= (operationFeedbackEnabled) (!= (get-state &operation-provider) ()))
+
 ;; Session-only correlation, separate from the versioned durable wire contract.
 ;; Pure motivational composition never needs a host identity provider.
 (= (initOperationSession)
@@ -17,7 +22,41 @@
              (OperationContext (sread (py-call (host_operations.new_session))) 0 ()))
           (change-state! &selected-host-operation ())
           (change-state! &selected-operation-decision ())
-          (change-state! &last-operation-outcome ()) True)))
+          (change-state! &last-operation-outcome ())
+          (change-state! &applied-operation-decision ())
+          (change-state! &operation-failure-streak 0)
+          (change-state! &operation-feedback (OperationFeedback NoOutcome 0))
+          (change-state! &task-execution-observed "") True)))
+
+;; Consume the preceding serialized cycle before publishing another snapshot.
+;; A different frame/session/cycle cannot receive this feedback. Keeping only
+;; the applied decision is sufficient for the single selected invocation path.
+(= (applyOperationOutcome $frame)
+   (if (not (operationFeedbackEnabled))
+       (change-state! &operation-feedback LegacyFeedback)
+       (let* (
+          ($_ (change-state! &operation-feedback
+                 (OperationFeedback NoOutcome (get-state &operation-failure-streak))))
+          ($outcome (get-state &last-operation-outcome)))
+          (case $outcome (
+             ((OperationOutcome
+                 (OperationDecision (OperationContext $session $cycle $origin) $action $command $ticket)
+                 $_attempt $status $_result)
+              (let $decision (OperationDecision
+                      (OperationContext $session $cycle $origin) $action $command $ticket)
+                 (if (and (== $origin $frame)
+                          (and (== (OperationContext $session $cycle $origin)
+                                   (get-state &operation-context))
+                               (!= $decision (get-state &applied-operation-decision))))
+                     (progn
+                        (change-state! &applied-operation-decision $decision)
+                        (change-state! &operation-failure-streak
+                           (if (== $status Failure) (+ (get-state &operation-failure-streak) 1)
+                               (if (== $status Success) 0 (get-state &operation-failure-streak))))
+                        (change-state! &operation-feedback
+                           (OperationFeedback $status (get-state &operation-failure-streak))))
+                     False)))
+             ($_ False))))))
 
 (= (beginOperationCycle $bundle)
    (if (== (get-state &operation-provider) ()) False

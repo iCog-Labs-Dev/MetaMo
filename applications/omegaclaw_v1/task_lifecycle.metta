@@ -99,6 +99,11 @@
    )))
 
 (= (refreshTaskExecutionObserved)
+   ;; Concrete dispatch uses typed feedback, never a formatted command result.
+   (if (eval (operationFeedbackEnabled)) True
+       (refreshLegacyTaskExecutionObserved)))
+
+(= (refreshLegacyTaskExecutionObserved)
    ;; Host-side bookkeeping runs before publication, so it must not consult
    ;; the previous cycle's bounded (and possibly truncated) bundle.
       (if (get-state &new-msg-flag)
@@ -221,6 +226,7 @@
    (let* (
       ($_ (refreshTaskExecutionObserved))
       ($_ (refreshTaskCommitment))
+      ($_ (eval (applyOperationOutcome (get-state &cfv2-current-frame-id))))
       ($bundle (frameStateForMetaMo))
       ($_ (eval (beginOperationCycle $bundle)))
       ;; The decision module providing this setter loads after lifecycle.

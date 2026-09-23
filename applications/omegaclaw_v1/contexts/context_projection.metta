@@ -6,6 +6,9 @@
 ;; Callers import context_relations alongside this module. Keeping the
 ;; dependency explicit at the application boundary avoids duplicate relation
 ;; clauses when the façade imports every context submodule.
+;; Only bounded status/streak enters the snapshot; raw observations stay host-side.
+!(bind! &operation-feedback (new-state LegacyFeedback))
+
 (= (frameStateGoalSummary)
    (let $goalNamespace (get-state &cfv2-current-goal-namespace)
       (if (== $goalNamespace ())
@@ -101,6 +104,7 @@
       ($index (frameStateIndexProjection))
       ($runtime
          (FrameStateRuntime
+            (operation-feedback (get-state &operation-feedback))
             (new-message (get-state &new-msg-flag))
             (message-present (not (== (get-state &prevmsg) "")))
             (message-summary

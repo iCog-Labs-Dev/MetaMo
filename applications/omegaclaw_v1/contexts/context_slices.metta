@@ -113,27 +113,14 @@
          (certified-method $method))))
 
 (= (frameStateSliceRuntime $runtime)
-   (let (FrameStateRuntime
-            (new-message $newMessage)
-            (message-present $messagePresent)
-            (message-summary $messageSummary)
-            (task-open $taskOpen)
-            (task-execution-observed $observed)
-            (active-task-summary $activeTask)
-            (last-results-summary $lastResults)
-            (error $error)
-            (wake-loops $wakeLoops)
-            (next-wake-at $nextWake)
-            (budget-state $budgetState))
-         $runtime
-         (FrameSliceRuntime
-         (new-message $newMessage)
-         (message-present $messagePresent)
-         (last-results-summary $lastResults)
-         (error $error)
-         (wake-loops $wakeLoops)
-         (next-wake-at $nextWake)
-         (budget-state $budgetState))))
+   (FrameSliceRuntime
+      (new-message (frameRuntimeValue $runtime new-message False))
+      (message-present (frameRuntimeValue $runtime message-present False))
+      (last-results-summary (frameRuntimeValue $runtime last-results-summary ""))
+      (error (frameRuntimeValue $runtime error ""))
+      (wake-loops (frameRuntimeValue $runtime wake-loops 0))
+      (next-wake-at (frameRuntimeValue $runtime next-wake-at 0))
+      (budget-state (frameRuntimeValue $runtime budget-state ()))))
 
 (= (frameStateForSlice Minimal
       (FrameStateBundle (root $root) (current $current) $_ $_ $_))

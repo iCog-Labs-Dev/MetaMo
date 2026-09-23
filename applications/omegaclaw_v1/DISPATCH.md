@@ -178,12 +178,37 @@ Outcome context comes from the retained decision, never the current frame.
 Mismatched commands/tickets remain blocked and do not overwrite the selected
 action's observation. Repeated delivery retains the same correlation identity.
 
-This is one in-memory latest-observation slot, not a durable ledger or a callback
-queue. Session reset clears it. Consuming outcomes once before the next snapshot,
-updating motivation, callback deduplication, and completion adjudication remain
-separate Task 3 work. The existing Core loop and Prolog sources are unchanged.
+Before each new snapshot, `prepareTaskStateForMetaMo` consumes the preceding
+cycle's observation only when session, cycle, and current frame match. It retains
+an applied-decision marker and projects `(OperationFeedback STATUS FAILURE-STREAK)`
+through the runtime's `operation-feedback` field. A cycle without a new matching
+observation publishes `NoOutcome`. Frame changes exclude the old observation;
+returning to that frame later does not apply stale feedback.
+
+Concrete-dispatch signals use this typed projection: `Success` produces progress,
+`Failure` advances the failure streak, and `Blocked`/`Unobserved` produce neither
+progress nor an observed-failure signal. Success resets the streak; other statuses
+preserve it. Re-reading a snapshot cannot increment the streak. Formatted results
+and errors remain display data and do not populate legacy execution bookkeeping.
+Offline bundles without concrete dispatch retain their existing text-based path.
+
+Operation success does not complete a task. Only the existing trusted host
+commitment adjudication/event path can close it, and that state is mirrored before
+the next snapshot. New messages do not discard matching operation feedback.
+
+This remains one in-memory latest-observation slot for the serialized selected
+invocation, not a durable ledger or asynchronous callback queue. Session reset
+clears its feedback and consumption marker. General callback ingestion and active
+multi-step continuation remain separate Task 3 work. No Core or Prolog source
+changes are required.
 
 ## Verification and limits
+
+PeTTa's existing text parser can intermittently raise `float_overflow` when a
+Core ticket UUID begins with a numeric exponent-like prefix (for example,
+`18e99999-...`). This affects the existing ticket text round-trip, independently
+of feedback processing; an interrupted run is not a failed feedback assertion.
+
 
 Run from the workspace root:
 

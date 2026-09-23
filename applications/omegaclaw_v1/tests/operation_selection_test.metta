@@ -27,6 +27,10 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/dispatch))
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_dispatch_config.py))
 !(import! &self fixtures/host_config_fixture.py)
+!(import_prolog_functions_from_file
+   (library MetaMo applications/omegaclaw_v1/tests/fixtures/commitments.pl)
+   (commitmentFixtureReset commitmentFixtureOpen commitmentFixtureOutcome commitmentFixtureApply))
+!(commitmentFixtureReset)
 !(bind! &prevmsg (new-state ""))
 !(bind! &lastresults (new-state ""))
 !(bind! &error (new-state ""))
@@ -73,6 +77,9 @@
 !(test (get-state &operation-context)
    (let (OperationContext $session $_ $_) (get-state &first-context)
       (OperationContext $session 2 "configured-frame")))
+!(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Blocked 0))
+!(test (hasSignal progress-made) False)
+!(test (hasErrors) False)
 !(bind! &selected-decision (new-state (get-state &selected-operation-decision)))
 !(bind! &prior-outcome (new-state (get-state &last-operation-outcome)))
 !(test (map-atom (get-state &operation-admitted-actions) $a (actionId $a)) (search-knowledge))
@@ -95,12 +102,23 @@
    (DispatchResult Executed Feasible (cfv2-current-frame)))
 !(test (get-state &last-operation-outcome) (get-state &first-outcome))
 
+;; Feedback is visible in the next published snapshot and does not complete
+;; the task. Successful inspection makes a response eligible, but no response
+;; handler is configured, so this cycle explicitly selects no action.
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Success 0))
+!(refreshSignals (activeFrameBundle))
+!(test (hasSignal progress-made) True)
+!(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
+
 ;; Current host frame can move after selection; the blocked observation still
 ;; belongs to the original frame/cycle, never to the new current frame.
 !(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
 !(test (coreLoopDispatchCommand (get-state &chosen-ticket) (selectedHostCommand))
    (DispatchResult Blocked UnselectedOperation none))
 !(test (get-state &last-operation-outcome) (get-state &first-outcome))
+!(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback NoOutcome 0))
+!(test (hasSignal progress-made) False)
 !(bind! &origin-decision (new-state (get-state &selected-operation-decision)))
 !(change-state! &cfv2-current-frame-id "different-frame")
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
@@ -171,6 +189,10 @@
    (DispatchResult Blocked MissingDecision none))
 !(test (get-state &hook-probe-count) 1)
 
+;; Open an authoritative commitment; operation success must leave it open.
+!(test (commitmentFixtureOpen "feedback-task" "configured-frame" "Read the file")
+   (CommitmentOpened "feedback-task"))
+
 ;; Exercise the other supported handler with its real candidate/scorer and
 ;; exact quoted filename. Availability is covered by the full bridge above.
 !(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
@@ -198,7 +220,11 @@
 !(test (get-state &last-operation-outcome) (get-state &file-outcome))
 
 ;; A failure after invocation began is uncertain, not an invented success.
+;; A new message must not discard the preceding same-frame observation.
+!(change-state! &new-msg-flag True)
 !(bind! &uncertain-bundle (new-state (prepareTaskStateForMetaMo)))
+!(test (frameRuntimeOperationFeedback (get-state &uncertain-bundle)) (OperationFeedback Success 0))
+!(test (frameRuntimeTaskOpen (get-state &uncertain-bundle)) True)
 !(retainSelectedOperation execute-skill (captureCandidateOperations (get-state &uncertain-bundle)))
 !(test (py-call (host_config_fixture.remove_file)) 1)
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
@@ -208,12 +234,17 @@
       (attempted-command (selectedHostCommand)) Unobserved
       (DispatchResult Unobserved ExecutionUncertain none)))
 !(test (py-call (host_config_fixture.replace_file_content)) 1)
+!(change-state! &new-msg-flag False)
 
 ;; An explicitly observed handler error is Failure. The handler is a test
 ;; double; the policy gate, dispatcher, and correlation path remain real.
 (= (outcome-test-failure) (quote (Error test-handler failed)))
 !(test (py-call (host_config_fixture.install_failure_handler)) 1)
 !(bind! &failure-bundle (new-state (prepareTaskStateForMetaMo)))
+!(test (frameRuntimeOperationFeedback (get-state &failure-bundle)) (OperationFeedback Unobserved 0))
+!(refreshSignals (get-state &failure-bundle))
+!(test (hasSignal progress-made) False)
+!(test (hasErrors) False)
 !(retainSelectedOperation execute-skill (captureCandidateOperations (get-state &failure-bundle)))
 ;; Compare as data so expected Error records are not interpreter diagnostics.
 !(test (== (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
@@ -228,11 +259,65 @@
 ;; Multiple exact argument bindings cannot collapse into one candidate score.
 !(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "ambiguous"))))
 !(bind! &bundle (new-state (prepareTaskStateForMetaMo)))
+!(test (frameRuntimeOperationFeedback (get-state &bundle)) (OperationFeedback Failure 1))
+!(refreshSignals (get-state &bundle))
+!(test (hasSignal failure) True)
+!(test (hasSignal progress-made) False)
+;; Rereading the same snapshot must not increment its failure streak.
+!(refreshSignals (get-state &bundle))
+!(test (get-state &failure-streak) 1)
+!(test (frameRuntimeTaskOpen (get-state &bundle)) True)
 !(bind! &rows (new-state (captureCandidateOperations (get-state &bundle))))
 !(test (hostOperationGate (get-state &bundle) execute-skill (get-state &rows))
    (GateDecision Rejected AmbiguousOperation))
 !(test (hostOperationGate (get-state &bundle) search-knowledge (get-state &rows))
    (GateDecision Admitted Feasible))
+;; A distinct invocation returning identical error text still counts once.
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
+!(test (py-call (host_config_fixture.install_failure_handler)) 1)
+!(bind! &repeat-failure-bundle (new-state (prepareTaskStateForMetaMo)))
+!(test (frameRuntimeOperationFeedback (get-state &repeat-failure-bundle)) (OperationFeedback NoOutcome 1))
+!(retainSelectedOperation execute-skill (captureCandidateOperations (get-state &repeat-failure-bundle)))
+!(test (== (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error test-handler failed))) True)
+!(bind! &second-failure (new-state (prepareTaskStateForMetaMo)))
+!(test (frameRuntimeOperationFeedback (get-state &second-failure)) (OperationFeedback Failure 2))
+!(refreshSignals (get-state &second-failure))
+!(test (hasSignal repeated-failure) True)
+!(test (frameRuntimeTaskOpen (get-state &second-failure)) True)
+;; Stale formatted output cannot manufacture progress or another failure.
+!(change-state! &lastresults "Task completed successfully")
+!(change-state! &error "old formatted error")
+!(bind! &duplicate-bundle (new-state (prepareTaskStateForMetaMo)))
+!(test (frameRuntimeOperationFeedback (get-state &duplicate-bundle)) (OperationFeedback NoOutcome 2))
+!(refreshSignals (get-state &duplicate-bundle))
+!(test (hasResults) False)
+!(test (hasErrors) False)
+!(test (frameRuntimeExecutionObserved (get-state &duplicate-bundle)) "")
+!(test (frameRuntimeTaskOpen (get-state &duplicate-bundle)) True)
+
+;; An observation for a frame that is no longer current is not applied, even
+;; if the host later returns to that frame. Its original record is retained.
+!(retainSelectedOperation execute-skill (captureCandidateOperations (get-state &duplicate-bundle)))
+!(test (== (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error test-handler failed))) True)
+!(bind! &old-session-outcome (new-state (get-state &last-operation-outcome)))
+!(change-state! &cfv2-current-frame-id "other-frame")
+!(test (frameRuntimeOperationFeedback (prepareTaskStateForMetaMo)) (OperationFeedback NoOutcome 2))
+!(change-state! &cfv2-current-frame-id "configured-frame")
+!(test (frameRuntimeOperationFeedback (prepareTaskStateForMetaMo)) (OperationFeedback NoOutcome 2))
+!(test (== (get-state &last-operation-outcome) (get-state &old-session-outcome)) True)
+
+;; Only explicit host adjudication closes the commitment in the next snapshot.
+!(test (commitmentFixtureApply
+   (quote (CommitmentEvent "premature" "feedback-task" 0 (Completed "unconfirmed"))))
+   (CommitmentRejected CompletionNotConfirmed))
+!(commitmentFixtureOutcome "confirmed" "feedback-task" 0 Completed)
+!(test (commitmentFixtureApply
+   (quote (CommitmentEvent "finish" "feedback-task" 0 (Completed "confirmed"))))
+   (CommitmentApplied "finish" "feedback-task" Completed 1))
+!(test (frameRuntimeTaskOpen (prepareTaskStateForMetaMo)) False)
+
 ;; A fresh host session rotates identity and clears correlation state.
 !(test (initOperationSession) True)
 !(test (let (OperationContext $old $_ $_) (get-state &first-context)
@@ -243,4 +328,8 @@
 !(test (coreLoopDispatchCommand (get-state &chosen-ticket) (quote (show-current-frame)))
    (DispatchResult Blocked MissingDecision none))
 !(test (get-state &last-operation-outcome) ())
+;; Even a retained observation reintroduced after session reset is excluded.
+!(change-state! &last-operation-outcome (get-state &old-session-outcome))
+!(test (frameRuntimeOperationFeedback (prepareTaskStateForMetaMo)) (OperationFeedback NoOutcome 0))
+!(test (get-state &applied-operation-decision) ())
 !(test (py-call (host_config_fixture.cleanup)) 1)
