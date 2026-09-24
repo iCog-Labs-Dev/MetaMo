@@ -1,5 +1,84 @@
 # Offline ContextFrames service boundaries
 
+## Shared full-loop harness
+
+From the MetaMo repository root:
+
+```sh
+python3 scripts/run-omegaclaw-offline.py --output /tmp/omegaclaw-offline
+```
+
+The default runs `scoring` (59 assertions) and `modes` (180 assertions), each in
+an isolated process through `scripts/run-omegaclaw.py`. Select one with
+`--scenario scoring` or `--scenario modes`; both options may be supplied.
+`--workspace /absolute/path/to/PeTTa-workspace` selects the runtime independently
+of the caller's working directory. `--timeout` bounds each scenario (300 seconds
+by default). A timeout terminates the launcher and its child interpreter.
+
+Use the dependency layout and source overlays in [DEPENDENCIES.md](../DEPENDENCIES.md),
+including the common Python launcher and existing `scripts/petta-imports.pl`
+resolver. Those local launcher overlays are currently untracked dependencies;
+copy/include them when reproducing this checkout. No live provider keys, channels
+or memory servers are needed. The Python offline guard rejects network access
+and optional service imports; final completion markers require those imports to
+remain absent.
+
+`fixtures/full_loop.metta` centralizes provider/memory doubles, real Core and
+MetaMo imports, runtime state allocation, session initialization, user ingestion,
+and cycle/dispatch tracing. It delegates ingestion to Core, cycles to
+`motivationContextBlock`, and execution to `coreLoopDispatchCommand`. The scorer,
+mode evaluator, projection, policy gates and feedback validation are unchanged.
+Scenario-specific binding configuration, initial motivational values and assertions
+remain in the existing tests. `scoring` preserves its existing String-ID fixture;
+`modes` retains Core's native ID and full frame-completion path.
+
+| Boundary | Implementation |
+| --- | --- |
+| Semantic/provider and relation/memory services | Offline doubles; exact controlled semantic responses and empty memory. |
+| Ingestion, frames, projection, appraisal, scoring, mode evaluation | Real Core/MetaMo code. |
+| Policy admission, ticket capture/revalidation, dispatch, callback ingestion | Real Core/adapter code. |
+| Successful execution | Existing Core readers against temporary fixture files. |
+| Controlled failure | Test-only handler returning an error with an invocation counter, behind the real dispatch gate. |
+
+The harness prints a unique artifact directory. It contains full stdout/stderr
+logs and resolved-import reports per scenario, plus `summary.json` with commands,
+exit codes, assertion counts, timings, source revisions and SHA-256 fingerprints
+of harness/runtime sources and resolved imports. No logs are overwritten by a
+subsequent invocation. With no `--output`, the run directory is created under the
+system temporary directory. Keep the printed directory for later inspection.
+
+`FullLoopCycleBegin` identifies the cycle attempt; `FullLoopCycle` records the
+actual snapshot, mode evidence, state before/after, admitted candidates, retained
+decision/score, selected operation and policy. `FullLoopDispatch` records the
+attempted command/ticket, dispatch result and published outcome. Existing
+`OutcomeScoringTrace` records retain the control-versus-observation score details.
+Printing these records does not recompute selection, recapture tickets or apply
+feedback. Missing or multiple bridge results remain visible to scenario checks.
+
+The entry point requires the exact assertion count, the scenario completion
+marker, a valid import report, exit code zero, and no assertion/interpreter error.
+It writes a failure report and exits nonzero on interruption. It never retries a
+failed scenario automatically. The known ticket UUID parser `float_overflow` is
+still a runtime limitation; this harness exposes it, and does not claim to fix it.
+
+This implements Task 5's shared full-loop harness item. It is a curated scenario
+entry point, not the complete Task 5 regression gate: generic runner hardening,
+additional coverage and the remaining full-regression checklist stay separate.
+Verification on 24 September 2026: the final combined command passed all 239
+integration assertions (59 scoring, 180 modes). Four harness tests covering
+verdicts, subprocess output and timeout/child cleanup, eight import-resolution
+checks, six offline-service tests and four shell guards passed. Earlier invocations
+retained known UUID-parser failures as nonzero results. Invocation from outside
+the repository resolved the same sources and correctly reported a scoring parser
+interruption while completing the mode scenario.
+
+Test the entry point itself with:
+
+```sh
+python3 applications/omegaclaw_v1/tests/offline_harness_test.py
+```
+
+
 Run from the PeTTa workspace root:
 
 ```bash
