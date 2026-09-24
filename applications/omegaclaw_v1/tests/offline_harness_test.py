@@ -89,6 +89,57 @@ class OfflineHarnessTests(unittest.TestCase):
             time.sleep(1)
             self.assertFalse(marker.exists())
 
+    def test_failed_assertion_retains_real_cycle_and_dispatch_traces(self):
+        # Execute the real offline path, then deliberately fail an assertion.
+        # The interpreter stops before completion: earlier traces must survive.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            entry = root / 'failed_trace_test.metta'
+            fixture = harness.TESTS / 'fixtures/boundary_loop.metta'
+            entry.write_text(
+                f'!(import! &self {json.dumps(str(fixture))})\n'
+                '!(test (boundaryStart) 1)\n'
+                '!(test (boundaryProvision "allowed") 1)\n'
+                '!(test (boundaryCycle failure-trace) 1)\n'
+                '!(test (fullLoopDispatch failure-trace (coreLoopDispatchBegin)\n'
+                '   (selectedHostCommand))\n'
+                '   (DispatchResult Executed Feasible "observed local file content"))\n'
+                '!(test (boundaryCallback failure-trace (get-state &last-operation-outcome))\n'
+                '   OutcomeDuplicate)\n'
+                '!(py-call (host_config_fixture.cleanup))\n'
+                '!(test 1 2)\n'
+                '!(fullLoopFinish failure-trace)\n')
+            with patch.object(harness, 'SCENARIOS', {'failure-trace': (str(entry), 6)}), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                code = harness.main(['--output', str(root / 'reports'), '--timeout', '30'])
+
+            self.assertEqual(code, 1)
+            report = json.loads(next((root / 'reports').glob('*/summary.json')).read_text())
+            self.assertFalse(report['passed'])
+            self.assertEqual(len(report['results']), 1)
+            result = report['results'][0]
+            output = Path(result['stdout']).read_text()
+            stderr = Path(result['stderr']).read_text()
+            self.assertFalse(result['passed'])
+            self.assertEqual(result['returncode'], 1, output + stderr)
+            self.assertFalse(result['timed_out'])
+            self.assertEqual(result['assertions'], 5)
+            self.assertIn('failed assertion', result['reasons'])
+            self.assertIn('missing scenario completion marker', result['reasons'])
+            for marker in ('FullLoopCycleBegin', 'FullLoopCycle',
+                           'FullLoopDispatch', 'FullLoopCallback'):
+                self.assertIn(f'({marker} failure-trace ', output)
+            self.assertIn('(snapshot (FrameStateBundle ', output)
+            self.assertIn('(operation (OperationDecision ', output)
+            self.assertIn('(outcome (OperationOutcome ', output)
+            self.assertIn('is 1, should 2. ❌', output)
+            self.assertNotIn('(FullLoopFinished failure-trace)', output)
+            self.assertTrue(Path(result['stderr']).is_file())
+            self.assertTrue(json.loads(Path(result['imports']).read_text()))
+            self.assertIn(str(fixture), result['imported_source_sha256'])
+            self.assertEqual(result['imported_source_sha256'][str(fixture)],
+                             harness.source_hash(fixture))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,13 @@
 # Offline ContextFrames service boundaries
 
+The final Task 5 local regression run passed all 18 commands without retries:
+46 MeTTa files, 377 full-loop assertions, 64 Python tests, Core dispatch,
+contract/commitment suites, four shell guards and the startup import audit.
+See [the dated regression report](REGRESSION_RESULTS_2026-09-24.md) for exact
+commands, results, source revisions, artifact paths and scope. Task 5's local
+offline checklist is complete; live, durable recovery and CI acceptance remain
+separate.
+
 ## Shared full-loop harness
 
 From the MetaMo repository root:
@@ -112,6 +120,36 @@ Test the entry point itself with:
 ```sh
 python3 applications/omegaclaw_v1/tests/offline_harness_test.py
 ```
+
+### Outcome/effect assertions and failed-run traces — 24 September 2026
+
+The third Task 5 checklist item is verified by the following assertions:
+
+| Obligation | Executable evidence |
+| --- | --- |
+| Outcome-driven score change | `outcome_scoring_test.metta` compares `scoringRespondScore` in matched no-outcome and observed-success branches, requiring a difference greater than `0.000001`. Both use the real decision context/scorer. This demonstrates a score change, not a winner reversal. |
+| No duplicate motivational update | The same test compares the duplicate-delivery branch's decision, score, full motivational state and self-model with single delivery; success count remains one and later feedback is `NoOutcome`. |
+| No unauthorized execution | `full_loop_invalidation_test.metta` asserts `&boundary-effects` stays zero after stale/revoked tickets and permission, budget and missing-binding denials. |
+| No duplicate execution | After a fresh authorized selection, that counter becomes one and remains one after replay of the same ticket. |
+| Failure preserves per-cycle evidence | `OfflineHarnessTests.test_failed_assertion_retains_real_cycle_and_dispatch_traces` runs real ingestion, snapshot/scoring, Core read dispatch and duplicate callback ingestion, then intentionally fails `!(test 1 2)`. It checks a nonzero harness result, failed `summary.json`, assertion-failure and missing-completion reasons, five preceding successful assertions, and saved `FullLoopCycleBegin`, `FullLoopCycle`, `FullLoopDispatch` and `FullLoopCallback` records. |
+| Evidence is inspectable after process exit | The regression reads the saved stdout/stderr and import report, checks snapshot/decision/outcome fields remain present, and verifies the retained fixture source fingerprint. Existing timeout tests separately cover partial logs and descendant cleanup. |
+
+The deliberate failure is a temporary scenario created by the Python test,
+not an entry in the normal four-scenario manifest. Its interpreter exits before
+the completion marker; the harness preserves the partial run rather than
+reporting success or retrying. Production scoring and dispatch are unchanged.
+
+Verified from the workspace root:
+
+```sh
+python3 MetaMo/applications/omegaclaw_v1/tests/offline_harness_test.py
+python3 MetaMo/scripts/run-omegaclaw-offline.py --output /tmp/omegaclaw-outcome-acceptance
+```
+
+All **six harness tests** and **377 scenario assertions** passed. This closes
+the outcome/effect/trace item within the bounded offline session-only scope;
+live execution, durable recovery and the separate full-regression checklist
+remain independently tracked.
 
 
 Run from the PeTTa workspace root:
