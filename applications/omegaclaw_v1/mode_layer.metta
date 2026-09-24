@@ -11,7 +11,7 @@
 !(bind! &mode-transition-state (new-state (ModeTransitionState Engaged 0 none 0 0)))
 
 (= (constitutionalModeSet)
-   (cons Engaged (cons Threat (cons Rumination (cons Sleep ())))))
+   (Engaged Threat Rumination Sleep))
 
 (= (constitutionalModeDefault)
    (let ($mode) (collapse (match &self (ConstitutionalModeDefault $value) $value))
