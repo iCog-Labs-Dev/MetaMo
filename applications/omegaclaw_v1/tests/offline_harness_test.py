@@ -1,10 +1,13 @@
 """Checks the curated harness verdicts and real subprocess/log handling."""
 import importlib.util
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('offline_harness', REPO / 'scripts/run-omegaclaw-offline.py')
@@ -14,6 +17,22 @@ PASS = 'is 1, should 1. ✅\n'
 
 
 class OfflineHarnessTests(unittest.TestCase):
+    def test_default_runs_all_scenarios_and_retains_failure(self):
+        def scenario(name, *args):
+            return {'scenario': name, 'passed': name != 'callbacks',
+                    'assertions': 0, 'expected_assertions': 1,
+                    'reasons': ['missing callback coverage'] if name == 'callbacks' else []}
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(harness, 'run_scenario', side_effect=scenario) as run, \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(harness.main(['--output', temp]), 1)
+            self.assertEqual([call.args[0] for call in run.call_args_list],
+                             ['scoring', 'modes', 'callbacks', 'invalidation'])
+            report = json.loads(next(Path(temp).glob('*/summary.json')).read_text())
+            self.assertFalse(report['passed'])
+            self.assertEqual(len(report['results']), 4)
+            self.assertEqual(report['results'][2]['reasons'], ['missing callback coverage'])
+
     def test_complete_assertion_contract(self):
         good = PASS * 2 + '(FullLoopFinished scoring)\n'
         self.assertTrue(harness.verdict('scoring', 2, 0, good, '', False)['passed'])

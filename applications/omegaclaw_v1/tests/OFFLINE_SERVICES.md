@@ -8,9 +8,9 @@ From the MetaMo repository root:
 python3 scripts/run-omegaclaw-offline.py --output /tmp/omegaclaw-offline
 ```
 
-The default runs `scoring` (59 assertions) and `modes` (180 assertions), each in
-an isolated process through `scripts/run-omegaclaw.py`. Select one with
-`--scenario scoring` or `--scenario modes`; both options may be supplied.
+The default runs all four scenarios below, each in an isolated process through
+`scripts/run-omegaclaw.py`. Select a subset with repeated `--scenario` options
+(`scoring`, `modes`, `callbacks`, or `invalidation`).
 `--workspace /absolute/path/to/PeTTa-workspace` selects the runtime independently
 of the caller's working directory. `--timeout` bounds each scenario (300 seconds
 by default). A timeout terminates the launcher and its child interpreter.
@@ -64,16 +64,48 @@ ticket IDs are strings before serialization and ledger insertion. See
 [DISPATCH.md](../DISPATCH.md#verification-and-limits). Older Core overlays still
 have the failure; the harness itself does not retry or suppress it.
 
-This implements Task 5's shared full-loop harness item. It is a curated scenario
-entry point, not the complete Task 5 regression gate: generic runner hardening,
-additional coverage and the remaining full-regression checklist stay separate.
-Verification on 24 September 2026: the final combined command passed all 239
+This implements Task 5's shared harness and scenario-coverage items. The original
+two-scenario verification on 24 September 2026 passed all 239
 integration assertions (59 scoring, 180 modes). Four harness tests covering
 verdicts, subprocess output and timeout/child cleanup, eight import-resolution
 checks, six offline-service tests and four shell guards passed. Earlier invocations
 retained known UUID-parser failures as nonzero results. Invocation from outside
 the repository resolved the same sources and correctly reported a scoring parser
 interruption while completing the mode scenario.
+
+### Complete session-only scenario coverage — 24 September 2026
+
+| Requirement | Scenario and acceptance evidence |
+| --- | --- |
+| Success and motivational feedback | `scoring` (59 assertions): real Core read, observed success, next-cycle score change against a matched no-outcome control; operation success leaves the task open. |
+| Failure and recovery | `modes` (180 assertions): counted controlled handler failure enters Rumination; blocked work does not resolve recovery; an observed successful read clears recovery and restores Engaged. |
+| Required modes | `modes`: Sleep → Engaged, Engaged → Rumination, Rumination → Engaged, Engaged → Threat, Threat → Engaged, Engaged → Sleep, with retained trigger/timing evidence and explicit host completion. Threat cannot override denial; idle Sleep never invokes task work. |
+| Duplicate delivery | `scoring` and `callbacks`: repeated dispatch returns the original result after file contents change; duplicate callbacks preserve the observation, motivation and single-success count; later cycles produce NoOutcome. |
+| Mismatched callbacks | `callbacks` (46 assertions): alter a real dispatched outcome's session, cycle, frame, action, command, ticket, attempted command, status or result. Check typed rejection and unchanged observation/consumption state, recovery, motivation and self-model. Malformed, late and prior-session callbacks are also rejected. The next cycle consumes the valid observation once. |
+| Stale/revoked decisions | `invalidation` (92 assertions): host state changes and returns to its original value; binding revocation and policy denial occur after selection. Old tickets are blocked even after the exact binding is restored. A new cycle must select a fresh ticket. |
+| Denied/no-action | `invalidation`: permission denial, exhausted command budget, and absent bindings produce Rejected/none with zero priority, no admitted actions and no selected command. Dispatch returns MissingDecision; the next cycle retains Blocked feedback without success/failure fabrication or task closure. |
+| No unauthorized or duplicate effects | `invalidation`: a controlled handler counter stays zero throughout rejected attempts. Fresh authorized selection invokes it once; ticket replay leaves the counter at one. Its observed failure appears in the next snapshot and activates Rumination. |
+
+The new scenarios share `fixtures/boundary_loop.metta`, retain Core's native
+symbolic frame ID, and open a host-owned commitment after real ingestion. They
+use the existing trusted test bindings for an Interactive candidate; these are
+execution-effect doubles, not production response handlers. Callback mutations
+derive from an actual Core read outcome; no selected decision, snapshot, scorer,
+gate, or mode transition is substituted. `FullLoopCallback` records every tested
+callback and rejection alongside the existing cycle and dispatch traces.
+
+One unretried default invocation passed **377 assertions across all four
+scenarios**. The focused suite passed all **46 MeTTa files**. Supporting checks
+passed: 15 runner-hardening tests, five harness tests, eight import regressions,
+the provisioning/identity/service/reasoner/helper Python tests, Core dispatch and
+shared contract/commitment tests, and all four shell guards. Logs, source hashes
+and import reports are retained by the harness. The harness test also verifies
+that a failed callback scenario makes the aggregate run fail while preserving
+all four scenario results.
+
+This closes the named offline coverage item, not live-provider/channel acceptance,
+durable restart recovery, or deferred CI/reasoner integration. The other Task 5
+checklist items remain separately tracked.
 
 Test the entry point itself with:
 
