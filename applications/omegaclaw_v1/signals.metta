@@ -108,8 +108,10 @@
               (addSignal progress-made (signalStrength progress-made 0.40))
               _))
 
-      ;; 6. Stalled progress — new message, no results, no error
-      ($_ (if (and $isNewMsg (and (not $freshResults) (not $hasError)))
+      ;; 6. Unresolved host recovery keeps the recovery trigger active without
+      ;; replaying a failure observation or incrementing the failure count.
+      ;; A fresh task with no results is not evidence of stalled execution.
+      ($_ (if (and (== (frameRuntimeRecovery $bundle) RecoveryPending) (not $hasError))
               (addSignal stalled-progress (signalStrength stalled-progress 0.35))
               _))
 

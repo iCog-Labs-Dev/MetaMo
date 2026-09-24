@@ -1,8 +1,17 @@
 """Test-only provider responses; appraisal weights and scoring remain real."""
+_semantic_responses = {}
+
+
+def semantic_response(message, response):
+    _semantic_responses[message] = response
+    return 1
+
+
 _calls = {"confirmation": 0, "semantics": 0}
 
 
 def reset():
+    _semantic_responses.clear()
     _calls.update(confirmation=0, semantics=0)
     return True
 
@@ -22,4 +31,4 @@ def extractSemantics(provider, message):
     if provider != "Offline":
         raise ValueError("fixture requires explicit Offline provider")
     _calls["semantics"] += 1
-    return "()"
+    return _semantic_responses.get(message, "()")

@@ -8,6 +8,8 @@
 ;; clauses when the façade imports every context submodule.
 ;; Only bounded status/streak enters the snapshot; raw observations stay host-side.
 !(bind! &operation-feedback (new-state LegacyFeedback))
+!(bind! &host-recovery (new-state NoRecovery))
+!(bind! &recovery-view (new-state NoRecovery))
 !(bind! &host-continuation (new-state ()))
 !(bind! &continuation-applied-decision (new-state ()))
 !(bind! &task-continuation-view (new-state NoContinuation))
@@ -108,6 +110,7 @@
       ($runtime
          (FrameStateRuntime
             (operation-feedback (get-state &operation-feedback))
+            (recovery (get-state &recovery-view))
             (task-continuation (get-state &task-continuation-view))
             (new-message (get-state &new-msg-flag))
             (result-status-question

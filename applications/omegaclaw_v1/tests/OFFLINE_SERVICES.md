@@ -220,3 +220,39 @@ helper contracts, test commands and scope. It uses real ingestion and authorized
 Core reads without a new message between steps. The earlier missing-helper probe
 above is historical; arbitrary prose still cannot establish remaining execution,
 and automatic live host plan provisioning remains separate work.
+
+
+## Host signals and constitutional modes
+
+From the MetaMo repository root:
+
+```sh
+python3 scripts/run-omegaclaw.py applications/omegaclaw_v1/tests/host_mode_transition_test.metta
+```
+
+This full-cycle test uses real Core ingestion, snapshot projection, appraisal,
+selection, policy checks, and dispatch. The offline provider has an opt-in exact
+input/response map; defaults still return no semantic signals. Controlled danger
+and anger responses pass through `refreshSignals`, not direct signal insertion.
+A test-only handler returns an explicit error through real dispatch, and the
+normal Core file reader supplies the subsequent successful resolution.
+
+Traces include session/cycle, frame, signals, mode before/after, timing counters,
+and policy output. The test covers all six required mode transitions, persistent
+recovery without repeated failure counts, frame/session expiry, terminal
+commitment clearing, denied work in Threat, no task execution in Sleep, and
+non-default confirmation/hold/cooldown behavior. See `../MODE_TRANSITIONS.md` for
+host ownership and the fixture's frame lifecycle limits. This is offline evidence,
+not a live provider/scheduler or durable-recovery demonstration. The existing
+Core ticket-parser `float_overflow` limitation still applies.
+
+Verification on 24 September 2026: all 44 MeTTa files passed in one suite run;
+the final expanded host-mode test passed 111 assertions separately. Six
+provider/guard and ten host-config Python tests, eight import checks, and four
+shell boundary guards passed. Broad Python discovery also ran the existing
+runner-hardening tests and reported 11 failed assertions/subtests and two errors
+there (missing runner APIs, timeout handling, and incomplete failure detection).
+Both that test file and `scripts/run-tests.py` are unchanged from HEAD; those
+runner failures are not resolved by this signal-wiring change. Earlier focused
+runs also encountered the documented intermittent Core ticket `float_overflow`;
+the successful suite and final focused run did not.

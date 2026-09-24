@@ -145,3 +145,43 @@ default selection, mode separation, and preservation of existing signal facts.
 
 The minimal-loop fixture includes `stalled-progress`; its expected posture is
 therefore Rumination under these rules, while its response remains admissible.
+
+## Host observation wiring
+
+The serialized bridge finishes host bookkeeping and publishes one snapshot before
+refreshing signals and the mode evaluator. A fresh message produces `user-waiting`
+and any provider-extracted semantic signals. Merely lacking a result no longer
+produces `stalled-progress`: admitting new work is not an observed execution stall.
+Frame presence remains a snapshot context condition, not a stored signal.
+
+Concrete execution feedback is consumed once. A validated failure creates
+session/frame/commitment-owned host recovery bookkeeping. The first cycle emits
+`failure` or `repeated-failure`; later cycles with unresolved recovery emit the
+existing `stalled-progress` signal. Those later cycles do not replay the failure
+or increment failure statistics. `NoOutcome`, `Blocked`, and `Unobserved` do not
+resolve an existing failure and do not independently invent one.
+
+For this bounded single-frame path, a validated success in the same current owner
+resolves recovery. A terminal commitment, a changed frame/commitment, or a new
+session discards the old recovery state. This is not a multi-frame recovery queue
+or a durable restart guarantee. Recovery is exposed only as `RecoveryPending` or
+`NoRecovery` in the bounded snapshot; raw outcomes remain host-side. Legacy error
+projection retains its existing compatibility behavior.
+
+`lastModeObservation` retains `(ModeObservation operation-context frame-id signals
+before after)` after signal cleanup. `before` and `after` are complete
+`ModeTransitionState` records, including confirmation, hold, and cooldown counters.
+The trace is diagnostic and cannot authorize execution. Provider threat evidence
+is transient: without a new message, it is absent on the next refresh; configured
+mode holds may still retain Threat.
+
+`tests/host_mode_transition_test.metta` exercises the six required transitions,
+recovery across idle cycles, stale/duplicate outcomes, session/frame cleanup,
+explicit terminal commitment events, Threat policy denial, Sleep without task
+execution, and non-default confirmation/hold/cooldown timing. It runs the real
+bridge, admission, scoring, and dispatcher. Only external services and one failing
+handler are doubled. As in the existing dispatch fixtures, the admitted Core frame
+receives a host-assigned String ID compatible with the typed dispatch contract.
+The completion scenario uses host commitment adjudication, Core's completion
+bookkeeping and explicit current-frame cache clearing; it does not exercise the
+live scheduler's next-frame selection or persistence. Live validation remains open.

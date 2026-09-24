@@ -15,6 +15,10 @@
       isInSafeRegion))
 
 
+;; Last-cycle diagnostics survive signal cleanup; no dispatch authority.
+!(bind! &last-mode-observation (new-state NoModeObservation))
+(= (lastModeObservation) (get-state &last-mode-observation))
+
 ;; Run one motivational cycle and return the decision injected into the LLM.
 (= (motivationContextBlock)
    (let* (
@@ -30,7 +34,12 @@
 (= (motivationContextBlockForBundle $bundle)
    (let* (
       ($_ (eval (refreshSignals $bundle)))
+      ($modeBefore (modeTransitionState))
       ($_ (eval (refreshConstitutionalMode $bundle)))
+      ($_ (change-state! &last-mode-observation
+         (ModeObservation (get-state &operation-context)
+            (frameBundleCurrentId $bundle) (getSignals)
+            $modeBefore (modeTransitionState))))
       ($_ (change-state! &selected-host-operation ()))
       ($operationRows (captureCandidateOperations $bundle))
       ($_ (eval (clearSpace &appraisal-space)))

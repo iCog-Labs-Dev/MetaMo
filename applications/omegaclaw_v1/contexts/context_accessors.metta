@@ -116,3 +116,6 @@
 
 (= (frameRuntimeStatusQuestion $bundle)
    (frameRuntimeField $bundle result-status-question False))
+
+(= (frameRuntimeRecovery $bundle)
+   (frameRuntimeField $bundle recovery NoRecovery))

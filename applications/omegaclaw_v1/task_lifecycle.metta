@@ -232,6 +232,7 @@
       ($_ (refreshTaskCommitment))
       ($_ (eval (applyOperationOutcome (get-state &cfv2-current-frame-id))))
       ($_ (hostRefreshContinuation))
+      ($_ (eval (refreshHostRecovery)))
       ($bundle (frameStateForMetaMo))
       ($_ (eval (beginOperationCycle $bundle)))
       ;; The decision module providing this setter loads after lifecycle.

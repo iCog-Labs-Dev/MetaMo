@@ -6,6 +6,7 @@
 !(bind! &operation-admitted-actions (new-state ()))
 !(bind! &operation-context (new-state ()))
 !(bind! &selected-operation-decision (new-state ()))
+!(bind! &selected-operation-commitment (new-state ()))
 !(bind! &last-operation-outcome (new-state ()))
 
 !(bind! &applied-operation-decision (new-state ()))
@@ -22,9 +23,12 @@
              (OperationContext (sread (py-call (host_operations.new_session))) 0 ()))
           (change-state! &selected-host-operation ())
           (change-state! &selected-operation-decision ())
+          (change-state! &selected-operation-commitment ())
           (change-state! &last-operation-outcome ())
           (change-state! &applied-operation-decision ())
           (change-state! &operation-failure-streak 0)
+          (change-state! &host-recovery NoRecovery)
+          (change-state! &recovery-view NoRecovery)
           (change-state! &operation-feedback (OperationFeedback NoOutcome 0))
           (change-state! &task-execution-observed "")
           (change-state! &host-continuation ())
@@ -100,10 +104,12 @@
       ($_ (DispatchUnavailable MissingDecision)))))
 
 (= (retainSelectedOperation $candidate $rows)
-   (let $_ (change-state! &selected-host-operation
-      (if (or (== $rows LegacyCandidateAdmission) (== $candidate none)) ()
-          (let $matches (hostRowsForCandidate $candidate $rows)
-             (if (== (size-atom $matches) 1) (car-atom $matches) ()))))
+   (let* (
+      ($_ (change-state! &selected-operation-commitment (get-state &task-commitment-id)))
+      ($_ (change-state! &selected-host-operation
+         (if (or (== $rows LegacyCandidateAdmission) (== $candidate none)) ()
+             (let $matches (hostRowsForCandidate $candidate $rows)
+                (if (== (size-atom $matches) 1) (car-atom $matches) ()))))))
       (change-state! &selected-operation-decision
          (if (== (get-state &operation-context) ()) ()
              (OperationDecision (get-state &operation-context) $candidate
@@ -170,6 +176,41 @@
                      (progn (change-state! &last-operation-outcome $outcome) OutcomeAccepted)))
                 ($_ (progn (change-state! &last-operation-outcome $outcome) OutcomeAccepted))))))))
 
+;; Recovery is persistent host bookkeeping, distinct from one-shot feedback.
+;; This bounded single-frame path resolves recovery on a validated success in
+;; the same owner, or discards it when its session/frame/commitment ends.
+(= (operationRecoveryOwner $frame)
+   (case (get-state &operation-context) (
+      ((OperationContext $session $_ $_)
+       (RecoveryOwner $session $frame
+          (get-state &task-commitment-id)))
+      ($_ NoOwner))))
+
+(= (operationRecoveryLive)
+   (case (commitmentSnapshot) (
+      ((CommitmentSnapshot $_ $_ $_ $status $_) (== $status Open))
+      (NoCommitment True))))
+
+(= (refreshHostRecovery)
+   (let $valid
+      (case (get-state &host-recovery) (
+         ((HostRecovery $owner)
+          (and (== $owner (operationRecoveryOwner (get-state &cfv2-current-frame-id)))
+             (and (!= (get-state &cfv2-current-frame-id) ()) (operationRecoveryLive))))
+         ($_ False)))
+      (progn
+         (if $valid True (change-state! &host-recovery NoRecovery))
+         (change-state! &recovery-view (if $valid RecoveryPending NoRecovery)))))
+
+(= (recordOperationRecovery $status $frame)
+   (case $status (
+      (Failure
+       (if (== (get-state &selected-operation-commitment) (get-state &task-commitment-id))
+           (change-state! &host-recovery (HostRecovery (operationRecoveryOwner $frame)))
+           False))
+      (Success (change-state! &host-recovery NoRecovery))
+      ($_ True))))
+
 ;; Consume the preceding serialized cycle before publishing another snapshot.
 ;; A different frame/session/cycle cannot receive this feedback. Keeping only
 ;; the applied decision is sufficient for the single selected invocation path.
@@ -191,6 +232,7 @@
                                (!= $decision (get-state &applied-operation-decision))))
                      (progn
                         (change-state! &applied-operation-decision $decision)
+                        (recordOperationRecovery $status $frame)
                         (change-state! &operation-failure-streak
                            (if (== $status Failure) (+ (get-state &operation-failure-streak) 1)
                                (if (== $status Success) 0 (get-state &operation-failure-streak))))
