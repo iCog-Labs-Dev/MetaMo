@@ -251,10 +251,15 @@ python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/o
 
 ## Verification and limits
 
-PeTTa's existing text parser can intermittently raise `float_overflow` when a
-Core ticket UUID begins with a numeric exponent-like prefix (for example,
-`18e99999-...`). This affects the existing ticket text round-trip, independently
-of feedback processing; an interrupted run is not a failed feedback assertion.
+Core ticket UUID serialization was repaired on 24 September 2026. Previously,
+bare UUID atoms with numeric exponent-like prefixes (for example `18e99999-...`)
+could raise `float_overflow` in PeTTa's text parser. Core now converts the UUID
+to a string before storing or returning the ticket, so serialization quotes it
+and parsing preserves the ledger key's type. Deterministic Core regressions
+cover exponent-like, numeric-leading and alphabetic-leading IDs, round-trip
+identity, replay/conflicting replay, and stale-ticket rejection. Use the updated
+Core `src/dispatch.pl` overlay; older copies retain the failure. The generic
+PeTTa parser is unchanged.
 
 
 Run from the workspace root:

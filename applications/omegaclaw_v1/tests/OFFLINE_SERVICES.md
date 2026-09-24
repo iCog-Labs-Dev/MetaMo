@@ -58,8 +58,11 @@ feedback. Missing or multiple bridge results remain visible to scenario checks.
 The entry point requires the exact assertion count, the scenario completion
 marker, a valid import report, exit code zero, and no assertion/interpreter error.
 It writes a failure report and exits nonzero on interruption. It never retries a
-failed scenario automatically. The known ticket UUID parser `float_overflow` is
-still a runtime limitation; this harness exposes it, and does not claim to fix it.
+failed scenario automatically. The ticket UUID `float_overflow` described in
+historical results below is fixed by the updated Core `src/dispatch.pl` overlay:
+ticket IDs are strings before serialization and ledger insertion. See
+[DISPATCH.md](../DISPATCH.md#verification-and-limits). Older Core overlays still
+have the failure; the harness itself does not retry or suppress it.
 
 This implements Task 5's shared full-loop harness item. It is a curated scenario
 entry point, not the complete Task 5 regression gate: generic runner hardening,
