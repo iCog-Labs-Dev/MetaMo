@@ -47,14 +47,23 @@
           ((ModeGroup $name $active) $head))
           (if (== $group $name) $active (modeGroupEnabled $group $tail)))))
 
-(= (modeChooseTarget $rules $groups $best $bestRank)
+(= (modeChooseRule $rules $groups $best $bestRank)
    (if (== $rules ()) $best
        (let* (
           (($head $tail) (decons-atom $rules))
-          ((ModeTransitionRule $group $target $rank) $head))
+          ((ModeTransitionRule $group $_target $rank) $head))
           (if (and (modeGroupEnabled $group $groups) (> $rank $bestRank))
-              (modeChooseTarget $tail $groups $target $rank)
-              (modeChooseTarget $tail $groups $best $bestRank)))))
+              (modeChooseRule $tail $groups $head $rank)
+              (modeChooseRule $tail $groups $best $bestRank)))))
+
+(= (modeRuleTarget $rule)
+   (case $rule (
+      ((ModeTransitionRule $_ $target $_) $target)
+      ((ModeDefault $target) $target))))
+
+;; Preserve the existing target-only API; diagnostics retain the actual winner.
+(= (modeChooseTarget $rules $groups $best $bestRank)
+   (modeRuleTarget (modeChooseRule $rules $groups (ModeDefault $best) $bestRank)))
 
 (= (modeTargetFromContext $signals $hasFrame $current)
    (let $rules (modeTransitionRules)
@@ -95,24 +104,56 @@
 
 (= (modeDecrement $value) (if (> $value 0) (- $value 1) 0))
 
+;; One timing calculation serves both the transition and its diagnostic view.
+(= (modeTimingEvidence
+      (ModeTransitionState $current $age $pending $count $cooldown) $target)
+   (let* (
+      ($currentTiming (modeTransitionTiming $current))
+      ($targetTiming (modeTransitionTiming $target))
+      ((ModeTiming $_ $hold $_) $currentTiming)
+      ((ModeTiming $entry $_ $_) $targetTiming)
+      ($nextCount (if (== $pending $target) (+ $count 1) 1))
+      ($bypass (modeUrgentBypass))
+      ($urgent (and $bypass (> (modeTransitionRank $target) (modeTransitionRank $current)))))
+      (ModeTimingEvidence
+         (current $current $currentTiming) (target $target $targetTiming)
+         (urgent-bypass $bypass $urgent)
+         (checks $nextCount (>= $nextCount $entry) (>= $age $hold) (== $cooldown 0)))))
+
 ;; Pure transition step. Higher urgency may bypass timers, never entry evidence.
 ;; Changing/clearing the desired target resets its consecutive-entry counter.
 (= (modeTransitionStepForTarget
       (ModeTransitionState $current $age $pending $count $cooldown) $target)
    (let* (
-      ((ModeTiming $_currentEntry $hold $_currentCooldown) (modeTransitionTiming $current))
-      ((ModeTiming $entry $_targetHold $targetCooldown) (modeTransitionTiming $target))
-      ($nextCount (if (== $pending $target) (+ $count 1) 1))
-      ($urgent (and (modeUrgentBypass)
-         (> (modeTransitionRank $target) (modeTransitionRank $current))))
-      ($ready (and (>= $nextCount $entry)
-         (or $urgent (and (>= $age $hold) (== $cooldown 0))))))
-      (if (== $target $current)
-          (ModeTransitionState $current (+ $age 1) none 0 (modeDecrement $cooldown))
+      ((ModeTimingEvidence $_ (target $_ (ModeTiming $_ $_ $targetCooldown))
+          (urgent-bypass $_ $urgent) (checks $nextCount $confirmed $held $cooled))
+       (modeTimingEvidence (ModeTransitionState $current $age $pending $count $cooldown) $target))
+      ($ready (and $confirmed (or $urgent (and $held $cooled)))))
+      (case (== $target $current) (
+         (True (ModeTransitionState $current (+ $age 1) none 0 (modeDecrement $cooldown)))
+         (False
           (if $ready
               (ModeTransitionState $target 0 none 0 $targetCooldown)
               (ModeTransitionState $current (+ $age 1) $target $nextCount
-                 (modeDecrement $cooldown))))))
+                 (modeDecrement $cooldown))))))))
+
+;; Registry/configuration is trusted and fixed during a serialized refresh.
+;; Every rule keeps its matching evidence, including lower-priority collisions.
+(= (modeEvaluationForContext $state $signals $hasFrame)
+   (let* (
+      ((ModeTransitionState $current $_ $_ $_ $_) $state)
+      ($rules (modeTransitionRules))
+      ($groups (modeActiveGroups $rules $signals $hasFrame $current))
+      ($winner (modeChooseRule $rules $groups (ModeDefault (constitutionalModeDefault)) 0))
+      ($target (modeRuleTarget $winner)))
+      (ModeEvaluation $winner $target
+         (map-atom $rules $rule
+            (let* (
+               ((ModeTransitionRule $group $mode $_) $rule)
+               ($phase (if (== $current $mode) Exit Enter)))
+               (ModeRuleEvidence $rule (modeGroupEnabled $group $groups)
+                  (modeTriggerEvidence $group $phase $signals $hasFrame))))
+         (modeTimingEvidence $state $target))))
 
 (= (modeTransitionStep $state $signals $hasFrame)
    (let (ModeTransitionState $current $_ $_ $_ $_) $state

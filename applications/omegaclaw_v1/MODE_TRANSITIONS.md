@@ -169,8 +169,11 @@ or a durable restart guarantee. Recovery is exposed only as `RecoveryPending` or
 projection retains its existing compatibility behavior.
 
 `lastModeObservation` retains `(ModeObservation operation-context frame-id signals
-before after)` after signal cleanup. `before` and `after` are complete
+before after evaluation)` after signal cleanup. `before` and `after` are complete
 `ModeTransitionState` records, including confirmation, hold, and cooldown counters.
+The before-state is normalized to the current mode using the same restoration
+rule as the evaluator. The appended evaluation field is described below; this
+local diagnostic format is not a versioned integration wire contract.
 The trace is diagnostic and cannot authorize execution. Provider threat evidence
 is transient: without a new message, it is absent on the next refresh; configured
 mode holds may still retain Threat.
@@ -209,3 +212,61 @@ both modes from the bridge's retained before/after record:
 The additional anger-input, timing, policy-denial, frame/session expiry and
 repeated idle-cycle checks remain in the same regression. Live validation remains
 Task 6 in the integration plan.
+
+
+## Retained rule and timing evidence
+
+The appended record has this shape:
+
+```metta
+(ModeEvaluation winning-rule requested-target rule-evidence timing-evidence)
+```
+
+`winning-rule` is the exact `(ModeTransitionRule group mode priority)` selected
+by the existing priority/tie rules, or `(ModeDefault mode)` when none wins.
+The requested target can differ from the after-mode while entry confirmations,
+hold or cooldown delay a transition. Both selection and diagnostics use
+`modeChooseRule`; the target-only APIs retain their existing results.
+
+Each rule, including losing and inactive rules, has:
+
+```metta
+(ModeRuleEvidence (ModeTransitionRule group mode priority) active
+  (TriggerEvidence
+    ((SignalTriggerEvidence kind phase threshold observations matched) ...)
+    ((ContextTriggerEvidence condition matched) ...)))
+```
+
+`phase` is `Exit` for a rule targeting the before-mode and `Enter` otherwise.
+`threshold` is the applicable inclusive bound; `observations` contains that
+kind's actual `(signal kind strength)` records, or `()` for absence. This
+separates missing evidence from present evidence below its threshold. Context
+checks retain the evaluated frame-presence condition. Active groups that lose
+on priority remain visible, making collisions inspectable.
+
+```metta
+(ModeTimingEvidence
+  (current current-mode (ModeTiming entry hold cooldown))
+  (target requested-target (ModeTiming entry hold cooldown))
+  (urgent-bypass configured-enabled qualifies)
+  (checks next-confirmation-count confirmations-met hold-met cooldown-clear))
+```
+
+These checks use counters at the start of refresh. A change requires entry
+confirmations and either a qualifying urgency bypass or both hold and cooldown
+checks. If the requested target already equals the current mode, the evaluator
+retains it and resets pending confirmations; the recorded transition checks do
+not add a condition for staying. `modeTimingEvidence` supplies the same calculation
+to the transition step and diagnostics, rather than reimplementing timer logic
+in the bridge.
+
+The bridge captures this evaluation before refreshing the mode, under the
+existing serialized, fixed-registry-per-cycle assumption. Stored values survive
+signal cleanup and later registry edits unchanged. No evidence helper mutates
+signals, host state or registry configuration.
+
+Full-loop tests now exercise danger entry at `0.8` and exit at `0.4`, including
+the exact boundaries, just-below values, and `0.6` retaining Threat while being
+insufficient to enter it. They assert the retained phase/threshold and match,
+winning and losing groups, confirmation and hold/cooldown checks, absence after
+input consumption, and historical trace stability after a registry edit.

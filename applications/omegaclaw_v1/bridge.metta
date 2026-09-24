@@ -34,12 +34,14 @@
 (= (motivationContextBlockForBundle $bundle)
    (let* (
       ($_ (eval (refreshSignals $bundle)))
-      ($modeBefore (modeTransitionState))
+      ($modeBefore (modeTransitionStateForCurrent (constitutionalMode)))
+      ($modeEvidence (modeEvaluationForContext $modeBefore (getSignals)
+         (!= (frameBundleCurrentId $bundle) ())))
       ($_ (eval (refreshConstitutionalMode $bundle)))
       ($_ (change-state! &last-mode-observation
          (ModeObservation (get-state &operation-context)
             (frameBundleCurrentId $bundle) (getSignals)
-            $modeBefore (modeTransitionState))))
+            $modeBefore (modeTransitionState) $modeEvidence)))
       ($_ (change-state! &selected-host-operation ()))
       ($operationRows (captureCandidateOperations $bundle))
       ($_ (eval (clearSpace &appraisal-space)))

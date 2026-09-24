@@ -42,3 +42,25 @@
        (modeContextRowsActive
           (collapse (match &self (ModeContextTrigger $group $condition)
              (ModeContextTrigger $group $condition))) $hasFrame)))
+
+;; Diagnostic views use the same predicates as admission to a trigger group.
+;; Include failed checks as well as matches, so absence and threshold rejection
+;; can be distinguished after the transient signal space has been cleared.
+(= (modeTriggerEvidence $group $phase $signals $hasFrame)
+   (let* (
+      ($signalRows (collapse (match &self (ModeSignalTrigger $group $kind $enter $exit)
+         (ModeSignalTrigger $group $kind $enter $exit))))
+      ($contextRows (collapse (match &self (ModeContextTrigger $group $condition)
+         (ModeContextTrigger $group $condition)))))
+      (TriggerEvidence
+         (map-atom $signalRows $row
+            (let* (
+               ((ModeSignalTrigger $_ $kind $enter $exit) $row)
+               ($threshold (if (== $phase Exit) $exit $enter)))
+               (SignalTriggerEvidence $kind $phase $threshold
+                  (filter-atom $signals $signal
+                     (let (signal $name $_) $signal (== $name $kind)))
+                  (modeSignalMeetsThreshold $kind $threshold $signals))))
+         (map-atom $contextRows $row
+            (let (ModeContextTrigger $_ $condition) $row
+               (ContextTriggerEvidence $condition (modeContextCondition $condition $hasFrame)))))))

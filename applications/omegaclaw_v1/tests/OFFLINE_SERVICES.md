@@ -272,3 +272,24 @@ suite invocation, including 134 host-mode assertions, 45 typed-policy assertions
 and 36 request-admission assertions. Ten host-config and six offline-service
 Python tests and all four shell boundary guards passed. No Core, Prolog, runner
 or CI sources were changed for this follow-up.
+
+
+## Mode evaluation diagnostics
+
+`lastModeObservation` now appends the winning registry rule, requested target,
+all rule matches (including rejected thresholds and losing groups), and the
+actual current/target timing configuration and checks. See
+[MODE_TRANSITIONS.md](../MODE_TRANSITIONS.md) for the complete diagnostic shape.
+The full-loop test additionally covers inclusive entry/exit thresholds,
+hysteresis, retained confirmation/hold/cooldown checks, and trace stability after
+registry changes. Provider values still flow through real signal extraction;
+no mode assignments or replacement evaluator establish these results.
+
+Verification on 24 September 2026: the expanded host-mode regression completed
+all 169 assertions in a standalone run. The other 43 MeTTa files passed the suite
+invocation, including the existing timing/threshold component tests, and all four
+shell boundary guards passed. The suite's host-mode run and several focused
+retries were interrupted by the documented Core ticket UUID `float_overflow`;
+no failing assertion preceded those interruptions. The final focused process
+exited successfully. This is not an uninterrupted green 44-file suite result,
+and the existing parser limitation remains unresolved by this diagnostics change.
