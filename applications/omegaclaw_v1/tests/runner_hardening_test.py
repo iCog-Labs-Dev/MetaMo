@@ -58,6 +58,28 @@ class RunnerHardeningTest(unittest.TestCase):
         self.assertFalse(self.verdict(PASS + "is 1, should 2. ❌\n"))
         self.assertFalse(self.verdict(code=2))
 
+    def test_expected_error_data_is_not_an_interpreter_failure(self):
+        output = ('is (Error handler failed), should (Error handler failed). ✅\n'
+                  '(FullLoopDispatch (result (Error handler failed)))\n')
+        self.assertTrue(self.verdict(output))
+        self.assertFalse(self.verdict(output + '(Error import! missing-source)\n'))
+
+    def test_import_examples_inside_strings_are_not_dependencies(self):
+        (self.root / 'child.metta').write_text('!(test 2 2)\n')
+        self.entry.write_text('!(test 1 1)\n'
+                             '!(println! "!(import! &self child.metta)")\n')
+        self.assertEqual(runner.count_test_forms(self.entry), 1)
+
+    def test_named_relative_and_symlink_imports_count_once(self):
+        child = self.root / 'child.metta'
+        child.write_text('!(test 2 2)\n')
+        (self.root / 'alias.metta').symlink_to(child)
+        self.entry.write_text('!(import! &self (library MetaMo child))\n'
+                             '!(import! &self "child.metta")\n'
+                             '!(import! &self alias.metta)\n')
+        with patch.object(runner, 'REPO', self.root):
+            self.assertEqual(runner.count_test_forms(self.entry), 1)
+
     def test_zero_exit_interpreter_and_import_errors(self):
         for diagnostic in ("ERROR: source_sink missing does not exist\n",
                            "(Error import! missing-source)\n",
