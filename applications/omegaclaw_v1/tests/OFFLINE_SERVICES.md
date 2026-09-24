@@ -293,3 +293,22 @@ retries were interrupted by the documented Core ticket UUID `float_overflow`;
 no failing assertion preceded those interruptions. The final focused process
 exited successfully. This is not an uninterrupted green 44-file suite result,
 and the existing parser limitation remains unresolved by this diagnostics change.
+
+
+## Denied operations in Threat and Sleep
+
+The full-loop regression now explicitly attempts the registered failing command
+while in Sleep after task/frame completion. Its handler increments an invocation
+counter, and the preceding four authorized dispatches establish that this effect
+works. Sleep attempts with the current missing-decision ticket, a previously
+executable ticket, and `LegacyDispatch` all return
+`(DispatchResult Blocked MissingDecision none)` without incrementing the counter.
+Another full Sleep cycle and dispatch attempt likewise leave it unchanged.
+The command arguments are quoted data, so evaluating the test itself cannot
+invoke the handler. Existing Threat checks cover permission revocation after
+selection and no executable selection with the denied policy still installed.
+
+Verification on 24 September 2026: the full host-mode test passed all 180
+assertions in one process with exit code zero. This follow-up changes only the
+MeTTa test and documentation; no production code, fixture Python or Prolog was
+changed. Live validation remains separate.

@@ -36,7 +36,12 @@
 !(test (py-call (host_mode_fixture.setup)) 1)
 !(test (py-call (lib_llm_ext.semantic_response (frameStateRuntimeSummary "Controlled danger observation" 1200) "((signal danger 0.9))")) 1)
 !(test (py-call (lib_llm_ext.semantic_response (frameStateRuntimeSummary "Controlled anger observation" 1200) "((signal user-angry 0.9))")) 1)
-(= (outcome-test-failure) (quote (Error test-handler failed)))
+;; An observable effect proves rejected Sleep attempts never enter the handler.
+!(bind! &mode-handler-invocations (new-state 0))
+(= (outcome-test-failure)
+   (progn
+      (change-state! &mode-handler-invocations (+ (get-state &mode-handler-invocations) 1))
+      (quote (Error test-handler failed))))
 (= (modeTestCycle)
    (let $outputs (collapse (motivationContextBlock))
       (progn
@@ -342,12 +347,30 @@
 !(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) none)
 !(test (modeTestTransition completed-task) (Engaged Sleep))
 !(test (modeTestSignals) ())
+;; The handler executed in the four authorized failure scenarios above. Now
+;; attempt that same registered command explicitly, rather than dispatching ().
+!(test (get-state &mode-handler-invocations) 4)
+!(test (coreLoopDispatchBegin) (DispatchUnavailable MissingDecision))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (outcome-test-failure)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &mode-handler-invocations) 4)
+;; An old executable ticket and legacy fallback cannot bypass the Sleep gate.
+!(test (coreLoopDispatchCommand (get-state &threat-ticket) (quote (outcome-test-failure)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (coreLoopDispatchCommand LegacyDispatch (quote (outcome-test-failure)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &mode-handler-invocations) 4)
+!(test (constitutionalMode) Sleep)
+!(test (frameBundleCurrentId (activeFrameBundle)) ())
 ;; Another full cycle must not resurrect the completed frame or stale triggers.
 !(test (modeTestCycle) 1)
 !(test (constitutionalMode) Sleep)
 !(test (modeTestSignals) ())
 !(test (frameBundleCurrentId (activeFrameBundle)) ())
 !(test (selectedHostCommand) ())
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (quote (outcome-test-failure)))
+   (DispatchResult Blocked MissingDecision none))
+!(test (get-state &mode-handler-invocations) 4)
 !(test (get-state &failure-count) 4)
 !(test (frameRuntimeRecovery (activeFrameBundle)) NoRecovery)
 !(test (py-call (host_config_fixture.cleanup)) 1)
