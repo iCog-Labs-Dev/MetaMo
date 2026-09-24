@@ -43,8 +43,13 @@ snapshot for cross-frame requests; it never uses origin-frame policy as a substi
 ```
 
 These are local adapter inputs, not additional v1 `IntegrationRecord` schemas.
-Exact field order and shapes are required. IDs, permissions, resource names,
-units, and destinations are nonempty strings. Collections contain at most 128
+Exact field order and shapes are required. Frame targets may be native Core
+symbols or nonempty strings. They match exactly: `Frame-1` and `"Frame-1"` are
+different identities, and the snapshot, operation and frame policy must agree.
+Empty, numeric and expression frame IDs are rejected. Skills, permissions,
+resource names, units, and destinations remain nonempty strings. The JSON host
+configuration continues to encode text IDs; trusted native bindings can preserve
+Core's symbolic IDs without rewriting host frames. Collections contain at most 128
 entries. Duplicate allowlist entries or duplicate resource names are malformed.
 Budgets and costs must be numbers in `[0, 9007199254740991]`; booleans and numeric
 strings are rejected. A budget status is exactly `Open`, `Closed`, or `Exhausted`.

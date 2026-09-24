@@ -6,6 +6,11 @@
    (if (== (get-type $x) String) (!= $x "") False)
 )
 
+;; Core generates symbolic frame IDs. Preserve their identity instead of
+;; rewriting host state or coercing symbols and strings into the same target.
+(= (tpFrameId $x)
+   (or (tpId $x) (== (get-metatype $x) Symbol)))
+
 (= (tpQuantity $x)
    (if (== (get-type $x) Number)
        ;; Host numeric anomalies must reject, never abort the admission path.
@@ -90,7 +95,7 @@
       ((PolicyOperation (candidate $candidate) (target $target) (skill $skill)
           (permissions $permissions) (egress $egress) (costs $costs))
        (tpAllTrue ((== (get-metatype $candidate) Symbol)
-          (tpId $target) (tpId $skill) (tpList ids $permissions)
+          (tpFrameId $target) (tpId $skill) (tpList ids $permissions)
           (tpList ids $egress) (tpList costs $costs))))
       ($_ False))))
 

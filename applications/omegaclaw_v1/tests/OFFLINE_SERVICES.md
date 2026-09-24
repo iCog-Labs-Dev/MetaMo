@@ -242,7 +242,7 @@ and policy output. The test covers all six required mode transitions, persistent
 recovery without repeated failure counts, frame/session expiry, terminal
 commitment clearing, denied work in Threat, no task execution in Sleep, and
 non-default confirmation/hold/cooldown behavior. See `../MODE_TRANSITIONS.md` for
-host ownership and the fixture's frame lifecycle limits. This is offline evidence,
+host ownership and the exact lifecycle path exercised. This is offline evidence,
 not a live provider/scheduler or durable-recovery demonstration. The existing
 Core ticket-parser `float_overflow` limitation still applies.
 
@@ -256,3 +256,19 @@ Both that test file and `scripts/run-tests.py` are unchanged from HEAD; those
 runner failures are not resolved by this signal-wiring change. Earlier focused
 runs also encountered the documented intermittent Core ticket `float_overflow`;
 the successful suite and final focused run did not.
+
+
+The strengthened transition demonstration preserves Core's generated frame ID
+and calls `cfv2-complete-current-frame-to-stm`, including completed storage/index
+updates and next-frame selection. It no longer assigns a replacement String ID
+or directly clears the current-frame cache for the completion scenario. Six
+labelled `RequiredTransition` assertions compare the real before/after modes;
+obsolete recovery/threat evidence and a second idle Sleep cycle are checked.
+Native symbolic targets are supported by the typed operation and request gates,
+with regression checks rejecting text/symbol mismatches and malformed IDs.
+
+Strengthened verification on 24 September 2026: all 44 MeTTa files passed in one
+suite invocation, including 134 host-mode assertions, 45 typed-policy assertions
+and 36 request-admission assertions. Ten host-config and six offline-service
+Python tests and all four shell boundary guards passed. No Core, Prolog, runner
+or CI sources were changed for this follow-up.

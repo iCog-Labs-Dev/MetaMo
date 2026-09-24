@@ -126,3 +126,15 @@
    (proposalFixture request-mode-change (ModeTarget Slow) defer))) MissingOperationContext)
 !(test (getReason (reasonerProposalAdmission (originBundle)
    (proposalFixture request-attention current-frame execute-skill))) MissingOperationContext)
+
+;; The real Core frame ID may be symbolic; never coerce a text target to it.
+(= (nativeRequestCheck $frameId $operationId)
+   (feasibilityGateForRequest
+      (requestBundle $frameId Active Fast) (requestBundle $frameId Active Fast)
+      (AdmissionRequest propose-candidate current-frame execute-skill)
+      (readOp execute-skill $operationId)
+      (requestScope Global) (requestScope (FrameTarget $frameId))))
+!(test (nativeRequestCheck Frame-native Frame-native) (GateDecision Admitted Feasible))
+!(test (nativeRequestCheck Frame-native "Frame-native") (GateDecision Rejected TargetMismatch))
+!(test (requestBundleShapeValid (requestBundle 42 Active Fast)) False)
+!(test (requestBundleShapeValid (requestBundle (Frame-native) Active Fast)) False)

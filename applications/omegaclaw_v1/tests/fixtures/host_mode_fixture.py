@@ -14,6 +14,7 @@ def provision(frame, denied=False):
     import copy
     import janus
     config = copy.deepcopy(_config)
+    frame = host.Symbol(frame)
     config['frame_id'] = frame
     if denied:
         config['frame']['permissions'] = []

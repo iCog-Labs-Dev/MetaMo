@@ -18,7 +18,7 @@
           (current (FrameStateCurrent (id $id) (parent $_) $_ (status $status)
              (frame-mode $mode) (priority $_) $_ $_ $_ $_ $_ $_ $_))
           $_ (relations $_) (runtime $_))
-       (tpAllTrue ((tpId $id) (tpContains (Fast Slow) $rootMode)
+       (tpAllTrue ((tpFrameId $id) (tpContains (Fast Slow) $rootMode)
           (tpContains (Fast Slow) $mode)
           (tpContains (Active Focused Completed Blocked Abandoned Superseded) $status))))
       ($_ False))))

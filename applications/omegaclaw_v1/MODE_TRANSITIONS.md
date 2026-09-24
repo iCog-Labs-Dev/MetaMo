@@ -180,8 +180,32 @@ recovery across idle cycles, stale/duplicate outcomes, session/frame cleanup,
 explicit terminal commitment events, Threat policy denial, Sleep without task
 execution, and non-default confirmation/hold/cooldown timing. It runs the real
 bridge, admission, scoring, and dispatcher. Only external services and one failing
-handler are doubled. As in the existing dispatch fixtures, the admitted Core frame
-receives a host-assigned String ID compatible with the typed dispatch contract.
-The completion scenario uses host commitment adjudication, Core's completion
-bookkeeping and explicit current-frame cache clearing; it does not exercise the
-live scheduler's next-frame selection or persistence. Live validation remains open.
+handler are doubled. The admitted frame keeps Core's generated symbolic ID.
+Typed policy and request admission accept that native target without converting
+it to a text ID; operation/snapshot/scope identity comparisons remain exact.
+Commitment APIs retain their existing textual frame reference contract.
+
+The completion scenario calls `cfv2-complete-current-frame-to-stm` after explicit
+host commitment adjudication. Core performs completion bookkeeping, moves the
+original frame into completed storage, updates its index, clears the current
+cache, and runs next-frame selection. Assertions establish one matching completed
+record, no active refs, and no current frame. The next two full bridge cycles
+remain in Sleep with no signals or executable selection. Core's `pin` handler is
+used unchanged; this is not a demonstration of durable external persistence or
+live channel/provider behavior.
+
+Each required transition has a labelled `RequiredTransition` trace and asserts
+both modes from the bridge's retained before/after record:
+
+| Trace label | Transition | Evidence and clearing |
+| --- | --- | --- |
+| `wake` | Sleep → Engaged | Real task admission; user-waiting without false stalled-progress. |
+| `execution-failure` | Engaged → Rumination | A dispatched handler error produces failure and pending recovery. |
+| `resolved-recovery` | Rumination → Engaged | A successful read clears recovery; failure, repeated-failure and stalled-progress are absent. |
+| `threat-input` | Engaged → Threat | The provider boundary supplies danger evidence to the real signal producer. |
+| `cleared-threat` | Threat → Engaged | Consumed input no longer produces danger; recovery is absent. |
+| `completed-task` | Engaged → Sleep | Host completion and next-frame selection leave no current frame or trigger evidence. |
+
+The additional anger-input, timing, policy-denial, frame/session expiry and
+repeated idle-cycle checks remain in the same regression. Live validation remains
+Task 6 in the integration plan.
