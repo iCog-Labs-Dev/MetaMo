@@ -21,6 +21,7 @@ trusted host identity/causal-link APIs are implemented; see [IDENTITY.md](IDENTI
 | `signals.metta` | Runtime signal extraction and signal-to-appraisal aggregation. |
 | `omegaclaw_appraisal.metta` | Appraisal-driven updates to the modulator vector. |
 | `homeostasis.metta` | Self-model updates and homeostatic rules. |
+| `host_continuation.metta` | Trusted session-bound read plans and observed step progression; see [CONTINUATION.md](CONTINUATION.md). |
 | `task_lifecycle.metta` | User-task state, execution continuation, and autonomy phases. |
 | `commitments.pl`, `commitments.metta` | Host-owned commitment events and a read-only adapter; motivation cannot implicitly terminate work. |
 | `candidate_selection.metta` | Candidate-condition evaluation and availability. |

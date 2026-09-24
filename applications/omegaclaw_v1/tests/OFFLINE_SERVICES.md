@@ -209,3 +209,14 @@ assertions; a standalone rerun passed all 59. This is not an uninterrupted green
 42-file run. The checkout's `scripts/run-tests.py` still invokes a shell runner,
 so the suite used a temporary shell wrapper delegating to the absolute path of
 `scripts/run-omegaclaw.py`; no runner or CI source was changed.
+
+
+## Active-task continuation
+
+The missing Core lifecycle helpers are now implemented. The bounded two-read
+continuation regression passes 70 assertions and the current focused suite passes
+43 files. See [CONTINUATION.md](../CONTINUATION.md) for the exact host plan,
+helper contracts, test commands and scope. It uses real ingestion and authorized
+Core reads without a new message between steps. The earlier missing-helper probe
+above is historical; arbitrary prose still cannot establish remaining execution,
+and automatic live host plan provisioning remains separate work.

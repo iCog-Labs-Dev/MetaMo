@@ -8,6 +8,9 @@
 ;; clauses when the façade imports every context submodule.
 ;; Only bounded status/streak enters the snapshot; raw observations stay host-side.
 !(bind! &operation-feedback (new-state LegacyFeedback))
+!(bind! &host-continuation (new-state ()))
+!(bind! &continuation-applied-decision (new-state ()))
+!(bind! &task-continuation-view (new-state NoContinuation))
 
 (= (frameStateGoalSummary)
    (let $goalNamespace (get-state &cfv2-current-goal-namespace)
@@ -105,7 +108,10 @@
       ($runtime
          (FrameStateRuntime
             (operation-feedback (get-state &operation-feedback))
+            (task-continuation (get-state &task-continuation-view))
             (new-message (get-state &new-msg-flag))
+            (result-status-question
+               (== (py-call (helper.is_result_status_question (get-state &prevmsg))) 1))
             (message-present (not (== (get-state &prevmsg) "")))
             (message-summary
                (frameStateRuntimeSummary (get-state &prevmsg) 1200))

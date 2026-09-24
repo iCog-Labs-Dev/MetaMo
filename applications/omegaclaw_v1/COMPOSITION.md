@@ -139,3 +139,10 @@ cover state/evidence preservation, singleton registry facts and function results
 explicit fixture setup, symlink identity, shell-directory independence, missing
 sources, application-free auditing, cycle detection, and cross-space rejection.
 No live channel or persistence backend was started. CI/CD YAML remains unchanged.
+
+
+Host continuation loads after the commitment adapter and before lifecycle
+publication. `hostRefreshContinuation` is called directly before snapshot capture;
+its command-bearing host values must not be passed through dynamic `eval`.
+Only inert command identity text enters the bounded continuation view. Commitment
+imports now belong to the composition so native loading still occurs once.

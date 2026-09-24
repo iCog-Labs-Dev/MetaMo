@@ -27,6 +27,8 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_appraisal))
 !(import! &self (library MetaMo applications/omegaclaw_v1/homeostasis))
 !(import! &self (library MetaMo applications/omegaclaw_v1/resurfacing))
+!(import! &self (library MetaMo applications/omegaclaw_v1/commitments))
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_continuation))
 !(import! &self (library MetaMo applications/omegaclaw_v1/task_lifecycle))
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
 !(import! &self (library MetaMo applications/omegaclaw_v1/operation_selection))

@@ -1,6 +1,5 @@
 ;; User-task state, execution continuation, and idle-autonomy phases.
 
-!(import! &self (library MetaMo applications/omegaclaw_v1/commitments))
 !(bind! &task-commitment-id (new-state ()))
 
 !(bind! &active-task              (new-state ""))
@@ -120,17 +119,23 @@
 (= (executionContinuationNeeded)
    (executionContinuationNeededForBundle (activeFrameBundle)))
 
+(= (legacyContinuationNeeded $bundle)
+   (let $observed (frameRuntimeText (frameRuntimeExecutionObserved $bundle))
+      (if (or (!= (frameRuntimeOperationFeedback $bundle) LegacyFeedback) (== $observed ""))
+          False
+          (== (py-call (helper.task_needs_more_execution
+             (frameRuntimeText (frameRuntimeActiveTask $bundle)) $observed)) 1))))
+
+(= (continuationReadyForBundle $bundle)
+   (case (frameRuntimeContinuation $bundle) (
+      ((ContinuationView $_ $_ Ready $_) True)
+      (NoContinuation (legacyContinuationNeeded $bundle))
+      ($_ False))))
+
 (= (executionContinuationNeededForBundle $bundle)
-   ;; Continuation requires an execution observation. A newly admitted task
-   ;; with none yet falls through to ordinary registry candidate generation.
-   ;; Use if: and evaluates its arguments, including the optional host call.
    (if (and (frameRuntimeTaskOpen $bundle)
             (not (bundle-runtime-has-new-message $bundle)))
-       (let $observed (frameRuntimeText (frameRuntimeExecutionObserved $bundle))
-          (if (== $observed "")
-              False
-              (py-call (helper.task_needs_more_execution
-                 (frameRuntimeText (frameRuntimeActiveTask $bundle)) $observed))))
+       (continuationReadyForBundle $bundle)
        False))
 
 (= (awaitingClarificationResponse)
@@ -189,8 +194,7 @@
 
 (= (resultQuestionNeedsResponseForBundle $bundle)
    (if (hasSignal user-waiting)
-        (py-call (helper.is_result_status_question
-                  (frameRuntimeText (frameRuntimeMessage $bundle))))
+        (frameRuntimeStatusQuestion $bundle)
         False))
 
 ;; Historical entry points cannot infer commitment completion from candidates,
@@ -227,6 +231,7 @@
       ($_ (refreshTaskExecutionObserved))
       ($_ (refreshTaskCommitment))
       ($_ (eval (applyOperationOutcome (get-state &cfv2-current-frame-id))))
+      ($_ (hostRefreshContinuation))
       ($bundle (frameStateForMetaMo))
       ($_ (eval (beginOperationCycle $bundle)))
       ;; The decision module providing this setter loads after lifecycle.

@@ -26,7 +26,10 @@
           (change-state! &applied-operation-decision ())
           (change-state! &operation-failure-streak 0)
           (change-state! &operation-feedback (OperationFeedback NoOutcome 0))
-          (change-state! &task-execution-observed "") True)))
+          (change-state! &task-execution-observed "")
+          (change-state! &host-continuation ())
+          (change-state! &continuation-applied-decision ())
+          (change-state! &task-continuation-view NoContinuation) True)))
 
 (= (beginOperationCycle $bundle)
    (if (== (get-state &operation-provider) ()) False
@@ -39,10 +42,20 @@
              (change-state! &operation-context
                 (OperationContext $session (+ $cycle 1) (frameBundleCurrentId $bundle)))))))
 
+(= (continuationOperationRows $bundle $rows)
+   (case (frameRuntimeContinuation $bundle) (
+      (NoContinuation $rows)
+      ((ContinuationView $_ $_ $status $expected)
+       (filter-atom $rows $row
+          (let (HostOperation $candidate $command $_ $_ $_ $_) $row
+             (or (!= $candidate execute-skill)
+                 (and (== $status Ready) (== (repr $command) $expected))))))
+      ($_ ()))))
+
 (= (captureCandidateOperations $bundle)
    (let $provider (get-state &operation-provider)
       (if (== $provider ()) LegacyCandidateAdmission
-          (eval ($provider (quote $bundle))))))
+          (continuationOperationRows $bundle (eval ($provider (quote $bundle)))))))
 
 (= (hostRowsForCandidate $candidate $rows)
    (filter-atom $rows $row

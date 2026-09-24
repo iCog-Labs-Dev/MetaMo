@@ -110,3 +110,9 @@
    (frameBundleCurrentBudget $bundle))
 (= (bundle-current-priority $bundle)
    (frameBundleCurrentPriority $bundle))
+
+(= (frameRuntimeContinuation $bundle)
+   (frameRuntimeField $bundle task-continuation NoContinuation))
+
+(= (frameRuntimeStatusQuestion $bundle)
+   (frameRuntimeField $bundle result-status-question False))

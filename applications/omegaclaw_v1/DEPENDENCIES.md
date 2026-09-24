@@ -210,3 +210,16 @@ failure, and later 12-file composition result are historical, superseded for
 the focused suite by the reconstruction above. CI still specifies upstream
 PeTTa `v1.0.2` and lacks the documented host checkout layout; parity remains
 unverified. CI changes are deferred at the user's request.
+
+
+## Continuation helper overlay — 23 September 2026
+
+The bounded continuation slice additionally requires the current Core
+`src/helper.py` implementations of `is_result_status_question` and
+`task_needs_more_execution`, with
+`Autotests/test_helper_lifecycle.py` (five passing tests). The pinned Core commit
+above lacks these APIs. Preserve this overlay together with the MetaMo
+`host_continuation.metta`, composition, lifecycle, operation-selection and context
+projection/accessor changes. Historical reconstruction hashes above do not include
+this slice. See [CONTINUATION.md](CONTINUATION.md) for setup and verification.
+The current local 43-file suite passes; live deployment remains unverified.
