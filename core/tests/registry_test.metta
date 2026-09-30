@@ -32,16 +32,18 @@
     )
 )
 
-(= (regCandidateB)
-    (action STAY
-        (0.1  0.0  0.2  0.1  0.1  0.2  0.1  0.3)
-        0.05
-        (0.01 0.00 0.01 0.01 0.02 0.01 0.01 0.01)
+(= (regCandidates) 
+    (let $regCandidateB 
+        (|-> () 
+            (action STAY 
+                (0.1 0.0 0.2 0.1 0.1 0.2 0.1 0.3) 
+                0.05 
+                (0.01 0.00 0.01 0.01 0.02 0.01 0.01 0.01)
+            )
+        )
+        ( (regCandidateA) ($regCandidateB) )
     )
 )
-
-(= (regCandidates) ((regCandidateA) (regCandidateB)))
-
 
 ;; Symbol readers resolve to config atoms  
 
@@ -135,22 +137,21 @@
 )
 
 
-;;  module swap: custom decision wired at call-site  
-
-(= (regFirstUnit $state) $state)
-
-(= (regFirstDecide $state $candidates)
-    (let* (
-        (($head $rest) (decons $candidates))
-    )
-        (decisionResult $head (actionDeltaG $head))
-    )
-)
-
-(= (regFirstScore $state $candidate) 1.0)
-
+;; module swap: custom decision wired at call-site
 (= (regFirstDecision)
-    (decisionMonad regFirstUnit regFirstDecide regFirstScore)
+    (let* (
+        ($regFirstUnit   (|-> ($state) 
+                             $state))
+
+        ($regFirstDecide (|-> ($state $candidates)
+                             (let* ((($head $rest) (decons $candidates)))
+                                 (decisionResult $head (actionDeltaG $head)))))
+
+        ($regFirstScore  (|-> ($state $candidate) 
+                             1.0))
+    )
+        (decisionMonad $regFirstUnit $regFirstDecide $regFirstScore)
+    )
 )
 
 (= (regSwappedBimonad)

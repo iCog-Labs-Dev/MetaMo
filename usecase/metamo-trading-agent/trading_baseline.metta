@@ -17,16 +17,6 @@
 ;; The return size that triggers the momentum rule.
 (= (BASELINE_THRESHOLD) 0.01)
 
-;; The momentum rule itself. Buy when flat after a rise beyond the
-;; threshold, sell when holding after a fall beyond it, otherwise hold.
-;; Example: (baselineAction 0.02 False) -> buy
-(= (baselineAction $return $holding)
-    (if $holding
-        (if (< $return (* -1.0 (BASELINE_THRESHOLD))) sell hold)
-        (if (> $return (BASELINE_THRESHOLD)) buy hold)
-    )
-)
-
 ;; Runs the baseline over one scenario's whole price series and prints one
 ;; parseable atom per step, in the same shape as the MetaMo agent's log.
 ;; Example: (baselineLoop vshape (initialPortfolio) 1)
@@ -42,7 +32,13 @@
             ($price         (scenarioPriceAt $scenario $step))
             ($return        (scenarioReturn $scenario $step))
             ($holding       (isHolding $portfolio))
-            ($actionId      (baselineAction $return $holding))
+            ($baselineAction (|-> ($return $holding)
+                (if $holding
+                    (if (< $return (* -1.0 (BASELINE_THRESHOLD))) sell hold)
+                    (if (> $return (BASELINE_THRESHOLD)) buy hold)
+                )
+            ))
+            ($actionId      ($baselineAction $return $holding))
             ($nextPortfolio (executeTrade $portfolio $actionId $price))
             ($value         (roundNum (portfolioValue $nextPortfolio $price) 2))
             ($_ (println! (BASELINE scenario $scenario step $step price $price action $actionId value $value)))

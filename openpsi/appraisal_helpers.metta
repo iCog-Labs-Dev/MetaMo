@@ -1,4 +1,3 @@
-
 (: boundOpenPsiModulator (-> Number Number))
 
 ;; Bounds a modulator value using a sigmoid function to keep it between 0 and 1.
@@ -24,7 +23,6 @@
 (= (openPsiIndScale $gInd)
     (eval (expNum (- $gInd 0.5)))
 )
-
 ;; Calculates novelty adjusted for risk, representing "benign" novelty.
 ;; Example: (openPsiBenignNovelty 0.8 0.1)
 (= (openPsiBenignNovelty $novelty $risk)
@@ -36,7 +34,6 @@
 (= (openPsiDemandingContext $effort $risk)
     (/ (+ $effort $risk) 2.0)
 )
-
 ;; Calculates the change in valence based on conduciveness, benign novelty, risk, and effort.
 ;; Example: (openPsiDeltaValence 0.8 0.1 0.1 0.2)
 (= (openPsiDeltaValence $conduciveness $benignNovelty $risk $effort)

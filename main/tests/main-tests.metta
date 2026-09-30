@@ -28,7 +28,11 @@
 ;; Mock bimonad fixture for deterministic integration tests.
 ;; Example: (runMetaMoCycle (integrationBimonad) states stimulus candidates () () False 0.05)
 (= (integrationBimonad)
-    (testMetaMoBimonad integrationRichAppraise integrationConstantDecide integrationSimpleScore)
+    (testMetaMoBimonad
+        integrationRichAppraise
+        integrationConstantDecide
+        integrationSimpleScore
+    )
 )
 
 ;; Shared OpenPSI-shaped state fixture.
@@ -122,7 +126,8 @@
          (0.0 0.0 0.0 0.0 0.0 1.0)))
 )
 
-!(get-type (testMetaMoBimonad integrationRichAppraise integrationConstantDecide integrationSimpleScore))
+!(get-type 
+    (testMetaMoBimonad integrationRichAppraise integrationConstantDecide integrationSimpleScore))
 
 !(test
     (cycleFinalAction (eval (integrationCycleNoBlend)))

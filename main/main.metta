@@ -1,4 +1,3 @@
-
 ;; Reusable MetaMo integration entry point.
 
 
@@ -16,23 +15,13 @@
 (= (subsystemName      $s) (namedContainerName  $s))
 (= (subsystemMotivation $s) (namedContainerValue $s))
 
-;; namedAction aliases
-;; Example: (namedActionName  (namedAction curiosity a)) -> curiosity
+;; namedAction aliase
 ;; Example: (namedActionValue (namedAction curiosity a)) -> a
-(= (namedActionName  $n) (namedContainerName  $n))
 (= (namedActionValue $n) (namedContainerValue $n))
 
 ;; namedMotivation aliases
-;; Example: (namedMotivationName  (namedMotivation ethics s)) -> ethics
 ;; Example: (namedMotivationValue (namedMotivation ethics s)) -> s
-(= (namedMotivationName  $n) (namedContainerName  $n))
 (= (namedMotivationValue $n) (namedContainerValue $n))
-
-;; consensusPair aliases
-;; Example: (consensusPairLeft  (consensusPair curiosity ethics)) -> curiosity
-;; Example: (consensusPairRight (consensusPair curiosity ethics)) -> ethics
-(= (consensusPairLeft  $p) (namedContainerName  $p))
-(= (consensusPairRight $p) (namedContainerValue $p))
 
 ;; localTransition is a 3-field type (name, action, target) so it keeps its
 ;; own dedicated accessors.
@@ -240,12 +229,13 @@
 
 ;; Find one namedAction from cycleLocalActions by subsystem name.
 ;; Symmetric to findLocalTransition.
-;; Example: (findNamedAction curiosity localActions) -> (namedAction curiosity actionA)
+;; Example: (findNamedAction curiosity localActions) -> (namedAction curiosity actionA);;
 (= (findNamedAction $name $namedActions)
     (let* (
         (($head $rest) (decons-atom $namedActions))
+        ($namedActionName (|-> ($n) (namedContainerName $n)))
     )
-        (if (== (namedActionName $head) $name)
+        (if (== ($namedActionName $head) $name)
             $head
             (findNamedAction $name $rest)
         )
@@ -258,8 +248,9 @@
 (= (findNamedMotivation $name $namedMotivations)
     (let* (
         (($head $rest) (decons-atom $namedMotivations))
+        ($namedMotivationName (|-> ($n) (namedContainerName $n)))
     )
-        (if (== (namedMotivationName $head) $name)
+        (if (== ($namedMotivationName $head) $name)
             $head
             (findNamedMotivation $name $rest)
         )
@@ -396,8 +387,10 @@
             )
             (let* (
                 ($pair (resolveConsensusPair $states $consensusPairOrEmpty))
-                ($leftState (findSubsystemState (consensusPairLeft $pair) $states))
-                ($rightState (findSubsystemState (consensusPairRight $pair) $states))
+                ($consensusPairLeft  (|-> ($p) (namedContainerName $p)))
+                ($consensusPairRight (|-> ($p) (namedContainerValue $p)))
+                ($leftState (findSubsystemState ($consensusPairLeft $pair) $states))
+                ($rightState (findSubsystemState ($consensusPairRight $pair) $states))
             )
                 (consensusTransition
                     $bimonad
@@ -547,7 +540,6 @@
             (0.125 0.125 0.0 0.0 0.0 0.0 0.0 0.0))
         (0.125 0.125 0.0 0.0 0.0 0.0 0.0 0.0))
 )
-
 ;; Test scoring function used by consensusAction. Higher correlation sums win
 ;; when current goals are identical.
 ;;
@@ -573,5 +565,7 @@
 (= (integrationAlwaysSafe $state)
     True
 )
+
+
 
 

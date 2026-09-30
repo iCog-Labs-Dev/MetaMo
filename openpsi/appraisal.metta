@@ -1,9 +1,9 @@
-
-
 ;; Creates an OpenPSI appraisal comonad using a custom appraisal function.
 ;; Example: (openPsiAppraisalWith customAppraiseFn)
 (= (openPsiAppraisalWith $appraiseFn)
-    (appraisalComonad openPsiExtract $appraiseFn)
+    (let $openPsiExtract (|-> ($state) $state)
+        (appraisalComonad $openPsiExtract $appraiseFn)
+    )
 )
 
 ;; Creates a default OpenPSI appraisal comonad using the standard openPsiAppraise function.
@@ -11,13 +11,6 @@
 (= (openPsiAppraisal)
     (openPsiAppraisalWith openPsiAppraise)
 )
-
-;; Extracts the current motivation state from the comonad.
-;; Example: (openPsiExtract (motivation (goals) (modulators)))
-(= (openPsiExtract $state)
-    $state
-)
-
 ;; Performs the core OpenPSI appraisal by updating the motivation state based on a stimulus.
 ;; Example:
 ;;   (openPsiAppraise
@@ -50,7 +43,7 @@
         ($indScale         (eval (openPsiIndScale $gInd)))
         ($benignNovelty    (eval (openPsiBenignNovelty $novelty $risk)))
         ($demandingContext (eval (openPsiDemandingContext $effort $risk)))
-
+        
         ;; Delta calculations
         ($deltaValence    (eval (openPsiDeltaValence $conduciveness $benignNovelty $risk $effort)))
         ($deltaArousal    (eval (openPsiDeltaArousal $novelty $arousalFeedback $risk $effort)))

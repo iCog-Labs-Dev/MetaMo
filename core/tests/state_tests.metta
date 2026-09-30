@@ -93,8 +93,6 @@
     )
     True
 )
-
-
 !(test
     (copyMotivationState (motivation (0.3 0.2 0.1 0.3) (0.4 0.6 0.7)))
     (motivation (0.3 0.2 0.1 0.3) (0.4 0.6 0.7))
