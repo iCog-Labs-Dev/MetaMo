@@ -1,6 +1,6 @@
 ;; Host budget accounting interfaces for the OmegaClaw v1 integration.
-;; Initialization is implemented; availability, reservation and settlement remain
-;; explicit stubs. Load contexts/typed_policy before this module.
+;; Initialization and availability are implemented; reservation and settlement
+;; remain explicit stubs. Load contexts/typed_policy before this module.
 ;; Keep this module out of runtime composition until implementation and wiring
 ;; are complete. See omega_docs/INTEGRATION_PLAN.md for acceptance criteria.
 ;;
@@ -68,11 +68,46 @@
                      (change-state! &budget-account-state (BudgetAccounts $accounts))
                      (BudgetAccountsInitialized (size-atom $accounts))))))))
 
-;; Publish current availability using resourceBudgetFromAccounting from
-;; contexts/typed_policy.metta, loaded by the application composition.
-;; TODO: read one consistent account revision; reject missing/invalid accounts.
+(= (baAccountIdValid $id)
+   (case $id (
+      ((BudgetAccountId $namespace $scope $resource $unit)
+       (tpAllTrue ((tpId $namespace) (baScopeValid $scope)
+          (tpId $resource) (tpId $unit))))
+      ($_ False))))
+
+;; Called only with a validated snapshot. Match full identity without coercion
+;; or fallback to another namespace, scope, resource, or unit.
+(= (baAvailabilityIn $accounts $accountId)
+   (if (== $accounts ()) (BudgetAccountingRejected MissingBudgetAccount)
+       (let* (
+          (($head $tail) (decons-atom $accounts))
+          ((BudgetAccount $id $limit $spent $reserved $status $_revision) $head))
+          (if (== $id $accountId)
+              (let (BudgetAccountId $_namespace $_scope $resource $unit) $id
+                 (resourceBudgetFromAccounting
+                    $resource $unit $limit $spent $reserved $status))
+              (baAvailabilityIn $tail $accountId)))))
+
+;; Read the store once, then validate/project that same snapshot without writes.
+;; Invalid or ambiguous stored data fails closed rather than yielding capacity.
+;; Closed/Exhausted status is preserved for the existing policy gate to reject.
 (= (budgetAvailability $accountId)
-   (Error budgetAvailability NotImplemented))
+   (if (not (is-ground $accountId))
+       (BudgetAccountingRejected InvalidBudgetAccountId)
+       (if (not (baAccountIdValid $accountId))
+           (BudgetAccountingRejected InvalidBudgetAccountId)
+           (let $snapshot (get-state &budget-account-state)
+              (if (not (is-ground $snapshot))
+                  (BudgetAccountingRejected InvalidBudgetAccounts)
+                  (case $snapshot (
+                     (BudgetAccountsUninitialized
+                      (BudgetAccountingRejected AccountsNotInitialized))
+                     ((BudgetAccounts $accounts)
+                      (let $reason (baAccountsReason $accounts 128 ())
+                         (if (== $reason Valid)
+                             (baAvailabilityIn $accounts $accountId)
+                             (BudgetAccountingRejected $reason))))
+                     ($_ (BudgetAccountingRejected InvalidBudgetAccounts)))))))))
 
 ;; Reserve all global/frame costs under Core's dispatch lock before execution.
 ;; TODO: check current balances, update all accounts or none, retain the exact
