@@ -2,8 +2,17 @@
 
 MetaMo checks prospective costs; Core owns balances, reservations, meters and
 dispatch. This document defines the required host behavior. The current code
-implements numeric admission and a pure accounting projection, **not a live
-reservation ledger or transactional dispatcher**.
+implements numeric admission, accounting projection, and an isolated session
+reservation module. **Production dispatch accounting, settlement and durable
+recovery remain unimplemented.**
+
+`budget_accounting.metta` now initializes accounts, publishes availability, and
+reserves complete global/frame costs with session replay protection. It commits
+balances and the reservation record in one state update under a serialized-caller
+contract. It is not yet imported by production composition or called by Core
+dispatch; it does not acquire the host mutex or authorize execution. See the
+[integration plan](INTEGRATION_PLAN.md#budget-accounting-functions-to-implement)
+for interfaces, tests, and remaining wiring.
 
 ## Values and publication
 
@@ -88,6 +97,9 @@ restore all reserved capacity as available on startup.
 `tests/budget_accounting_test.metta` checks accounting projection, overcommitment,
 pending reservations reducing admission, both scopes, units, missing resources,
 duplicate/malformed costs and settlement arithmetic examples through PeTTa.
-These tests do not simulate a transactional ledger. Core still needs tests for
+These tests do not simulate a transactional ledger.
+`tests/budget_reservation_test.metta` additionally covers session reservation,
+all-or-nothing multi-account failure, cumulative exhaustion and replay without
+duplicate charges. Core still needs integrated tests for
 concurrent reservations, all-or-nothing multi-account failure, revocation before
 start, duplicate callbacks, partial execution costs and restart reconciliation.

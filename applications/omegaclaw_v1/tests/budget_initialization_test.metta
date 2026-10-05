@@ -81,21 +81,21 @@
     (BudgetAccount (BudgetAccountId "host" Global "tokens" "tokens") 9007199254740991 0 0 Open 9007199254740991)
     (BudgetAccount (BudgetAccountId "host" Global "commands" "other-unit") 1 0 0 Open 0)))
 !(test (initBudgetAccounts (initialAccounts)) (BudgetAccountsInitialized 6))
-!(test (get-state &budget-account-state) (BudgetAccounts (initialAccounts)))
+!(test (get-state &budget-account-state) (BudgetAccounts (initialAccounts) ()))
 !(test (initBudgetAccounts (initialAccounts)) (BudgetAccountingRejected AlreadyInitialized))
 !(test (initBudgetAccounts ()) (BudgetAccountingRejected AlreadyInitialized))
 !(test (initBudgetAccounts ((initAccount Global 100 0 0 Open 0)))
    (BudgetAccountingRejected AlreadyInitialized))
 !(test (initBudgetAccounts "invalid replacement") (BudgetAccountingRejected AlreadyInitialized))
-!(test (get-state &budget-account-state) (BudgetAccounts (initialAccounts)))
+!(test (get-state &budget-account-state) (BudgetAccounts (initialAccounts) ()))
 
 ;; Test-only reset; there is deliberately no production reset function.
 !(change-state! &budget-account-state BudgetAccountsUninitialized)
 !(test (initBudgetAccounts ()) (BudgetAccountsInitialized 0))
-!(test (get-state &budget-account-state) (BudgetAccounts ()))
+!(test (get-state &budget-account-state) (BudgetAccounts () ()))
 !(test (initBudgetAccounts ((initAccount Global 10 0 0 Open 0)))
    (BudgetAccountingRejected AlreadyInitialized))
-!(test (get-state &budget-account-state) (BudgetAccounts ()))
+!(test (get-state &budget-account-state) (BudgetAccounts () ()))
 
 ;; Bounded input: 129 distinct accounts fail without partially storing any;
 ;; the same session can then initialize with the allowed 128 accounts.
@@ -108,4 +108,4 @@
 !(test (rejectedInit (manyInitAccounts 129))
    ((BudgetAccountingRejected TooManyBudgetAccounts) BudgetAccountsUninitialized))
 !(test (initBudgetAccounts (manyInitAccounts 128)) (BudgetAccountsInitialized 128))
-!(test (get-state &budget-account-state) (BudgetAccounts (manyInitAccounts 128)))
+!(test (get-state &budget-account-state) (BudgetAccounts (manyInitAccounts 128) ()))

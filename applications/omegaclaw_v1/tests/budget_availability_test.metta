@@ -41,17 +41,17 @@
 
 ;; Repeated reads preserve every balance and revision.
 !(test (budgetAvailability (availabilityId Global)) (ResourceBudget "commands" "units" 3 Open))
-!(test (get-state &budget-account-state) (BudgetAccounts (availabilityAccounts)))
+!(test (get-state &budget-account-state) (BudgetAccounts (availabilityAccounts) ()))
 
 ;; Test-only host mutations: subsequent calls must see updated availability.
 !(change-state! &budget-account-state
-   (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 4 5 Open 8))))
+   (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 4 5 Open 8)) ()))
 !(test (budgetAvailability (availabilityId Global)) (ResourceBudget "commands" "units" 1 Open))
 !(test (get-state &budget-account-state)
-   (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 4 5 Open 8))))
+   (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 4 5 Open 8)) ()))
 
 ;; Empty initialized storage differs from an uninitialized store.
-!(change-state! &budget-account-state (BudgetAccounts ()))
+!(change-state! &budget-account-state (BudgetAccounts () ()))
 !(test (budgetAvailability (availabilityId Global)) (BudgetAccountingRejected MissingBudgetAccount))
 
 ;; Corrupt host state must not produce capacity or mutate itself.
@@ -62,19 +62,19 @@
          ($result (=alpha (get-state &budget-account-state) $snapshot)))))
 !(test (availabilityCorruption Broken)
    ((BudgetAccountingRejected InvalidBudgetAccounts) True))
-!(test (availabilityCorruption (BudgetAccounts "broken"))
+!(test (availabilityCorruption (BudgetAccounts "broken" ()))
    ((BudgetAccountingRejected InvalidBudgetAccounts) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 8 3 Open 0))))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 8 3 Open 0)) ()))
    ((BudgetAccountingRejected BudgetOvercommitted) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 1.5 0 Open 0))))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 1.5 0 Open 0)) ()))
    ((BudgetAccountingRejected InvalidBudgetAccount) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Unknown 0))))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Unknown 0)) ()))
    ((BudgetAccountingRejected InvalidBudgetAccounting) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Open -1))))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Open -1)) ()))
    ((BudgetAccountingRejected InvalidBudgetAccount) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Open 0) (BudgetAccount (availabilityId Global) 20 0 0 Open 0))))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Open 0) (BudgetAccount (availabilityId Global) 20 0 0 Open 0)) ()))
    ((BudgetAccountingRejected DuplicateBudgetAccount) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Open 0) Broken)))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 0 0 Open 0) Broken) ()))
    ((BudgetAccountingRejected InvalidBudgetAccount) True))
-!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 $spent 0 Open 0))))
+!(test (availabilityCorruption (BudgetAccounts ((BudgetAccount (availabilityId Global) 10 $spent 0 Open 0)) ()))
    ((BudgetAccountingRejected InvalidBudgetAccounts) True))
