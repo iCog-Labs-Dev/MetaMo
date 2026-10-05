@@ -1,6 +1,6 @@
 ;; Host budget accounting interfaces for the OmegaClaw v1 integration.
-;; Initialization, availability and reservation are implemented; settlement
-;; remains an explicit stub. Load contexts/typed_policy before this module.
+;; Session initialization, availability, reservation and settlement.
+;; Load contexts/typed_policy before this module.
 ;; Keep this module out of runtime composition until implementation and wiring
 ;; are complete. See omega_docs/INTEGRATION_PLAN.md for acceptance criteria.
 ;;
@@ -251,6 +251,10 @@
 ;; revisions/balances. Validate shape/identity before looking up a replay.
 (= (baReservationRecordValid $record $seen)
    (case $record (
+      ((BudgetSettlement $reservation $actual $result)
+       (case (baReservationRecordValid $reservation $seen) (
+          (True (baSettlementRecordValid $reservation $actual $result))
+          (False False))))
       ((BudgetReservation $ticket $operation $costs $before)
        (case ((baTicketValid $ticket) (baOperationValid $operation)
               (tpContains $seen $ticket)) (
@@ -268,21 +272,26 @@
           (case (baReservationRecordValid $head $seen) (
              (True
               (let* (
-                 ((BudgetReservation $ticket $_ $_ $_) $head)
+                 ((BudgetReservation $ticket $_ $_ $_) (baOriginalReservation $head))
                  ($nextSeen (cons-atom $ticket $seen)))
                  (baReservationsValid $tail $nextSeen)))
              (False False)))))
       ($_ False))))
 
+(= (baOriginalReservation $record)
+   (case $record (
+      ((BudgetSettlement $reservation $_ $_) $reservation)
+      ($_ $record))))
+
 (= (baFindReservation $records $ticket)
    (case $records (
       (() NoBudgetReservation)
       ($_ (let* ((($head $tail) (decons-atom $records))
-              ((BudgetReservation $id $_ $_ $_) $head))
+              ((BudgetReservation $id $_ $_ $_) (baOriginalReservation $head)))
           (if (== $id $ticket) $head (baFindReservation $tail $ticket)))))))
 
 (= (baReserveIn $accounts $records $ticket $operation $costs)
-   (case (baFindReservation $records $ticket) (
+   (case (baOriginalReservation (baFindReservation $records $ticket)) (
       ((BudgetReservation $_ $priorOperation $priorCosts $_)
        (if (and (== $operation $priorOperation) (== $costs $priorCosts))
            (BudgetReserved $ticket $costs)
@@ -328,8 +337,189 @@
           ($rejection $rejection))))
       ($reason (BudgetAccountingRejected $reason)))))
 
-;; Settle trusted actual costs against the retained reservation exactly once.
-;; TODO: charge usage, release unused capacity, and reject conflicting repeats.
-;; Proven non-start permits explicit zero usage; uncertainty stays reserved.
+;; Actual usage uses the same AccountCost rows as reservation, with actual rather
+;; than prospective amounts. Every reserved resource/scope must be reported,
+;; including explicit zeros. Both scopes measure the same consumption.
+(= (baActualAmount $rows $id)
+   (case $rows (
+      (() (BudgetAccountingRejected InvalidActualCosts))
+      ($_
+       (let ($head $tail) (decons-atom $rows)
+          (case $head (
+             ((AccountCost $actualId $amount)
+              (case ((== $actualId $id) (baInteger $amount)) (
+                 ((True True) (BudgetActualAmount $amount))
+                 ((True False) (BudgetAccountingRejected InvalidActualCosts))
+                 ((False $_) (baActualAmount $tail $id)))))
+             ($_ (BudgetAccountingRejected InvalidActualCosts)))))))))
+
+;; Reservations already have canonical global/frame pairs. Build the same order
+;; for observed usage, rejecting unequal scope reports before updating anything.
+(= (baCanonicalActualCosts $reserved $rows)
+   (case $reserved (
+      (() (BudgetAccountCosts ()))
+      ($_
+       (let* (
+          (((AccountCost $globalId $_) $tail) (decons-atom $reserved))
+          (((AccountCost $frameId $_) $rest) (decons-atom $tail)))
+          (case ((baActualAmount $rows $globalId) (baActualAmount $rows $frameId)) (
+             (((BudgetActualAmount $global) (BudgetActualAmount $frame))
+              (if (!= $global $frame) (BudgetAccountingRejected ScopeUsageMismatch)
+                  (case (baCanonicalActualCosts $rest $rows) (
+                     ((BudgetAccountCosts $remaining)
+                      (let* (
+                         ($frameCost (AccountCost $frameId $frame))
+                         ($globalCost (AccountCost $globalId $global))
+                         ($withFrame (cons-atom $frameCost $remaining))
+                         ($withGlobal (cons-atom $globalCost $withFrame)))
+                         (BudgetAccountCosts $withGlobal)))
+                     ($rejection $rejection)))))
+             ($_ (BudgetAccountingRejected InvalidActualCosts)))))))))
+
+(= (baNormalizeActualCosts $reserved $rows)
+   (case (get-metatype $rows) (
+      (Expression
+       (case (baCanonicalActualCosts $reserved $rows) (
+          ((BudgetAccountCosts $actual)
+           (if (baCostRowsMatch $rows $actual 256) (BudgetAccountCosts $actual)
+               (BudgetAccountingRejected InvalidActualCosts)))
+          ($rejection $rejection))))
+      ($_ (BudgetAccountingRejected InvalidActualCosts)))))
+
+(= (baUsageOverrun $reserved $actual)
+   (case $reserved (
+      (() False)
+      ($_
+       (let* (
+          (((AccountCost $_ $planned) $restReserved) (decons-atom $reserved))
+          (((AccountCost $_ $used) $restActual) (decons-atom $actual)))
+          (if (> $used $planned) True (baUsageOverrun $restReserved $restActual)))))))
+
+(= (baSettlementResult $ticket $reserved $actual)
+   (if (baUsageOverrun $reserved $actual)
+       (BudgetAccountingPending $ticket BudgetOverrun)
+       (BudgetSettled $ticket $actual)))
+
+(= (baSettlementRecordValid $reservation $actual $result)
+   (case $reservation (
+      ((BudgetReservation $ticket $_ $reserved $_)
+       (case (baNormalizeActualCosts $reserved $actual) (
+          ((BudgetAccountCosts $canonical)
+           (and (== $canonical $actual)
+                (== $result (baSettlementResult $ticket $reserved $actual))))
+          ($_ False))))
+      ($_ False))))
+
+(= (baSettlementAccountReason $account $planned)
+   (let (BudgetAccount $_ $_ $_ $reserved $_ $revision) $account
+      (case ((< $reserved $planned) (>= $revision 9007199254740991)) (
+         ((True $_) ReservationBalanceMismatch)
+         ((False True) BudgetRevisionExhausted)
+         ((False False) Valid)))))
+
+;; On overrun, retain the full reservation and original spent amount, close the
+;; accounts, and retain actual usage in the settlement record for reconciliation.
+;; This keeps numeric invariants valid without hiding or refunding the overrun.
+(= (baPrepareAccountSettlement $account $tail $planned $used $overrun)
+   (case (baSettlementAccountReason $account $planned) (
+      (Valid
+       (let* (
+          ((BudgetAccount $id $limit $spent $reserved $status $revision) $account)
+          ($updatedAccount
+             (case $overrun (
+                (True (BudgetAccount $id $limit $spent $reserved Closed (+ $revision 1)))
+                (False (BudgetAccount $id $limit (+ $spent $used)
+                          (- $reserved $planned) $status (+ $revision 1))))))
+          ($updatedAccounts (cons-atom $updatedAccount $tail)))
+          (BudgetSettlementAccounts $updatedAccounts)))
+      ($reason (BudgetAccountingRejected $reason)))))
+
+(= (baSettleOne $accounts $id $planned $used $overrun)
+   (case $accounts (
+      (() (BudgetAccountingRejected MissingBudgetAccount))
+      ($_
+       (let* ((($head $tail) (decons-atom $accounts))
+              ((BudgetAccount $actualId $_ $_ $_ $_ $_) $head))
+          (if (== $actualId $id)
+              (baPrepareAccountSettlement $head $tail $planned $used $overrun)
+              (case (baSettleOne $tail $id $planned $used $overrun) (
+                 ((BudgetSettlementAccounts $updated)
+                  (let* (($nextAccounts (cons-atom $head $updated)))
+                     (BudgetSettlementAccounts $nextAccounts)))
+                 ($rejection $rejection)))))))))
+
+(= (baSettleCosts $accounts $reserved $actual $overrun)
+   (case $reserved (
+      (() (BudgetSettlementAccounts $accounts))
+      ($_
+       (let* (
+          (((AccountCost $id $planned) $restReserved) (decons-atom $reserved))
+          (((AccountCost $_ $used) $restActual) (decons-atom $actual)))
+          (case (baSettleOne $accounts $id $planned $used $overrun) (
+             ((BudgetSettlementAccounts $updated)
+              (baSettleCosts $updated $restReserved $restActual $overrun))
+             ($rejection $rejection))))))))
+
+(= (baReplaceReservation $records $ticket $replacement)
+   (let* ((($head $tail) (decons-atom $records))
+          ((BudgetReservation $id $_ $_ $_) (baOriginalReservation $head)))
+      (if (== $id $ticket)
+          (let* (($nextRecords (cons-atom $replacement $tail))) $nextRecords)
+          (let* (
+             ($remaining (baReplaceReservation $tail $ticket $replacement))
+             ($nextRecords (cons-atom $head $remaining)))
+             $nextRecords))))
+
+(= (baCommitSettlement $accounts $records $reservation $actual)
+   (let* (
+      ((BudgetReservation $ticket $_ $reserved $_) $reservation)
+      ($overrun (baUsageOverrun $reserved $actual)))
+      (case (baSettleCosts $accounts $reserved $actual $overrun) (
+         ((BudgetSettlementAccounts $updated)
+          (let* (
+             ($result (baSettlementResult $ticket $reserved $actual))
+             ($settlement (BudgetSettlement $reservation $actual $result))
+             ($nextRecords (baReplaceReservation $records $ticket $settlement))
+             ($_ (change-state! &budget-account-state (BudgetAccounts $updated $nextRecords))))
+             $result))
+         ($rejection $rejection)))))
+
+(= (baSettleRecord $accounts $records $record $actual)
+   (case $record (
+      ((BudgetSettlement $_ $priorActual $result)
+       (if (== $actual $priorActual) $result (BudgetAccountingRejected ConflictingReplay)))
+      ($_ (baCommitSettlement $accounts $records $record $actual)))))
+
+(= (baSettleIn $accounts $records $ticket $actualCosts)
+   (case (baFindReservation $records $ticket) (
+      (NoBudgetReservation (BudgetAccountingRejected UnknownDispatch))
+      ($record
+       (let (BudgetReservation $_ $_ $reserved $_) (baOriginalReservation $record)
+          (case $actualCosts (
+             (Unknown
+              (case $record (
+                 ((BudgetSettlement $_ $_ $result) $result)
+                 ($_ (BudgetAccountingPending $ticket UsageUnknown)))))
+             ($_
+              (case (baNormalizeActualCosts $reserved $actualCosts) (
+                 ((BudgetAccountCosts $actual) (baSettleRecord $accounts $records $record $actual))
+                 ($rejection $rejection)))))))))))
+
+(= (baSettleSnapshot $snapshot $ticket $actualCosts)
+   (case (baValidatedSnapshot $snapshot) (
+      ((BudgetAccounts $accounts $records)
+       (if (baReservationsValid $records ())
+           (baSettleIn $accounts $records $ticket $actualCosts)
+           (BudgetAccountingRejected InvalidBudgetReservations)))
+      ($rejection $rejection))))
+
+;; Trusted serialized host observations only. A zero report asserts proven zero
+;; consumption; a failure or timeout must never be translated to zero implicitly.
+;; Preserve the reservation for Unknown usage. No execution or frame state changes.
 (= (settleOperationBudget $dispatchId $actualCosts)
-   (Error settleOperationBudget NotImplemented))
+   (case (is-ground ($dispatchId $actualCosts)) (
+      (False (BudgetAccountingRejected InvalidBudgetSettlement))
+      (True
+       (case (baTicketValid $dispatchId) (
+          (True (baSettleSnapshot (get-state &budget-account-state) $dispatchId $actualCosts))
+          (False (BudgetAccountingRejected InvalidDispatchId))))))))

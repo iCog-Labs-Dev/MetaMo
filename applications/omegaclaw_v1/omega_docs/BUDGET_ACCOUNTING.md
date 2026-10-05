@@ -2,13 +2,14 @@
 
 MetaMo checks prospective costs; Core owns balances, reservations, meters and
 dispatch. This document defines the required host behavior. The current code
-implements numeric admission, accounting projection, and an isolated session
-reservation module. **Production dispatch accounting, settlement and durable
-recovery remain unimplemented.**
+implements numeric admission, accounting projection, and isolated session
+reservation/settlement. **Production dispatch accounting, usage metering and
+durable recovery remain unimplemented.**
 
 `budget_accounting.metta` now initializes accounts, publishes availability, and
-reserves complete global/frame costs with session replay protection. It commits
-balances and the reservation record in one state update under a serialized-caller
+reserves complete global/frame costs and settles actual usage with session replay
+protection. It commits balances and the reservation/settlement record in one state
+update under a serialized-caller
 contract. It is not yet imported by production composition or called by Core
 dispatch; it does not acquire the host mutex or authorize execution. See the
 [integration plan](INTEGRATION_PLAN.md#budget-accounting-functions-to-implement)
@@ -87,6 +88,14 @@ unit. Reject mismatched observations without releasing funds. Repeated identical
 claims/outcomes return the stored result without another debit, refund, or start;
 conflicting replays are rejected. A retry is a new dispatch with a new reservation.
 
+The session implementation accepts actual `AccountCost` rows for every reserved
+account, with equal usage in global/frame scopes. It retains completed records
+for replay protection. `Unknown` usage leaves pending capacity untouched. An
+overrun retains the actual report and closes all accounts affected by that
+operation, keeping spent/reserved unchanged until host reconciliation. It does
+not automatically reconcile or reopen accounts; this is a pending overrun, not
+final settlement. See the integration plan for the exact API and result records.
+
 Restart-safe operation requires a durable atomic ledger and reconciliation of
 in-flight reservations before new spending. Until that exists, session-only
 implementations must explicitly exclude crash/restart guarantees; they must not
@@ -100,6 +109,9 @@ duplicate/malformed costs and settlement arithmetic examples through PeTTa.
 These tests do not simulate a transactional ledger.
 `tests/budget_reservation_test.metta` additionally covers session reservation,
 all-or-nothing multi-account failure, cumulative exhaustion and replay without
-duplicate charges. Core still needs integrated tests for
+duplicate charges. `tests/budget_settlement_test.metta` covers actual partial/full/
+zero usage, preserved competing reservations, duplicate/conflicting reports,
+unknown consumption, overrun blocking, revoked accounts and atomic failure.
+Core still needs integrated tests for
 concurrent reservations, all-or-nothing multi-account failure, revocation before
 start, duplicate callbacks, partial execution costs and restart reconciliation.
