@@ -258,21 +258,3 @@
     )
 )
 
-
-;; Minimal, domain-neutral stimulus passthrough for the generic default profile.
-(= (defaultStimulusFeatureFn $state $stimulus) $stimulus)
-
-(= (defaultApplicationDeltas $state $features) ())
-
-(= (makeDefaultAppraisalProfile)
-    (appraisalProfile
-        default_openpsi
-        (valence arousal approach resolution threshold securing)
-        defaultStimulusFeatureFn
-        commonOpenPsiCoreDeltas
-        defaultApplicationDeltas
-        commonOpenPsiGoalFeedback
-        1.0
-        ()
-    )
-)
