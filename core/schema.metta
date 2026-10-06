@@ -219,3 +219,23 @@
     )
 )
 
+
+;; A minimal, domain-neutral goal schema for the generic framework default.
+;; Not meant to represent any real application's goals - see makeDefaultAppraisalProfile.
+(= (makeDefaultGoalSchema)
+    (magusGoalSchema (engage) (caution) (individuation transcendence engage caution) individuation transcendence)
+)
+
+(= (makeDefaultModulatorSchema)
+    (modulatorSchema (valence arousal approach resolution threshold securing) () (valence arousal approach resolution threshold securing))
+)
+
+(= (makeDefaultMotivationSchema)
+    (motivationSchema
+        default_motivation
+        (makeDefaultGoalSchema)
+        (makeDefaultModulatorSchema)
+        default_magus
+        default_openpsi
+    )
+)

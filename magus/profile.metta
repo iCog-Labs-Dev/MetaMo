@@ -285,3 +285,14 @@
     )
 )
 
+
+(= (makeDefaultDecisionProfile)
+    (decisionProfile
+        default_magus
+        (makeDefaultMotivationSchema)
+        () () () () () () () ()
+        0.01 0.02 0.05 0.0 0.1
+    )
+)
+
+(= (defaultGoalChangeFn $state $features) (goalChangeFeedback ()))
