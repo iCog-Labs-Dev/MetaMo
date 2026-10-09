@@ -14,15 +14,18 @@
           ($rest (frameStateTake (- $n 1) $tail)))
           (cons-atom $head $rest))))
 
-;; Choose the evidence status exposed to MetaMo. SameFrame and
-;; PossibleSameFrame always become VerificationRequired; this currently
-;; overrides even supplied Confirmed/Refuted evidence. Other relation types
-;; retain their supplied status. The source/target arguments are not inspected.
+;; Preserve host-supplied verification observations, including Unresolved.
+;; Same-frame proposals without an observation still require verification.
+;; This is projection only: it neither authenticates evidence nor grants frame
+;; mutation authority. The source/target arguments are not inspected.
 (= (frameStateRelationEvidence $source $target $type $evidence)
-   (case $type
-      ((SameFrame VerificationRequired)
-       (PossibleSameFrame VerificationRequired)
-       ($_ $evidence))))
+   (if (or (== $type SameFrame) (== $type PossibleSameFrame))
+       (case $evidence
+          ((Confirmed Confirmed)
+           (Refuted Refuted)
+           (Unresolved Unresolved)
+           ($_ VerificationRequired)))
+       $evidence))
 
 ;; Project a positional FrameRelation into the named fields of
 ;; FrameStateRelation used by MetaMo. Preserve source/target IDs, relation type,
@@ -71,8 +74,10 @@
    )
       (cons-atom $projected $rest)))
 
-;; A same-frame relation is evidence requiring verification, never permission
-;; to merge or rewrite either frame.
+;; Only a pending verification request triggers verification. Preserved
+;; Unresolved observations are not confirmation or an automatic retry request;
+;; the host must explicitly request another verification. No status here grants
+;; permission to merge or rewrite either frame.
 ;; Keep this as one structural rule. A broad fallback rule would overlap the
 ;; VerificationRequired pattern in MeTTa and produce both True and False,
 ;; allowing an unsafe same-frame branch to survive nondeterministic matching.

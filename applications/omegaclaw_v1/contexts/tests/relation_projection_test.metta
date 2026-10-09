@@ -25,8 +25,7 @@
       (relation-type ContinuationOf) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
       (confidence 0.7) (evidence-status Unverified))))
 
-;; These characterize the current overwrite, not a desired evidence policy.
-;; Even resolved same-frame evidence is currently reset to VerificationRequired.
+;; Preserve observed same-frame evidence; unverified proposals remain gated.
 
 !(test (collapse (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Unverified)))
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
@@ -36,12 +35,12 @@
 !(test (collapse (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Confirmed)))
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
       (relation-type SameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
-      (confidence 0.9) (evidence-status VerificationRequired))))
+      (confidence 0.9) (evidence-status Confirmed))))
 
 !(test (collapse (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Refuted)))
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
       (relation-type SameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
-      (confidence 0.9) (evidence-status VerificationRequired))))
+      (confidence 0.9) (evidence-status Refuted))))
 
 !(test (collapse (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Unverified)))
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
@@ -51,12 +50,12 @@
 !(test (collapse (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Confirmed)))
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
       (relation-type PossibleSameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
-      (confidence 0.9) (evidence-status VerificationRequired))))
+      (confidence 0.9) (evidence-status Confirmed))))
 
 !(test (collapse (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Refuted)))
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
       (relation-type PossibleSameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
-      (confidence 0.9) (evidence-status VerificationRequired))))
+      (confidence 0.9) (evidence-status Refuted))))
 
 ;; Other types preserve unresolved evidence and boundary confidence values.
 
@@ -78,3 +77,88 @@
    ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
       (relation-type ContinuationOf) (reason (py-call (str "sha256:7dbf05774ebc8b02 chars:241 excerpt:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...")))
       (confidence 0.7) (evidence-status Unverified))))
+
+;; Both positional spellings preserve all host observation statuses.
+;; The consumer must not turn an observation into a fresh verification request.
+
+!(test (collapse (frameStateProjectRelation (Relation frame-a frame-b SameFrame same 0.9 Confirmed)))
+   ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
+      (relation-type SameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
+      (confidence 0.9) (evidence-status Confirmed))))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Confirmed)))) (False))
+
+!(test (collapse (frameStateProjectRelation (Relation frame-a frame-b SameFrame same 0.9 Refuted)))
+   ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
+      (relation-type SameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
+      (confidence 0.9) (evidence-status Refuted))))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Refuted)))) (False))
+
+!(test (collapse (frameStateProjectRelation (Relation frame-a frame-b SameFrame same 0.9 Unresolved)))
+   ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
+      (relation-type SameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
+      (confidence 0.9) (evidence-status Unresolved))))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Unresolved)))) (False))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Unverified)))) (True))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 Proposed)))) (True))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 VerificationRequired)))) (True))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b SameFrame same 0.9 UnknownEvidence)))) (True))
+
+;; Provider relations without evidence still request verification.
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (Relation (FrameID-1 frame-a) (FrameID-2 frame-b)
+      (Class SameFrame) (Reason same) (Confidence 0.9))))) (True))
+
+!(test (collapse (frameStateProjectRelation (Relation frame-a frame-b PossibleSameFrame same 0.9 Confirmed)))
+   ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
+      (relation-type PossibleSameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
+      (confidence 0.9) (evidence-status Confirmed))))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Confirmed)))) (False))
+
+!(test (collapse (frameStateProjectRelation (Relation frame-a frame-b PossibleSameFrame same 0.9 Refuted)))
+   ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
+      (relation-type PossibleSameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
+      (confidence 0.9) (evidence-status Refuted))))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Refuted)))) (False))
+
+!(test (collapse (frameStateProjectRelation (Relation frame-a frame-b PossibleSameFrame same 0.9 Unresolved)))
+   ((FrameStateRelation (source-frame frame-a) (target-frame frame-b)
+      (relation-type PossibleSameFrame) (reason (py-call (str "sha256:0967115f2813a354 chars:4 excerpt:same")))
+      (confidence 0.9) (evidence-status Unresolved))))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Unresolved)))) (False))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Unverified)))) (True))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 Proposed)))) (True))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 VerificationRequired)))) (True))
+
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (FrameRelation frame-a frame-b PossibleSameFrame same 0.9 UnknownEvidence)))) (True))
+
+;; Provider relations without evidence still request verification.
+!(test (collapse (relationNeedsVerification
+   (frameStateProjectRelation (Relation (FrameID-1 frame-a) (FrameID-2 frame-b)
+      (Class PossibleSameFrame) (Reason same) (Confidence 0.9))))) (True))
