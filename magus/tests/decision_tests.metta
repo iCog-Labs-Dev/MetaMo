@@ -99,3 +99,45 @@
     )
     4
 )
+
+
+(= (decisionTieCandidateA)
+    (actionCandidate first (decisionTestSchema) (0.0 0.0 0.5 0.0) (0.0 0.0 0.0 0.0) ())
+)
+
+(= (decisionTieCandidateB)
+    (actionCandidate second (decisionTestSchema) (0.0 0.0 0.5 0.0) (0.0 0.0 0.0 0.0) ())
+)
+
+; Tie-break: identical candidate vectors -> identical scores.
+; Documented behavior: whichever candidate is listed FIRST should win.
+!(test
+    (candidateId
+        (decisionAction
+            (magusDecide
+                (decisionTestDecision)
+                (decisionTestState)
+                ((decisionTieCandidateA) (decisionTieCandidateB))
+                (goalChangeFeedback ())
+            )
+        )
+    )
+    first
+)
+
+; Flip the order - "second" is now first, and should win instead.
+; Proves the tie-break is genuinely order-driven, not a fluke.
+!(test
+    (candidateId
+        (decisionAction
+            (magusDecide
+                (decisionTestDecision)
+                (decisionTestState)
+                ((decisionTieCandidateB) (decisionTieCandidateA))
+                (goalChangeFeedback ())
+            )
+        )
+    )
+    second
+)
+

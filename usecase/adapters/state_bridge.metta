@@ -52,7 +52,7 @@
 ;   → (motivation (0.65 0.44 0.55 0.52 0.46 0.62 0.65 0.58)
 ;                 (0.00 0.40 0.40 0.40 0.30 0.10))
 
-(: projectToMotivation (-> Expression Expression))
+(: projectToMotivation (-> Atom Expression))
 (= (projectToMotivation $space)
   (let*
     (
