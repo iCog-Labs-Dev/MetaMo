@@ -60,6 +60,54 @@ def command():
     return '(read-file ' + json.dumps(_config["allowed_files"][0]) + ')'
 
 
+def write_send(variant):
+    config = copy.deepcopy(_config)
+    config['destination'] = {'channel': 'local', 'recipient': 'stdout'}
+    config['commands'].append({'skill': 'send', 'arguments': ['observed reply']})
+    for name in ('global', 'frame'):
+        config[name]['skills'].append('send')
+        config[name]['permissions'].extend(['channels.send', 'channels.send:local:stdout'])
+        config[name]['egress'] = ['local:stdout']
+    if variant == 'permission-denied':
+        config['frame']['permissions'].remove('channels.send:local:stdout')
+    elif variant == 'egress-denied':
+        config['global']['egress'] = []
+    elif variant == 'budget-denied':
+        config['frame']['budgets'][0]['available'] = 0
+    elif variant == 'cost-denied':
+        config['global']['constraints'] = [['MaxCost', 'commands', 'units', 0]]
+    elif variant == 'skill-denied':
+        config['global']['skills'].remove('send')
+    elif variant != 'allowed':
+        raise ValueError('unknown send variant')
+    _path.write_text(json.dumps(config), encoding='utf-8')
+    return str(_path)
+
+
+_send_output = None
+_send_capture = None
+
+
+def capture_local_output():
+    import contextlib
+    import io
+    global _send_output, _send_capture
+    _send_output = io.StringIO()
+    _send_capture = contextlib.redirect_stdout(_send_output)
+    _send_capture.__enter__()
+    return 1
+
+
+def local_send_count():
+    rows = [json.loads(line) for line in _send_output.getvalue().splitlines()]
+    return sum(row == {'channel': 'local', 'message': 'observed reply'} for row in rows)
+
+
+def finish_local_capture():
+    _send_capture.__exit__(None, None, None)
+    return 1
+
+
 def revoke_frame_command():
     import janus
     return int(janus.query_once("mm_dispatch_revoke(['show-current-frame'])")["truth"])

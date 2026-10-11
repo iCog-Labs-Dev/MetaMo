@@ -1,4 +1,4 @@
-"""Trusted, explicit session configuration for existing Core inspection handlers.
+"""Trusted session configuration for Core inspection and local send handlers.
 
 Not a model skill. Call provision from trusted host code after initMetaMoDispatch.
 The host owns this file and the configured filesystem paths throughout the session.
@@ -33,9 +33,11 @@ def encode(value):
     raise ConfigError("unsupported configuration value")
 
 
-def keys(value, required):
-    if not isinstance(value, dict) or set(value) != set(required):
-        raise ConfigError("expected exactly these fields: " + ", ".join(required))
+def keys(value, required, optional=()):
+    if (not isinstance(value, dict) or not set(required).issubset(value)
+            or not set(value).issubset(set(required) | set(optional))):
+        raise ConfigError("expected required fields: " + ", ".join(required)
+                          + "; optional fields: " + ", ".join(optional))
 
 
 def identifier(value):
@@ -107,10 +109,25 @@ def allowed_file(value):
     return name
 
 
-def binding(command, frame_id, allowed_files):
+def destination_metadata(value):
+    """Resolve explicit destination data to requirements, never permission grants.
+    """
+    keys(value, ("channel", "recipient"))
+    channel = identifier(value["channel"])
+    recipient = identifier(value["recipient"])
+    if channel != "local" or recipient != "stdout":
+        raise ConfigError("unsupported destination; expected local/stdout")
+    return record("HostDestination", record("channel", channel),
+                  record("recipient", recipient),
+                  record("permissions", ["channels.send", "channels.send:local:stdout"]),
+                  record("egress", ["local:stdout"]))
+
+
+def binding(command, frame_id, allowed_files, destination=None):
     keys(command, ("skill", "arguments"))
     skill = command["skill"]
     arguments = items(command["arguments"])
+    egress = []
     if skill == "read-file":
         if len(arguments) != 1 or arguments[0] not in allowed_files:
             raise ConfigError("read-file requires one explicitly allowed canonical path")
@@ -124,13 +141,22 @@ def binding(command, frame_id, allowed_files):
             raise ConfigError("show-current-frame accepts no arguments")
         candidate = "search-knowledge"
         permissions = ["frames.read"]
+    elif skill == "send":
+        if (len(arguments) != 1 or type(arguments[0]) is not str
+                or not arguments[0].strip() or len(arguments[0]) > 1200
+                or any(ord(c) < 32 and c not in "\n\t" for c in arguments[0])):
+            raise ConfigError("send requires one nonblank text argument of at most 1200 characters")
+        metadata = dict(destination_metadata(destination)[1:])
+        candidate = "respond"
+        permissions = metadata["permissions"]
+        egress = metadata["egress"]
     else:
         raise ConfigError("unsupported skill")
-    # These two Core handlers perform local reads only. There is no command
-    # argument that can add a destination, omit a permission, or change the cost.
+    # Requirements come from the trusted catalog, never command-supplied grants.
+    # One invocation costs one command unit, not tokens/bytes or settled usage.
     operation = record("PolicyOperation", record("candidate", Symbol(candidate)),
                        record("target", frame_id), record("skill", skill),
-                       record("permissions", permissions), record("egress", []),
+                       record("permissions", permissions), record("egress", egress),
                        record("costs", [record("ResourceCost", "commands", "units", 1)]))
     request = record("AdmissionRequest", Symbol("propose-candidate"),
                      Symbol("current-frame"), Symbol(candidate))
@@ -139,14 +165,21 @@ def binding(command, frame_id, allowed_files):
 
 def build_config(value):
     """Build typed data only. No policy is inferred from model text or defaults."""
-    keys(value, ("version", "frame_id", "allowed_files", "global", "frame", "commands"))
+    keys(value, ("version", "frame_id", "allowed_files", "global", "frame", "commands"),
+         optional=("destination",))
     if type(value["version"]) is not int or value["version"] != 1:
         raise ConfigError("unsupported host configuration version")
+    # Optional for existing read-only configurations, but never default a
+    # supplied incomplete/null destination. Validate before any installation.
+    # Declaring a destination alone must not add grants or executable work.
+    if "destination" in value:
+        destination_metadata(value["destination"])
     frame_id = identifier(value["frame_id"])
     files = [allowed_file(path) for path in identifiers(value["allowed_files"])]
     global_scope = scope(value["global"], Symbol("Global"))
     frame_scope = scope(value["frame"], record("FrameTarget", frame_id))
-    bindings = [binding(command, frame_id, files) for command in items(value["commands"])]
+    bindings = [binding(command, frame_id, files, value.get("destination"))
+                for command in items(value["commands"])]
     encoded_commands = [encode(row[1]) for row in bindings]
     if len(set(encoded_commands)) != len(encoded_commands):
         raise ConfigError("duplicate command binding")

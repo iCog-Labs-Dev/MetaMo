@@ -29,7 +29,7 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
 mm_dispatch_resolve(Intent, Command, Operation) :-
     mm_dispatch_binding(Command,Intent,Operation).
 mm_dispatch_gate(Intent, ['DispatchContext',Bundle,Global,Frame,_,_], Operation, Decision) :-
-    eval([feasibilityGateForRequest, [quote,Bundle], [quote,Bundle],
+    eval([dispatchOperationGate, [quote,Bundle], [quote,Bundle],
           [quote,Intent], [quote,Operation], [quote,Global], [quote,Frame]],Decision).
 mm_dispatch_execute(_, Command, Result) :- eval(Command,Result).
 

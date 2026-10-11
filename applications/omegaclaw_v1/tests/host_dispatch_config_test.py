@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 APP = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("host_dispatch_config", APP / "host_dispatch_config.py")
@@ -25,6 +25,104 @@ class HostDispatchConfigTests(unittest.TestCase):
         self.value["commands"][0]["arguments"] = [str(self.file)]
         for name in ("global", "frame"):
             self.value[name]["permissions"] = ["files.read", "files.read:" + str(self.file), "frames.read"]
+
+    def test_destination_derives_exact_requirements(self):
+        destination = {"channel": "local", "recipient": "stdout"}
+        self.assertEqual(config.destination_metadata(destination),
+                         ["HostDestination", ["channel", "local"],
+                          ["recipient", "stdout"],
+                          ["permissions", ["channels.send", "channels.send:local:stdout"]],
+                          ["egress", ["local:stdout"]]])
+        self.assertEqual(config.encode(config.destination_metadata(destination)),
+                         '(HostDestination (channel "local") (recipient "stdout") '
+                         '(permissions ("channels.send" "channels.send:local:stdout")) '
+                         '(egress ("local:stdout")))')
+
+    def test_destination_does_not_change_read_bindings_or_grant_policy(self):
+        original = copy.deepcopy(self.value)
+        with_destination = dict(self.value, destination={"channel": "local", "recipient": "stdout"})
+        self.assertEqual(config.build_config(with_destination), config.build_config(original))
+        self.assertEqual(self.value, original)
+        with self.assertRaises(config.ConfigError):
+            config.build_config(dict(self.value,
+                                     commands=[{"skill": "send", "arguments": ["hello"]}]))
+
+    def test_send_derives_respond_requirements_without_grants(self):
+        destination = {"channel": "local", "recipient": "stdout"}
+        command = {"skill": "send", "arguments": ['Observed "content"\nnext line']}
+        row = config.binding(command, "frame-1", [], destination)
+        self.assertEqual(row[1], ["send", command["arguments"][0]])
+        self.assertEqual(row[2], ["AdmissionRequest", "propose-candidate", "current-frame", "respond"])
+        operation = dict(row[3][1:])
+        self.assertEqual(operation, {
+            "candidate": "respond", "target": "frame-1", "skill": "send",
+            "permissions": ["channels.send", "channels.send:local:stdout"],
+            "egress": ["local:stdout"], "costs": [["ResourceCost", "commands", "units", 1]]})
+        value = dict(self.value, destination=destination, commands=[command])
+        before = copy.deepcopy(value)
+        self.assertIn('(skill "send")', config.build_config(value))
+        self.assertEqual(value, before)  # Neither policy scope is granted send.
+
+    def test_send_argument_bounds_and_no_authority_overrides(self):
+        destination = {"channel": "local", "recipient": "stdout"}
+        for arguments in ([], ["one", "two"], [None], [True], [["shell", "pwd"]],
+                          [""], [" \n\t"], ["x" * 1201], ["text\x00"], ["text\r"]):
+            with self.subTest(arguments=arguments), self.assertRaises(config.ConfigError):
+                config.binding({"skill": "send", "arguments": arguments}, "frame-1", [], destination)
+        self.assertEqual(config.binding({"skill": "send", "arguments": ["x" * 1200]},
+                                        "frame-1", [], destination)[1][1], "x" * 1200)
+        for field in ("candidate", "recipient", "permissions", "egress", "costs"):
+            command = {"skill": "send", "arguments": ["hello"], field: []}
+            with self.subTest(field=field), self.assertRaises(config.ConfigError):
+                config.binding(command, "frame-1", [], destination)
+
+    def test_destination_rejects_missing_unknown_and_injected_fields(self):
+        invalid = [None, [], "local:stdout", {}, {"channel": "local"},
+                   {"recipient": "stdout"},
+                   {"channel": "irc", "recipient": "#room"},
+                   {"channel": "local", "recipient": "other"}]
+        for field in ("channel", "recipient"):
+            for value in ("", " ", "*", "stdout\n", "x" * 257, True, 1, [], {},
+                          '(send "injected")'):
+                row = {"channel": "local", "recipient": "stdout"}
+                row[field] = value
+                invalid.append(row)
+        for field in ("permissions", "egress", "costs", "server", "token"):
+            invalid.append(dict(channel="local", recipient="stdout", **{field: []}))
+        for destination in invalid:
+            with self.subTest(destination=destination), self.assertRaises(config.ConfigError):
+                config.build_config(dict(self.value, destination=destination))
+
+    def test_invalid_destination_cannot_reach_policy_installer(self):
+        path = self.root / "destination.json"
+        janus = Mock()
+        for destination in (None, {}, {"channel": "local", "recipient": "other"}):
+            path.write_text(json.dumps(dict(self.value, destination=destination)))
+            with patch.dict('sys.modules', {'janus': janus}):
+                with self.subTest(destination=destination), self.assertRaises(config.ConfigError):
+                    config.provision(str(path))
+        janus.query_once.assert_not_called()
+
+    def test_startup_retains_valid_destination_after_invalid_reconfiguration(self):
+        path = self.root / "destination.json"
+        value = dict(self.value, destination={"channel": "local", "recipient": "stdout"})
+        path.write_text(json.dumps(value))
+        config.configure_startup(str(path))
+        retained = config._startup_config
+        self.assertEqual(retained["destination"], value["destination"])
+        with patch.object(config, '_startup_installed', True):
+            path.write_text(json.dumps(dict(value, destination={})))
+            with self.assertRaises(config.ConfigError):
+                config.configure_startup(str(path))
+            self.assertIs(config._startup_config, retained)
+            self.assertTrue(config._startup_installed)
+
+    def test_duplicate_destination_fields_rejected_from_json(self):
+        path = self.root / "destination.json"
+        path.write_text('{"destination":{"channel":"local","recipient":"stdout",'
+                        '"recipient":"other"}}')
+        with self.assertRaises(config.ConfigError):
+            config.read_config(path)
 
     def test_startup_loads_once_and_validates_before_replacement(self):
         path = self.root / "startup.json"

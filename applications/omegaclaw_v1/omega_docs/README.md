@@ -1,5 +1,9 @@
 # MetaMo OmegaClaw Application
 
+Start with [the current project state](CURRENT_PROJECT_STATE.md) for a plain-language
+assessment dated 9 October 2026: component responsibilities, the execution flow,
+terminology, implemented behavior, evidence limits, and remaining functional work.
+
 The bounded [live mode scenario](LIVE_MODES.md) now verifies all six constitutional
 transitions with real provider signals, native read failure/recovery, host
 completion, and Threat/Sleep dispatch checks.

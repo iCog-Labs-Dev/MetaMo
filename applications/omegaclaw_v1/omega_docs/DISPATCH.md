@@ -15,7 +15,7 @@ implementation, not the durable v1 dispatch ledger in `CONTRACTS.md`.
 
 ## Trusted host configuration
 
-`host_dispatch_config.py` provisions a bounded set of real Core read commands.
+`host_dispatch_config.py` provisions a bounded set of real Core read and local send commands.
 Copy `host_dispatch.example.json` into host-owned configuration, replace its
 absolute file paths, and explicitly set both policy scopes. The
 example is a template; importing the module installs nothing.
@@ -24,6 +24,7 @@ example is a template; importing the module installs nothing.
 | --- | --- | --- | --- | --- |
 | `(read-file "/canonical/allowed/file")` | `execute-skill` | `files.read` and `files.read:/canonical/allowed/file` | None | 1 `commands` / `units` |
 | `(show-current-frame)` | `search-knowledge` | `frames.read` | None | 1 `commands` / `units` |
+| `(send "fixed text")` | `respond` | `channels.send` and `channels.send:local:stdout` | `local:stdout` | 1 `commands` / `units` |
 
 The host supplies actual arguments, while the supported-handler catalog derives
 the candidate, target, permissions, egress, and costs. Command entries cannot
@@ -85,6 +86,71 @@ automatic transition authorization or fallback through a `defer` candidate.
 
 ## Startup configuration
 
+### Destination metadata (F1.1)
+
+Read-only configuration remains valid without a `destination` field. To declare
+the destination for the send binding, add this optional top-level
+field to the existing version-1 JSON configuration:
+
+```json
+"destination": {"channel": "local", "recipient": "stdout"}
+```
+
+Only Core's existing local test-channel stdout outbox is supported in this
+increment. Both fields are required when `destination` is present; null, missing,
+unknown, extra or unsupported values are rejected before policy installation.
+There is no environment-derived destination or fallback to a network channel.
+
+`host_dispatch_config.destination_metadata` resolves that object into:
+
+```metta
+(HostDestination (channel "local") (recipient "stdout")
+  (permissions ("channels.send" "channels.send:local:stdout"))
+  (egress ("local:stdout")))
+```
+
+These are handler requirements, not grants. `local:stdout` names the exact
+output destination for policy matching even though this channel has no network
+transport. The declaration does not change either scope's allowlists, initialize
+a channel, or enable `send`. Existing read-only dispatch records remain unchanged.
+The existing read-only example intentionally omits this optional field.
+
+### Send binding (F1.2)
+
+With the destination above, append an exact command to `commands`:
+
+```json
+{"skill": "send", "arguments": ["Your requested result is ready."]}
+```
+
+The catalog derives one `respond` binding for this exact text. Text must be a
+nonblank string of at most 1200 characters; control characters below U+0020 are
+rejected except newline and tab. Command entries cannot override the candidate,
+permissions, destination or cost. Missing destination metadata rejects the
+configuration before installation.
+
+Both global and frame policies must explicitly allow skill `send`, permissions
+`channels.send` and `channels.send:local:stdout`, and egress `local:stdout`.
+Their constraints and budgets must admit one `commands` / `units` invocation.
+This is a prospective command count, not token usage or settled consumption.
+
+The dispatch adapter reuses the existing feasibility gate, then checks Core's
+actual `commchannel` under the dispatch lock. A send requires `local` routing
+and exactly `local:stdout` operation egress; otherwise it is blocked with
+`DestinationMismatch`. The existing exact-command and replay checks apply.
+The host must initialize Core's local channel separately.
+
+This increment accepts fixed host-supplied text. Preparation and capture of
+generated responses remain F1.4/F1.5. Core's send return is still classified as
+`Unobserved`; channel acknowledgement and outcome classification remain F1.6/F1.7.
+
+Verification: 20 Python host-config tests and all 55 MeTTa test files pass,
+including 24 assertions in `tests/host_send_binding_test.metta` exercising real
+local stdout output, preserved reads, policy denials, changed routing, exact
+arguments and replay protection. The dispatch boundary guard also passes.
+
+### Startup invocation
+
 ```bash
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/run.metta --host-config /absolute/path/host.json
 ```
@@ -106,8 +172,8 @@ and exact bindings using the existing host installer.
 Repeated cycles do not reload the file or restore revoked grants. Later frames
 do not inherit the first frame's permissions; mismatched targets remain denied.
 Changing configuration requires explicit trusted reprovisioning or a new process.
-Only `read-file` and `show-current-frame` are supported. Candidate generation and
-policy still determine whether either operation can be selected on a given cycle.
+Only `read-file`, `show-current-frame` and local `send` are supported. Candidate
+generation and policy still determine which operation can be selected on a given cycle.
 The default Core preparation hook does nothing when the v1 startup adapter is
 absent. Preserve the updated Core `src/dispatch.metta` and `src/loop.metta` with
 `host_startup.metta`, `run.metta`, the host configuration module and launcher.
