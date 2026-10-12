@@ -76,6 +76,49 @@ class HostDispatchConfigTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(config.ConfigError):
                 config.binding(command, "frame-1", [], destination)
 
+    def test_explicit_catalog_candidates_preserve_requirements(self):
+        destination = {"channel": "local", "recipient": "stdout"}
+        for command in self.value["commands"] + [{"skill": "send", "arguments": ["Which file?"]}]:
+            default = config.binding(command, "frame-1", [str(self.file)], destination)
+            candidate = str(default[2][-1])
+            self.assertEqual(config.binding(dict(command, candidate=candidate), "frame-1",
+                                            [str(self.file)], destination), default)
+        clarification = dict(command, candidate="ask-clarification")
+        row = config.binding(clarification, "frame-1", [], destination)
+        self.assertEqual(row[2][-1], "ask-clarification")
+        self.assertEqual(dict(row[3][1:])["candidate"], "ask-clarification")
+        self.assertEqual(row[1], default[1])
+        self.assertEqual(row[3][2:], default[3][2:])
+        value = dict(self.value, destination=destination, commands=[clarification])
+        before = copy.deepcopy(value)
+        self.assertIn('(candidate ask-clarification)', config.build_config(value))
+        self.assertEqual(value, before)
+
+    def test_unknown_candidate_handler_mappings_cannot_reach_installer(self):
+        path = self.root / "candidate.json"
+        destination = {"channel": "local", "recipient": "stdout"}
+        janus = Mock()
+        for command in self.value["commands"] + [{"skill": "send", "arguments": ["Which file?"]}]:
+            invalid = [None, True, 1, [], {}, "", "unknown", '(send "injected")']
+            invalid += (["execute-skill", "search-knowledge"] if command["skill"] == "send"
+                        else ["respond", "ask-clarification"])
+            for candidate in invalid:
+                value = dict(self.value, destination=destination,
+                             commands=[dict(command, candidate=candidate)])
+                path.write_text(json.dumps(value))
+                with self.subTest(command=command, candidate=candidate), \
+                        patch.dict('sys.modules', {'janus': janus}), \
+                        self.assertRaises(config.ConfigError):
+                    config.provision(str(path))
+        janus.query_once.assert_not_called()
+
+    def test_duplicate_command_across_candidates_is_rejected(self):
+        command = {"skill": "send", "arguments": ["Which file?"]}
+        value = dict(self.value, destination={"channel": "local", "recipient": "stdout"},
+                     commands=[command, dict(command, candidate="ask-clarification")])
+        with self.assertRaisesRegex(config.ConfigError, "duplicate command binding"):
+            config.build_config(value)
+
     def test_destination_rejects_missing_unknown_and_injected_fields(self):
         invalid = [None, [], "local:stdout", {}, {"channel": "local"},
                    {"recipient": "stdout"},

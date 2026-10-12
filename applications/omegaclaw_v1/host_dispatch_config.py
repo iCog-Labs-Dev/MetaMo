@@ -124,7 +124,7 @@ def destination_metadata(value):
 
 
 def binding(command, frame_id, allowed_files, destination=None):
-    keys(command, ("skill", "arguments"))
+    keys(command, ("skill", "arguments"), optional=("candidate",))
     skill = command["skill"]
     arguments = items(command["arguments"])
     egress = []
@@ -152,6 +152,12 @@ def binding(command, frame_id, allowed_files, destination=None):
         egress = metadata["egress"]
     else:
         raise ConfigError("unsupported skill")
+    # An explicit candidate selects only a catalog-approved mapping. Omission
+    # preserves existing defaults; it cannot change handler requirements.
+    supported_candidates = ("respond", "ask-clarification") if skill == "send" else (candidate,)
+    candidate = command.get("candidate", candidate)
+    if type(candidate) is not str or candidate not in supported_candidates:
+        raise ConfigError("unsupported candidate/handler mapping")
     # Requirements come from the trusted catalog, never command-supplied grants.
     # One invocation costs one command unit, not tokens/bytes or settled usage.
     operation = record("PolicyOperation", record("candidate", Symbol(candidate)),

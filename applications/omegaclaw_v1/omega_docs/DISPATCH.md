@@ -25,10 +25,12 @@ example is a template; importing the module installs nothing.
 | `(read-file "/canonical/allowed/file")` | `execute-skill` | `files.read` and `files.read:/canonical/allowed/file` | None | 1 `commands` / `units` |
 | `(show-current-frame)` | `search-knowledge` | `frames.read` | None | 1 `commands` / `units` |
 | `(send "fixed text")` | `respond` | `channels.send` and `channels.send:local:stdout` | `local:stdout` | 1 `commands` / `units` |
+| `(send "fixed question")` with explicit candidate | `ask-clarification` | `channels.send` and `channels.send:local:stdout` | `local:stdout` | 1 `commands` / `units` |
 
 The host supplies actual arguments, while the supported-handler catalog derives
-the candidate, target, permissions, egress, and costs. Command entries cannot
-override these requirements. File arguments must exactly match an explicitly
+the default candidate, target, permissions, egress, and costs. An optional
+`candidate` selects only a supported catalog mapping (see F1.3 below); command
+entries cannot override handler requirements. File arguments must exactly match an explicitly
 allowlisted canonical regular file. Other skills, arities, nested expressions,
 and unregistered paths receive no binding.
 
@@ -125,8 +127,8 @@ With the destination above, append an exact command to `commands`:
 
 The catalog derives one `respond` binding for this exact text. Text must be a
 nonblank string of at most 1200 characters; control characters below U+0020 are
-rejected except newline and tab. Command entries cannot override the candidate,
-permissions, destination or cost. Missing destination metadata rejects the
+rejected except newline and tab. Candidate selection is restricted to the catalog
+mappings below; permissions, destination and cost cannot be overridden. Missing destination metadata rejects the
 configuration before installation.
 
 Both global and frame policies must explicitly allow skill `send`, permissions
@@ -148,6 +150,39 @@ Verification: 20 Python host-config tests and all 55 MeTTa test files pass,
 including 24 assertions in `tests/host_send_binding_test.metta` exercising real
 local stdout output, preserved reads, policy denials, changed routing, exact
 arguments and replay protection. The dispatch boundary guard also passes.
+
+### Clarification binding (F1.3)
+
+To bind a fixed question through the same local send handler, add an explicit
+candidate to its command entry:
+
+```json
+{"skill": "send", "arguments": ["Which file should I inspect?"], "candidate": "ask-clarification"}
+```
+
+`send` accepts `respond` or `ask-clarification`; omission still selects `respond`.
+`read-file` accepts only its existing `execute-skill` mapping and
+`show-current-frame` only `search-knowledge`. These mappings may also be stated
+explicitly. Null, malformed, unknown or mismatched candidates reject the complete
+configuration before installation. No candidate changes handler requirements or
+adds policy grants.
+
+Configure distinct exact text for a response and a question if both are present.
+The existing duplicate-command check rejects identical commands even when their
+candidate labels differ. Configure one command per candidate to avoid the existing
+`AmbiguousOperation` rejection. A ticket captured for `respond` cannot invoke the
+question bound to `ask-clarification`, or vice versa.
+
+The question uses the same text bounds, destination metadata, policy gate, final
+local-routing check and replay protection as a response. This task adds a trusted
+binding; automatic question preparation, recovery routing and acknowledged
+delivery remain subsequent work. Its handler result remains `Unobserved` in the
+operation outcome classifier.
+
+Verification on 11 October 2026: 23 Python host-config tests, all 55 MeTTa test
+files and the dispatch boundary guard pass. The extended local-send regression
+has 43 assertions checking coexistence, candidate isolation, a real question
+send, replay, unchanged reads/responses, policy denials and routing changes.
 
 ### Startup invocation
 

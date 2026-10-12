@@ -84,6 +84,15 @@ def write_send(variant):
     return str(_path)
 
 
+def write_clarification(variant):
+    write_send(variant)
+    config = json.loads(_path.read_text(encoding='utf-8'))
+    config['commands'].append({'skill': 'send', 'arguments': ['Which file?'],
+                               'candidate': 'ask-clarification'})
+    _path.write_text(json.dumps(config), encoding='utf-8')
+    return str(_path)
+
+
 _send_output = None
 _send_capture = None
 
@@ -98,9 +107,9 @@ def capture_local_output():
     return 1
 
 
-def local_send_count():
+def local_send_count(message='observed reply'):
     rows = [json.loads(line) for line in _send_output.getvalue().splitlines()]
-    return sum(row == {'channel': 'local', 'message': 'observed reply'} for row in rows)
+    return sum(row == {'channel': 'local', 'message': message} for row in rows)
 
 
 def finish_local_capture():
