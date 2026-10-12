@@ -20,13 +20,17 @@ _Owner=[_Session,_Frame,_Commitment,_Task], swrite(_Owner, Owner)
 """
 
 
-def queue_response_preparation(provider, request, observations, destination):
+def queue_response_preparation(provider, request, observations, destination, required_reads=None):
     """Queue one trusted preparation for the next operation capture.
 
     Call after session/task admission. Observations must already have passed
     host outcome ingestion and belong to this task. This neither invokes the
     provider nor grants send permission. Latest explicit queue replaces earlier
     pending input; malformed input clears it rather than retaining stale work.
+    Optional required_reads is the host's complete list of required read paths
+    for this answer (1-16 unique paths). Every path must have successful evidence
+    before queuing. Omitting it preserves preparation without asserting task
+    answer readiness; the model never defines this requirement list.
     """
     from host_dispatch_config import (ConfigError, destination_metadata,
                                       identifier, validate_send_text)
@@ -40,8 +44,18 @@ def queue_response_preparation(provider, request, observations, destination):
         current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + '))')
         if not current.get('truth', False):
             return '(ResponseNoAction MissingSession)'
-        _read_observations(current['Context'], observations)
-        _pending_response = copy.deepcopy((provider, request, observations, destination, current['Owner']))
+        evidence = _read_observations(current['Context'], observations)
+        if required_reads is not None:
+            if type(required_reads) is not list or not 1 <= len(required_reads) <= 16:
+                raise ConfigError('expected 1-16 required read paths')
+            for path in required_reads:
+                identifier(path)
+            if len(set(required_reads)) != len(required_reads):
+                raise ConfigError('duplicate required read')
+            if not set(required_reads) <= {row['path'] for row in evidence}:
+                return '(ResponseNoAction MissingRequiredReads)'
+        _pending_response = copy.deepcopy((provider, request, observations, destination,
+                                           current['Owner'], required_reads is not None))
         return '(ResponsePreparationQueued)'
     except (ConfigError, ValueError, TypeError, RecursionError):
         return '(ResponseNoAction InvalidInput)'
@@ -55,7 +69,7 @@ def _prepare_pending_response():
         return
     import janus
     from host_dispatch_config import binding, encode
-    provider, request, observations, destination, owner = pending
+    provider, request, observations, destination, owner, reads_ready = pending
     captured = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[]], _)),
     ''' + _PREPARATION_CONTEXT + ''', sread(ExpectedOwner, _ExpectedOwner), _Owner == _ExpectedOwner,
@@ -84,13 +98,15 @@ def _prepare_pending_response():
                 ['PolicyOperation',_Candidate,_,_Skill,_Permissions,_Egress,_Costs]],
             _Operation=['PolicyOperation',_Candidate,[target,_NativeFrame],
                         _Skill,_Permissions,_Egress,_Costs],
+            (ReadsReady == 1 -> _Readiness=['ReadEvidenceReady',_Task]; _Readiness='NoReadReadiness'),
             _Value=['PreparedHostOperation',Context,_Commitment,
-                    [send,_Text],_Request,_Operation]
+                    [send,_Text],_Request,_Operation,_Readiness]
          ; _Value=_Prepared),
         oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[quote,_Value]], _))
     ))''', {'Epoch': captured['Epoch'], 'Snapshot': captured['Snapshot'],
             'ContextSource': captured['ContextSource'], 'ExpectedOwner': owner,
-            'PreparedSource': prepared, 'Template': template})
+            'PreparedSource': prepared, 'Template': template,
+            'ReadsReady': int(reads_ready)})
 
 
 def _read_observations(context, observations):

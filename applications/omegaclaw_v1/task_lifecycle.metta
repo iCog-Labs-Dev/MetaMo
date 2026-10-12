@@ -187,7 +187,8 @@
    (and (frameRuntimeTaskOpen $bundle)
         (and (not (bundle-runtime-has-new-message $bundle))
              (and (not (awaitingClarificationResponseForBundle $bundle))
-                  (and (hasResults) (not (hasErrors)))))))
+                  (and (or (hasResults) (eval (preparedResponseReadyForBundle $bundle)))
+                       (not (hasErrors)))))))
 
 (= (resultQuestionNeedsResponse)
    (resultQuestionNeedsResponseForBundle (activeFrameBundle)))

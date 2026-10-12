@@ -43,12 +43,17 @@ def queue(mode):
     import host_operations
     import lib_llm_ext
     global _mode
-    _mode = mode
+    _mode = mode[6:] if mode.startswith("ready-") else mode
     lib_llm_ext.PROMPT_DELIMITER = ':-:-:-:'
     lib_llm_ext.callProvider = call_provider
+    required = None
+    if mode in ('ready', 'missing-read') or mode.startswith('ready-'):
+        required = [_observations[0][1][3][1]]
+        if mode == 'missing-read':
+            required.append('/not-observed')
     return host_operations.queue_response_preparation(
         'Offline', 'Summarize the observed file', _observations,
-        {'channel': 'local', 'recipient': 'stdout'})
+        {'channel': 'local', 'recipient': 'stdout'}, required_reads=required)
 
 
 def call_provider(provider, prompt, max_tokens):

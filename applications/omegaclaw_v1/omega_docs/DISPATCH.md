@@ -324,7 +324,7 @@ outside this session contract.
 
 The trusted caller remains responsible for admitted evidence and deciding when
 to queue it. Ordinary startup does not automatically gather a task's observations
-or generate an answer on every message. F1.8 owns answer availability; F1.7
+or generate an answer on every message. F1.8 adds host-declared answer readiness; F1.7
 provides classification of send observations, and F1.9 owns task-level duplicate-answer
 suppression. An explicit new queue can prepare another reply in a later cycle.
 There is no new IRC support, autonomous task planning or durable recovery here.
@@ -383,8 +383,8 @@ failure streak, as it does for other successful operations.
 
 No task-completion rule changes: delivery success alone does not close a task or
 commitment. The real prepared-response regression verifies that a local reply
-produces success feedback while the task stays open. F1.8 answer availability and
-F1.9 task-level suppression remain separate work.
+produces success feedback while the task stays open. F1.8 adds answer availability
+below; F1.9 task-level suppression remains separate work.
 
 The existing signal projection now sees that success on the next cycle, rather
 than treating the send as an unknown result. In the prepared-response fixture,
@@ -393,6 +393,52 @@ cycle's reply binding has expired and no new answer has been prepared.
 
 Verification: all 56 MeTTa test files pass, including 69 outcome-ingestion and
 51 prepared-response assertions. Dispatch and commitment boundary guards pass.
+
+### Answer availability (F1.8)
+
+The trusted host can now state which reads its answer requires when queuing
+preparation. For example, after retaining admitted successful outcomes for both
+files:
+
+```python
+host_operations.queue_response_preparation(
+    "ASICloud", "Compare the two files", admitted_read_outcomes,
+    {"channel": "local", "recipient": "stdout"},
+    required_reads=["/allowed/first.txt", "/allowed/second.txt"])
+```
+
+`required_reads` contains 1–16 unique, bounded path strings. Matching uses the
+exact paths in the successful read commands. Every required path must be covered
+by the supplied session/frame-correlated observations. Missing coverage returns
+`(ResponseNoAction MissingRequiredReads)` without calling the provider; malformed
+requirements return `InvalidInput`. Both clear pending preparation. The host
+still owns outcome authenticity and task membership, and must supply the complete
+requirements for this answer. This is not an automatic task planner or a new
+evidence store.
+
+When coverage is complete and the provider produces a valid answer, the existing
+`PreparedHostOperation` carries `(ReadEvidenceReady TASK)`. The existing
+`taskResultReadyForBundle` rule accepts that evidence alongside its earlier result
+signal. Thus a task can offer `respond` even after fresh read feedback has been
+consumed. Readiness requires a current prepared binding, matching frame and task
+summary, and the existing open-task, no-new-input, clarification and error checks.
+Existing continuation precedence still selects a pending execution step first.
+
+Readiness expires with the command's operation cycle and commitment ownership.
+Revocation, policy replacement and session reset clear the same command slot;
+provider no-action or invalid output does not publish readiness. Concrete policy
+admission and exact-ticket dispatch remain mandatory. Readiness grants no send
+permission and does not complete a task.
+
+The optional argument preserves existing four-argument callers: they can still
+prepare commands, but do not assert this new required-read readiness. Normal
+startup still needs trusted host code to collect observations and queue an answer.
+Task-level repeated-answer suppression remains F1.9.
+
+Verification covers multi-read coverage, missing requirements, readiness without
+fresh result feedback, actual local dispatch, cycle expiry, provider invalidation
+and policy denial. The 17 Python preparation tests, all 56 MeTTa test files, and
+dispatch/commitment boundary guards pass.
 
 ### Startup invocation
 

@@ -14,7 +14,7 @@
 
 (= (preparedHostBinding)
    (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation $context $owner $command $request $operation)
+      ((PreparedHostOperation $context $owner $command $request $operation $_readiness)
        (if (and (== $context (get-state &operation-context))
                 (== $owner (commitmentSnapshot)))
            (HostCommandBinding $command $request $operation) ()))
@@ -22,8 +22,20 @@
 
 (= (revokePreparedHostCommand $command)
    (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation $_ $_ $prepared $_ $_)
+      ((PreparedHostOperation $_ $_ $prepared $_ $_ $_)
        (if (== $command $prepared) (change-state! &prepared-host-operation ()) False))
+      ($_ False))))
+
+;; Host-supplied required reads are checked before preparation. Readiness is
+;; carried by that same cycle-owned command, never inferred from result text.
+(= (preparedResponseReadyForBundle $bundle)
+   (case (get-state &prepared-host-operation) (
+      ((PreparedHostOperation (OperationContext $session $cycle $frame) $_ $_ $_ $_
+          (ReadEvidenceReady $task))
+       (and (!= (preparedHostBinding) ())
+            (and (== $frame (frameBundleCurrentId $bundle))
+                 (and (hostTaskValuePresent $task)
+                      (== (frameStateRuntimeSummary $task 500) (frameRuntimeActiveTask $bundle))))))
       ($_ False))))
 
 !(bind! &applied-operation-decision (new-state ()))

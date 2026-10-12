@@ -218,6 +218,31 @@ class ResponseQueueTests(unittest.TestCase):
         self.assertIsNone(host._pending_response)
         self.assertEqual(self.provider.mock_calls, [])
 
+    def test_required_reads_must_all_have_successful_observations(self):
+        def queue(paths):
+            return host.queue_response_preparation('ASICloud', 'Summarize', self.observations,
+                                                   self.destination, required_reads=paths)
+        self.assertEqual(queue(['/allowed/input.txt']), '(ResponsePreparationQueued)')
+        self.assertTrue(host._pending_response[-1])
+        self.assertEqual(queue(['/allowed/input.txt', '/missing']),
+                         '(ResponseNoAction MissingRequiredReads)')
+        self.assertIsNone(host._pending_response)
+        for paths in ([], 'path', ['/x'] * 2, ['/x'] * 17, [None], ['']):
+            with self.subTest(paths=paths):
+                self.assertEqual(queue(paths), '(ResponseNoAction InvalidInput)')
+                self.assertIsNone(host._pending_response)
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_required_reads_can_span_multiple_admitted_cycles(self):
+        second = read_outcome(2)
+        second[1][3][1] = '/second'
+        second[2][1][1] = '/second'
+        self.observations.append(second)
+        self.assertEqual(host.queue_response_preparation('ASICloud', 'Summarize', self.observations,
+            self.destination, required_reads=['/allowed/input.txt', '/second']),
+            '(ResponsePreparationQueued)')
+        self.assertEqual(self.provider.mock_calls, [])
+
 
 if __name__ == '__main__':
     unittest.main()
