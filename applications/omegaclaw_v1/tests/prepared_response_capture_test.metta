@@ -66,8 +66,18 @@
 !(test (coreLoopDispatchCommand (get-state &reply-ticket) (selectedHostCommand))
    (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
 !(test (py-call (host_config_fixture.local_send_count)) 1)
-;; A later cycle does not reuse a cycle-owned generated reply.
-!(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
+;; The real dispatch callback preserves acceptance and classifies this operation.
+!(bind! &accepted-reply (new-state (get-state &last-operation-outcome)))
+!(test (get-state &accepted-reply)
+   (OperationOutcome (get-state &selected-operation-decision)
+      (attempted-command (quote (send "observed reply"))) Success
+      (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted))))
+;; Success feedback replaces the old unknown-result exploration signal. The
+;; cycle-owned reply expires; no replacement answer is available before F1.8.
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Success 0))
+!(test (get-state &task-open) True)
+!(test (get-state &active-task) "Inspect the file")
 !(test (preparedHostBinding) ())
 !(test (py-call (prepared_response_fixture.calls)) 1)
 ;; A newly prepared reply retains its captured destination in the ticket.

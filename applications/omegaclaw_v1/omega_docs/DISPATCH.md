@@ -144,9 +144,8 @@ The host must initialize Core's local channel separately.
 
 This increment accepts fixed host-supplied text. F1.4 now provides a separate
 preparation helper; F1.5 connects explicitly queued preparation to normal capture.
-Core's send return is still classified as
-`Unobserved`; F1.6 now exposes local stdout acceptance below, while outcome
-classification remains F1.7.
+F1.6 exposes local stdout acceptance; F1.7 classifies that exact observation as
+operation `Success`. Unknown delivery and suppressed duplicates remain `Unobserved`.
 
 Verification: 20 Python host-config tests and all 55 MeTTa test files pass,
 including 24 assertions in `tests/host_send_binding_test.metta` exercising real
@@ -326,7 +325,7 @@ outside this session contract.
 The trusted caller remains responsible for admitted evidence and deciding when
 to queue it. Ordinary startup does not automatically gather a task's observations
 or generate an answer on every message. F1.8 owns answer availability; F1.7
-owns classification of send observations, and F1.9 owns task-level duplicate-answer
+provides classification of send observations, and F1.9 owns task-level duplicate-answer
 suppression. An explicit new queue can prepare another reply in a later cycle.
 There is no new IRC support, autonomous task planning or durable recovery here.
 
@@ -360,9 +359,40 @@ exist: the existing dispatcher records `Unobserved ExecutionUncertain`, never
 including after an uncertain send. This does not add retries or task-level
 duplicate suppression.
 
-`operationOutcomeStatus` remains unchanged: these send results are still
-`Unobserved` until F1.7 adds classification. Tests cover actual stdout output,
+F1.7 classifies this observation through `operationOutcomeStatus` below.
+Tests cover actual stdout output,
 write/flush exceptions, suppression, acceptance replay and uncertain replay.
+
+### Send outcome classification (F1.7)
+
+For a `send` command, `operationOutcomeStatus` now recognizes exactly
+`(DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted))`
+as `Success`. This means the local output operation succeeded, with only the
+write-and-flush guarantee described above. It does not assert remote delivery.
+
+Suppressed duplicates, legacy integer returns, missing or malformed observations,
+unsupported destinations and uncertain dispatch results remain `Unobserved`.
+Existing explicit dispatch rejections stay `Blocked`; handler `Error` results
+retain the existing `Failure` classification.
+
+Both `respond` and `ask-clarification` use the existing correlated outcome
+ingestion and one-shot feedback consumption. The raw dispatch result is retained;
+duplicate callbacks cannot apply feedback twice, and a callback cannot label an
+uncertain send as success. Successful consumption resets the existing operation
+failure streak, as it does for other successful operations.
+
+No task-completion rule changes: delivery success alone does not close a task or
+commitment. The real prepared-response regression verifies that a local reply
+produces success feedback while the task stays open. F1.8 answer availability and
+F1.9 task-level suppression remain separate work.
+
+The existing signal projection now sees that success on the next cycle, rather
+than treating the send as an unknown result. In the prepared-response fixture,
+that changes the next selection from `search-knowledge` to `none`: the previous
+cycle's reply binding has expired and no new answer has been prepared.
+
+Verification: all 56 MeTTa test files pass, including 69 outcome-ingestion and
+51 prepared-response assertions. Dispatch and commitment boundary guards pass.
 
 ### Startup invocation
 

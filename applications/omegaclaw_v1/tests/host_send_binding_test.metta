@@ -111,9 +111,9 @@
 !(test (coreDispatchCommand (get-state &clarification-ticket) (hostClarificationCommand))
    (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
 !(test (py-call (host_config_fixture.local_send_count "Which file?")) 1)
-;; Local acceptance classification remains F1.7; it does not establish task completion.
+;; Local acceptance establishes operation success, not task completion.
 !(test (operationOutcomeStatus (hostClarificationCommand) (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
-   Unobserved)
+   Success)
 !(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
    (DispatchResult Executed Feasible "observed local file content"))
 !(test (coreDispatchCommand (hostSendTicket) (hostSendCommand))
