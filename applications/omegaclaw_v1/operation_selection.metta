@@ -8,6 +8,23 @@
 !(bind! &selected-operation-decision (new-state ()))
 !(bind! &selected-operation-commitment (new-state ()))
 !(bind! &last-operation-outcome (new-state ()))
+;; One generated command, owned by its capture cycle and host commitment.
+;; It is data, never a policy grant or a replacement dispatch ledger.
+!(bind! &prepared-host-operation (new-state ()))
+
+(= (preparedHostBinding)
+   (case (get-state &prepared-host-operation) (
+      ((PreparedHostOperation $context $owner $command $request $operation)
+       (if (and (== $context (get-state &operation-context))
+                (== $owner (commitmentSnapshot)))
+           (HostCommandBinding $command $request $operation) ()))
+      ($_ ()))))
+
+(= (revokePreparedHostCommand $command)
+   (case (get-state &prepared-host-operation) (
+      ((PreparedHostOperation $_ $_ $prepared $_ $_)
+       (if (== $command $prepared) (change-state! &prepared-host-operation ()) False))
+      ($_ False))))
 
 !(bind! &applied-operation-decision (new-state ()))
 !(bind! &operation-failure-streak (new-state 0))
@@ -25,6 +42,7 @@
           (change-state! &selected-operation-decision ())
           (change-state! &selected-operation-commitment ())
           (change-state! &last-operation-outcome ())
+          (change-state! &prepared-host-operation ())
           (change-state! &applied-operation-decision ())
           (change-state! &operation-failure-streak 0)
           (change-state! &host-recovery NoRecovery)

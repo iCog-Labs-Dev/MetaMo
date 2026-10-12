@@ -176,5 +176,48 @@ class ResponsePreparationTests(unittest.TestCase):
                          'observed file content')
 
 
+class ResponseQueueTests(unittest.TestCase):
+    def setUp(self):
+        self.janus = Mock()
+        self.janus.query_once.return_value = {
+            'truth': True, 'Context': ['OperationContext', 'session', 2, 'frame'],
+            'Owner': '("session" "frame" NoCommitment "task")'}
+        self.provider = Mock()
+        self.destination = {'channel': 'local', 'recipient': 'stdout'}
+        self.observations = [read_outcome()]
+        host._pending_response = None
+        modules = patch.dict(sys.modules, {'janus': self.janus, 'lib_llm_ext': self.provider})
+        modules.start()
+        self.addCleanup(modules.stop)
+        self.addCleanup(setattr, host, '_pending_response', None)
+
+    def queue(self):
+        return host.queue_response_preparation('ASICloud', 'Summarize', self.observations, self.destination)
+
+    def test_queue_copies_trusted_inputs_without_calling_provider(self):
+        self.assertEqual(self.queue(), '(ResponsePreparationQueued)')
+        self.observations[0][4][3] = 'later mutation'
+        self.destination['channel'] = 'irc'
+        self.assertEqual(host._pending_response[2][0][4][3], 'observed file content')
+        self.assertEqual(host._pending_response[3]['channel'], 'local')
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_invalid_queue_clears_pending_input(self):
+        self.queue()
+        self.destination['channel'] = 'irc'
+        self.assertEqual(self.queue(), '(ResponseNoAction InvalidInput)')
+        self.assertIsNone(host._pending_response)
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_missing_session_or_wrong_evidence_is_not_queued(self):
+        self.janus.query_once.return_value = {'truth': False}
+        self.assertEqual(self.queue(), '(ResponseNoAction MissingSession)')
+        self.janus.query_once.return_value = {
+            'truth': True, 'Context': ['OperationContext', 'other-session', 2, 'frame'], 'Owner': '()'}
+        self.assertEqual(self.queue(), '(ResponseNoAction InvalidInput)')
+        self.assertIsNone(host._pending_response)
+        self.assertEqual(self.provider.mock_calls, [])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -5,6 +5,92 @@ permissions nor executes commands. Use only in the serialized host interpreter.
 """
 
 import json
+import copy
+
+
+_pending_response = None
+
+# Read native identity as data; swrite preserves symbol/string distinctions.
+_PREPARATION_CONTEXT = r"""
+eval(['get-state','&operation-context'], Context),
+Context=['OperationContext',_Session,_Cycle,_Frame], _Frame \== [],
+eval([commitmentSnapshot], _Commitment),
+eval(['get-state','&active-task'], _Task),
+_Owner=[_Session,_Frame,_Commitment,_Task], swrite(_Owner, Owner)
+"""
+
+
+def queue_response_preparation(provider, request, observations, destination):
+    """Queue one trusted preparation for the next operation capture.
+
+    Call after session/task admission. Observations must already have passed
+    host outcome ingestion and belong to this task. This neither invokes the
+    provider nor grants send permission. Latest explicit queue replaces earlier
+    pending input; malformed input clears it rather than retaining stale work.
+    """
+    from host_dispatch_config import (ConfigError, destination_metadata,
+                                      identifier, validate_send_text)
+    global _pending_response
+    _pending_response = None
+    try:
+        identifier(provider)
+        validate_send_text(request)
+        destination_metadata(destination)
+        import janus
+        current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + '))')
+        if not current.get('truth', False):
+            return '(ResponseNoAction MissingSession)'
+        _read_observations(current['Context'], observations)
+        _pending_response = copy.deepcopy((provider, request, observations, destination, current['Owner']))
+        return '(ResponsePreparationQueued)'
+    except (ConfigError, ValueError, TypeError, RecursionError):
+        return '(ResponseNoAction InvalidInput)'
+
+
+def _prepare_pending_response():
+    """Run outside the lock; publish only if its captured host state is current."""
+    global _pending_response
+    pending, _pending_response = _pending_response, None
+    if pending is None:
+        return
+    import janus
+    from host_dispatch_config import binding, encode
+    provider, request, observations, destination, owner = pending
+    captured = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[]], _)),
+    ''' + _PREPARATION_CONTEXT + ''', sread(ExpectedOwner, _ExpectedOwner), _Owner == _ExpectedOwner,
+        eval(['get-state','&active-frame-bundle'], _Bundle),
+        eval([frameStateForMetaMo], _Bundle),
+        mm_dispatch_snapshot(_Snapshot), term_string(_Snapshot, Snapshot),
+        swrite(Context, ContextSource), oc_dispatch_epoch(Epoch)
+    ))''', {'ExpectedOwner': owner})
+    if not captured.get('truth', False):
+        return
+    prepared = prepare_response(provider, request, captured['Context'], observations)
+    # Only the fixed send catalog builds executable metadata. Parse preparation
+    # as inert data below; no model-produced expression is evaluated.
+    template = encode(binding({'skill': 'send', 'arguments': ['placeholder']},
+                              'placeholder-frame', [], destination))
+    janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        oc_dispatch_epoch(Epoch),
+        mm_dispatch_snapshot(_Current), term_string(_ExpectedSnapshot, Snapshot), _Current == _ExpectedSnapshot,
+    ''' + _PREPARATION_CONTEXT + ''', sread(ExpectedOwner, _ExpectedOwner), _Owner == _ExpectedOwner,
+        sread(ContextSource, _ExpectedContext), Context == _ExpectedContext,
+        sread(PreparedSource, _Prepared),
+        (_Prepared=['ResponsePrepared',_Text]
+         -> Context=['OperationContext',_,_,_NativeFrame],
+            sread(Template, _TemplateBinding),
+            _TemplateBinding=['HostCommandBinding',_,_Request,
+                ['PolicyOperation',_Candidate,_,_Skill,_Permissions,_Egress,_Costs]],
+            _Operation=['PolicyOperation',_Candidate,[target,_NativeFrame],
+                        _Skill,_Permissions,_Egress,_Costs],
+            _Value=['PreparedHostOperation',Context,_Commitment,
+                    [send,_Text],_Request,_Operation]
+         ; _Value=_Prepared),
+        oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[quote,_Value]], _))
+    ))''', {'Epoch': captured['Epoch'], 'Snapshot': captured['Snapshot'],
+            'ContextSource': captured['ContextSource'], 'ExpectedOwner': owner,
+            'PreparedSource': prepared, 'Template': template})
 
 
 def _read_observations(context, observations):
@@ -60,7 +146,8 @@ def prepare_response(provider, request, context, observations):
     Trusted Python host API, not a model skill. Inputs use list representations
     of existing OperationContext/OperationOutcome records. This does not collect
     history, authenticate observations, install bindings, capture tickets, send,
-    or complete tasks. F1.5 connects prepared text to ordinary gated capture.
+    or complete tasks. The trusted queue/capture path above calls this helper
+    before exposing a cycle-owned command to ordinary gated selection.
     """
     from host_dispatch_config import (ConfigError, Symbol, encode, identifier,
                                       record, unique_object, validate_send_text)
@@ -118,6 +205,7 @@ def new_session():
 
 def capture():
     import janus
+    _prepare_pending_response()
     result = janus.query_once("""
 with_mutex(omegaclaw_dispatch, (
     eval(['get-state','&active-frame-bundle'], _Bundle),
@@ -126,9 +214,9 @@ with_mutex(omegaclaw_dispatch, (
      eval([frameStateForMetaMo], _Current), _Current == _Bundle,
      mm_dispatch_policies(_Global, _Frame)
      -> findall([_Candidate,_Command,_Operation],
-          mm_dispatch_binding(_Command,
+          mm_dispatch_resolve(
             ['AdmissionRequest','propose-candidate','current-frame',_Candidate],
-            _Operation), _Bindings),
+            _Command, _Operation), _Bindings),
         length(_Bindings, _Count),
         (_Count =< 128
          -> findall(['HostOperation',_Candidate,_Command,_Operation,_Global,_Frame,_Ticket],

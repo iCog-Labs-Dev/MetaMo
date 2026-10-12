@@ -143,7 +143,7 @@ and exactly `local:stdout` operation egress; otherwise it is blocked with
 The host must initialize Core's local channel separately.
 
 This increment accepts fixed host-supplied text. F1.4 now provides a separate
-preparation helper; connecting its generated text to capture remains F1.5.
+preparation helper; F1.5 connects explicitly queued preparation to normal capture.
 Core's send return is still classified as
 `Unobserved`; channel acknowledgement and outcome classification remain F1.6/F1.7.
 
@@ -191,7 +191,8 @@ send, replay, unchanged reads/responses, policy denials and routing changes.
 trusted Python host API. It calls the existing `lib_llm_ext.callProvider` interface
 to prepare text from successful read observations. It does not register commands,
 capture tickets, invoke a channel, consume feedback or complete a task. Startup
-does not call it yet; connecting prepared text to pre-scoring capture is F1.5.
+does not automatically gather evidence or queue it; F1.5 provides that trusted
+queue interface and calls preparation during the normal pre-scoring capture.
 
 The host supplies list representations of the existing `OperationContext` and
 `OperationOutcome` records. For example, after the corresponding read outcome has
@@ -255,7 +256,7 @@ as data in the returned MeTTa record:
 
 Structural validation is not proof of the answer's semantic accuracy. Prepared
 text remains a proposal, not an authorized command or observed delivery. F1.5
-must bind/capture it through the existing gate, and F1.8 must determine whether
+binds/captures it through the existing gate, and F1.8 must determine whether
 the task has enough observations to answer. This slice handles read-based answers;
 it does not automatically generate clarification questions or enable IRC sending.
 
@@ -268,6 +269,71 @@ registry. Run it with:
 ```bash
 python3 MetaMo/applications/omegaclaw_v1/tests/response_preparation_test.py
 ```
+
+### Capture prepared commands (F1.5)
+
+After admission and a successful observed read, trusted host code can queue
+preparation using the F1.4 observation representation:
+
+```python
+host_operations.queue_response_preparation(
+    "ASICloud", "Summarize the file", [outcome],
+    {"channel": "local", "recipient": "stdout"})
+```
+
+This returns `(ResponsePreparationQueued)` or an explicit `ResponseNoAction`.
+The queue copies and validates its inputs and captures the host's session, native
+frame identity, commitment snapshot and active task. It does not call the provider
+or grant policy. One pending request is supported; a new explicit queue replaces
+the previous input. Invalid input clears pending preparation.
+
+On the next normal `captureCandidateOperations` call, before admission and
+scoring, the existing `host_operations.capture` consumes that request once:
+
+1. Under Core's existing mutex, clear any previous prepared command and verify
+   ownership and the published bundle. Capture current context, snapshot and epoch.
+2. Release the mutex and call F1.4's bounded provider helper.
+3. Reacquire the mutex. If owner, context, snapshot or epoch changed during the
+   call, discard the result. Otherwise publish one `PreparedHostOperation` using
+   the fixed send catalog's requirements and Core's exact native frame identity.
+4. Enumerate it together with existing configured bindings and capture ordinary
+   Core tickets. The concrete gate, scheduler and scorer operate on the usual
+   `HostOperation` rows. Existing selection retains the winning command and its
+   original pre-scoring ticket through Core's loop hooks.
+
+The new slot is cycle/commitment-owned data, not another ticket ledger. It expires
+for resolution on a later operation cycle and is cleared on session reset, policy
+replacement or explicit revocation of its command. No-action output exposes no
+binding. Static read and clarification bindings remain available. If a static
+`respond` binding is also present, the existing ambiguity checks reject that
+candidate rather than silently replacing the configured command. For generated
+replies, configure send permissions/egress but omit a fixed `respond` command.
+
+Both policy scopes must still allow send. Denied generated replies are pruned
+before scoring; preparation never makes them admissible. Substituting selected
+text is rejected, and replaying the same ticket returns its recorded result
+without another handler invocation.
+
+Dispatch snapshots now include the actual `commchannel` and prepared-command
+state. A channel change after capture causes `StaleSnapshot`; a fresh decision
+captured while routing to an unsupported channel still fails the final
+`DestinationMismatch` gate. Only local/stdout is supported in this increment.
+Relevant host mutations must still use the existing serialized mutation API;
+arbitrary concurrent writes or unsanctioned change-and-restore sequences are
+outside this session contract.
+
+The trusted caller remains responsible for admitted evidence and deciding when
+to queue it. Ordinary startup does not automatically gather a task's observations
+or generate an answer on every message. F1.8 owns answer availability; F1.6/F1.7
+own acknowledged send outcomes, and F1.9 owns task-level duplicate-answer
+suppression. An explicit new queue can prepare another reply in a later cycle.
+There is no new IRC support, autonomous task planning or durable recovery here.
+
+The offline `tests/prepared_response_capture_test.metta` uses a real read,
+native symbol frame identity, normal bridge/scoring, real local send and existing
+dispatch. It checks provider-time invalidation, final stale tickets, exact text,
+replay, policy denials, no-action output, revocation and task/session ownership.
+Only external providers and memory are doubled.
 
 ### Startup invocation
 

@@ -10,9 +10,11 @@ mm_dispatch_register(Command, Request, Operation) :-
 mm_dispatch_set_policies(Global, Frame) :-
     ground(Global-Frame),
     oc_dispatch_mutate((retractall(mm_dispatch_policies(_,_)),
-                       assertz(mm_dispatch_policies(Global,Frame)))).
+                       assertz(mm_dispatch_policies(Global,Frame)),
+                       eval(['change-state!','&prepared-host-operation',[]],_))).
 mm_dispatch_revoke(Command) :-
-    oc_dispatch_mutate(retractall(mm_dispatch_binding(Command,_,_))).
+    oc_dispatch_mutate((retractall(mm_dispatch_binding(Command,_,_)),
+                       eval([revokePreparedHostCommand,[quote,Command]],_))).
 
 mm_dispatch_intent(Intent) :-
     eval(['get-state','&last-meta-mo-policy-output'], Policy),
@@ -25,9 +27,14 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval([constitutionalMode],Mode),
     (mm_dispatch_policies(Global,Frame) -> true; Global=[], Frame=[]),
     findall(K-V, (nb_current(K,V), atom(K), sub_atom(K,0,6,_,'&cfv2-')), Unsorted),
-    sort(Unsorted,Raw).
+    sort(Unsorted,FrameRaw),
+    eval([commchannel], Channel),
+    eval(['get-state','&prepared-host-operation'], Prepared),
+    Raw=[channel-Channel,prepared-Prepared|FrameRaw].
 mm_dispatch_resolve(Intent, Command, Operation) :-
     mm_dispatch_binding(Command,Intent,Operation).
+mm_dispatch_resolve(Intent, Command, Operation) :-
+    eval([preparedHostBinding], ['HostCommandBinding',Command,Intent,Operation]).
 mm_dispatch_gate(Intent, ['DispatchContext',Bundle,Global,Frame,_,_], Operation, Decision) :-
     eval([dispatchOperationGate, [quote,Bundle], [quote,Bundle],
           [quote,Intent], [quote,Operation], [quote,Global], [quote,Frame]],Decision).
