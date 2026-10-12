@@ -142,8 +142,9 @@ and exactly `local:stdout` operation egress; otherwise it is blocked with
 `DestinationMismatch`. The existing exact-command and replay checks apply.
 The host must initialize Core's local channel separately.
 
-This increment accepts fixed host-supplied text. Preparation and capture of
-generated responses remain F1.4/F1.5. Core's send return is still classified as
+This increment accepts fixed host-supplied text. F1.4 now provides a separate
+preparation helper; connecting its generated text to capture remains F1.5.
+Core's send return is still classified as
 `Unobserved`; channel acknowledgement and outcome classification remain F1.6/F1.7.
 
 Verification: 20 Python host-config tests and all 55 MeTTa test files pass,
@@ -183,6 +184,90 @@ Verification on 11 October 2026: 23 Python host-config tests, all 55 MeTTa test
 files and the dispatch boundary guard pass. The extended local-send regression
 has 43 assertions checking coexistence, candidate isolation, a real question
 send, replay, unchanged reads/responses, policy denials and routing changes.
+
+### Response preparation (F1.4)
+
+`host_operations.prepare_response(provider, request, context, observations)` is a
+trusted Python host API. It calls the existing `lib_llm_ext.callProvider` interface
+to prepare text from successful read observations. It does not register commands,
+capture tickets, invoke a channel, consume feedback or complete a task. Startup
+does not call it yet; connecting prepared text to pre-scoring capture is F1.5.
+
+The host supplies list representations of the existing `OperationContext` and
+`OperationOutcome` records. For example, after the corresponding read outcome has
+been accepted by `ingestOperationOutcome`, a trusted caller can use:
+
+```python
+context = ["OperationContext", "session-id", 2, "frame-id"]
+command = ["read-file", "/allowed/input.txt"]
+outcome = [
+    "OperationOutcome",
+    ["OperationDecision", ["OperationContext", "session-id", 1, "frame-id"],
+     "execute-skill", command, ["DispatchTicket", "ticket-id"]],
+    ["attempted-command", command],
+    "Success",
+    ["DispatchResult", "Executed", "Feasible", "Observed file contents"],
+]
+prepared = host_operations.prepare_response(
+    "ASICloud", "Summarize the file", context, [outcome])
+```
+
+The sample IDs and observation illustrate the API; constructing such a list is
+not evidence of admission. The caller must obtain outcomes from the validated
+host path and retain only evidence belonging to the current task. This helper
+checks shape and correlation, not caller authority, dispatch-ledger authenticity
+or commitment ownership. Model-supplied records and compacted history are not
+valid sources. Gathering retained observations is subsequent host integration.
+
+Input bounds and checks:
+
+- Nonblank request of at most 1200 characters, using the send-text control rules.
+- One to sixteen successful `read-file` outcomes for the supplied session/frame.
+  Observed cycles must be positive and no later than the supplied current cycle;
+  cycles and ticket IDs must be unique. Earlier read cycles may support a later answer.
+- Each attempted command must match its recorded decision, candidate must be
+  `execute-skill`, and result must be `Executed / Feasible` with string content.
+  Failed, blocked, unknown, malformed or mismatched evidence rejects the batch.
+- Each read content is at most 8192 characters; the complete serialized request
+  and evidence payload is at most 32768 UTF-8 bytes. Oversized data is rejected,
+  never silently truncated. Empty file content remains a valid observation.
+
+The provider receives separate instructions and a JSON data payload containing
+the request and exact read paths/contents. It is asked to use only those
+observations and avoid invented execution, delivery and task-completion claims.
+One provider call requests at most 1024 output tokens. The helper adds no retry;
+transport timeouts/retries remain the existing provider's behavior.
+
+The provider must return exactly `{"text":"..."}` or `{"no_action":true}`.
+The parser rejects duplicate keys, extra fields, markdown-wrapped JSON, malformed
+responses and output above 8192 UTF-8 bytes. Text uses the same nonblank,
+1200-character/control-character checks as the send catalog and is safely quoted
+as data in the returned MeTTa record:
+
+```metta
+(ResponsePrepared "Validated answer text")
+(ResponseNoAction InvalidInput)
+(ResponseNoAction InputTooLarge)
+(ResponseNoAction ProviderUnavailable)
+(ResponseNoAction InvalidResponse)
+(ResponseNoAction InsufficientEvidence)
+```
+
+Structural validation is not proof of the answer's semantic accuracy. Prepared
+text remains a proposal, not an authorized command or observed delivery. F1.5
+must bind/capture it through the existing gate, and F1.8 must determine whether
+the task has enough observations to answer. This slice handles read-based answers;
+it does not automatically generate clarification questions or enable IRC sending.
+
+`tests/response_preparation_test.py` checks the provider contract, exact evidence,
+input/output bounds, invalid correlation, uncertainty, duplicates, escaping,
+no-action handling, failure without helper retries, and absence of channel or
+dispatch calls. A transport-mocked test also exercises the real ASICloud provider
+registry. Run it with:
+
+```bash
+python3 MetaMo/applications/omegaclaw_v1/tests/response_preparation_test.py
+```
 
 ### Startup invocation
 

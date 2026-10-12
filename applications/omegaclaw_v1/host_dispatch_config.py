@@ -123,6 +123,14 @@ def destination_metadata(value):
                   record("egress", ["local:stdout"]))
 
 
+def validate_send_text(text):
+    """Shared bounds for configured and prepared send text; no execution."""
+    if (type(text) is not str or not text.strip() or len(text) > 1200
+            or any(ord(c) < 32 and c not in "\n\t" for c in text)):
+        raise ConfigError("send requires nonblank text of at most 1200 characters")
+    return text
+
+
 def binding(command, frame_id, allowed_files, destination=None):
     keys(command, ("skill", "arguments"), optional=("candidate",))
     skill = command["skill"]
@@ -142,10 +150,9 @@ def binding(command, frame_id, allowed_files, destination=None):
         candidate = "search-knowledge"
         permissions = ["frames.read"]
     elif skill == "send":
-        if (len(arguments) != 1 or type(arguments[0]) is not str
-                or not arguments[0].strip() or len(arguments[0]) > 1200
-                or any(ord(c) < 32 and c not in "\n\t" for c in arguments[0])):
-            raise ConfigError("send requires one nonblank text argument of at most 1200 characters")
+        if len(arguments) != 1:
+            raise ConfigError("send requires one text argument")
+        validate_send_text(arguments[0])
         metadata = dict(destination_metadata(destination)[1:])
         candidate = "respond"
         permissions = metadata["permissions"]
