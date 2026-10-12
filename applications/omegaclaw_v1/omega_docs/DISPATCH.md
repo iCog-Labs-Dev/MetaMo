@@ -145,7 +145,8 @@ The host must initialize Core's local channel separately.
 This increment accepts fixed host-supplied text. F1.4 now provides a separate
 preparation helper; F1.5 connects explicitly queued preparation to normal capture.
 Core's send return is still classified as
-`Unobserved`; channel acknowledgement and outcome classification remain F1.6/F1.7.
+`Unobserved`; F1.6 now exposes local stdout acceptance below, while outcome
+classification remains F1.7.
 
 Verification: 20 Python host-config tests and all 55 MeTTa test files pass,
 including 24 assertions in `tests/host_send_binding_test.metta` exercising real
@@ -324,8 +325,8 @@ outside this session contract.
 
 The trusted caller remains responsible for admitted evidence and deciding when
 to queue it. Ordinary startup does not automatically gather a task's observations
-or generate an answer on every message. F1.8 owns answer availability; F1.6/F1.7
-own acknowledged send outcomes, and F1.9 owns task-level duplicate-answer
+or generate an answer on every message. F1.8 owns answer availability; F1.7
+owns classification of send observations, and F1.9 owns task-level duplicate-answer
 suppression. An explicit new queue can prepare another reply in a later cycle.
 There is no new IRC support, autonomous task planning or durable recovery here.
 
@@ -334,6 +335,34 @@ native symbol frame identity, normal bridge/scoring, real local send and existin
 dispatch. It checks provider-time invalidation, final stale tickets, exact text,
 replay, policy denials, no-action output, revocation and task/session ownership.
 Only external providers and memory are doubled.
+
+### Send observation (F1.6)
+
+The real local channel now returns a constant observation only after its JSON
+output has been written and stdout has flushed. Core's existing `send` handler
+parses that observation and dispatch preserves it in the normal result:
+
+```metta
+(DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted))
+```
+
+`Accepted` means local stdout accepted the write and flush. It is not evidence
+that a person read the message, that a remote channel delivered it, or that the
+task is complete. No message text is interpolated into the parsed observation.
+Other channel adapters retain their existing return values and receive no new
+acknowledgement or authorization.
+
+If Core's existing last-message guard suppresses a local send, the result is
+`(SendObservation "local:stdout" SuppressedDuplicate)`. No output occurred for
+that invocation. If writing or flushing raises, partial output may already
+exist: the existing dispatcher records `Unobserved ExecutionUncertain`, never
+`Accepted`. Ticket replay returns the recorded result without another write,
+including after an uncertain send. This does not add retries or task-level
+duplicate suppression.
+
+`operationOutcomeStatus` remains unchanged: these send results are still
+`Unobserved` until F1.7 adds classification. Tests cover actual stdout output,
+write/flush exceptions, suppression, acceptance replay and uncertain replay.
 
 ### Startup invocation
 

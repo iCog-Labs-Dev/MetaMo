@@ -117,6 +117,19 @@ def finish_local_capture():
     return 1
 
 
+def fail_local_flush():
+    # Keep actual writes observable; only flush fails after output was written.
+    def failed_flush():
+        raise OSError('fixture stdout flush failure')
+    _send_output.flush = failed_flush
+    return 1
+
+
+def restore_local_flush():
+    del _send_output.flush
+    return 1
+
+
 def revoke_frame_command():
     import janus
     return int(janus.query_once("mm_dispatch_revoke(['show-current-frame'])")["truth"])

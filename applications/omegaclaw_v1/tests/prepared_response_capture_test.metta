@@ -61,10 +61,10 @@
    (DispatchResult Blocked UnselectedOperation none))
 !(test (py-call (host_config_fixture.local_send_count)) 0)
 !(test (coreLoopDispatchCommand (get-state &reply-ticket) (selectedHostCommand))
-   (DispatchResult Executed Feasible 1))
+   (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
 !(change-state! &lastsend "")
 !(test (coreLoopDispatchCommand (get-state &reply-ticket) (selectedHostCommand))
-   (DispatchResult Executed Feasible 1))
+   (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
 !(test (py-call (host_config_fixture.local_send_count)) 1)
 ;; A later cycle does not reuse a cycle-owned generated reply.
 !(test (policyOutputOperation (motivationContextBlock)) search-knowledge)
