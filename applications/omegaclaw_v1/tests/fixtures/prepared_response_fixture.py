@@ -5,6 +5,17 @@ from pathlib import Path
 _observations = None
 _mode = 'answer'
 _calls = 0
+_inputs = 0
+
+
+def new_input():
+    """A new admitted input identity, without opening a network channel."""
+    import janus
+    global _inputs
+    _inputs += 1
+    return int(janus.query_once("oc_dispatch_mutate(eval(['change-state!',"
+        "'&cfv2-last-admitted-frame-id', Input], _))",
+        {'Input': 'answer-test-input-' + str(_inputs)})['truth'])
 
 
 def configure(variant):
@@ -62,7 +73,7 @@ def call_provider(provider, prompt, max_tokens):
     _calls += 1
     assert provider == 'Offline' and max_tokens == 1024
     data = json.loads(prompt.split(':-:-:-:', 1)[1])
-    assert data['observations'][0]['content'] == 'observed local file content'
+    assert data['observations'][0]['content'] == _observations[0][4][3]
     if _mode == 'route-change':
         janus.query_once("eval(['change-state!','&send-test-channel',telegram], _)")
     if _mode == 'policy-change':

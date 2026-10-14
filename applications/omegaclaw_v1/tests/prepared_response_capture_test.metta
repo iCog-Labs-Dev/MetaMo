@@ -80,6 +80,23 @@
 !(test (get-state &active-task) "Inspect the file")
 !(test (preparedHostBinding) ())
 !(test (py-call (prepared_response_fixture.calls)) 1)
+;; F1.9: repeating the host queue on idle cycles must not call the provider
+;; or create another send, even if a new dispatch ticket would be possible.
+!(bind! &answered-key (new-state (get-state &answered-operation-key)))
+!(test (!= (get-state &answered-key) ()) True)
+!(sread (py-call (prepared_response_fixture.queue "ready")))
+!(motivationContextBlock)
+!(test (get-state &prepared-host-operation) (ResponseNoAction AlreadyAnswered))
+!(test (preparedHostBinding) ())
+!(test (py-call (prepared_response_fixture.calls)) 1)
+!(sread (py-call (prepared_response_fixture.queue "answer")))
+!(motivationContextBlock)
+!(test (get-state &prepared-host-operation) (ResponseNoAction AlreadyAnswered))
+!(test (get-state &answered-operation-key) (get-state &answered-key))
+!(test (py-call (prepared_response_fixture.calls)) 1)
+!(test (py-call (host_config_fixture.local_send_count)) 1)
+;; New admitted input makes an answer eligible without completing the task.
+!(test (py-call (prepared_response_fixture.new_input)) 1)
 ;; F1.8: no fresh read feedback or formatted results remain. Required-read
 ;; coverage and a prepared answer can still make respond available.
 !(test (sread (py-call (prepared_response_fixture.queue "missing-read")))
@@ -99,7 +116,8 @@
 ;; Readiness is cycle-owned and never sticks after the prepared binding expires.
 !(prepareTaskStateForMetaMo)
 !(test (preparedResponseReadyForBundle (activeFrameBundle)) False)
-;; A newly prepared reply retains its captured destination in the ticket.
+;; A new input permits another answer; its captured destination is still checked.
+!(py-call (prepared_response_fixture.new_input))
 !(sread (py-call (prepared_response_fixture.queue "answer")))
 !(test (policyOutputOperation (motivationContextBlock)) respond)
 !(bind! &changed-route-ticket (new-state (selectedHostTicket)))

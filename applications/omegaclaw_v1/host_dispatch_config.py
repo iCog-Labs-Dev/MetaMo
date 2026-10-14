@@ -1,11 +1,13 @@
-"""Trusted session configuration for Core inspection and local send handlers.
+"""Trusted session configuration for Core inspection and send bindings.
 
 Not a model skill. Call provision from trusted host code after initMetaMoDispatch.
 The host owns this file and the configured filesystem paths throughout the session.
 Only command-count costs are modeled here; reservation/settlement is separate.
 """
 import json
+import ipaddress
 from pathlib import Path
+import re
 import stat
 
 
@@ -111,12 +113,46 @@ def allowed_file(value):
 
 def destination_metadata(value):
     """Resolve explicit destination data to requirements, never permission grants.
+
+    IRC routing must use this same normalization at the dispatch boundary (F1.11).
+    IRC metadata alone does not enable network dispatch.
     """
-    keys(value, ("channel", "recipient"))
+    keys(value, ("channel", "recipient"), optional=("server", "port"))
     channel = identifier(value["channel"])
     recipient = identifier(value["recipient"])
+    if channel == "irc":
+        keys(value, ("channel", "recipient", "server", "port"))
+        server = identifier(value["server"]).lower()
+        # A bounded ASCII DNS name or canonical IPv4 literal. No URL, wildcard,
+        # credentials, implicit port, DNS lookup or server-specific case mapping.
+        labels = server.split(".")
+        if (len(server) > 253 or any(not re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels)):
+            raise ConfigError("IRC server must be an ASCII DNS name or IPv4 address")
+        if re.fullmatch(r"[0-9.]+", server):
+            try:
+                server = str(ipaddress.IPv4Address(server))
+            except ipaddress.AddressValueError as exc:
+                raise ConfigError("invalid IRC IPv4 address") from exc
+        port = value["port"]
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise ConfigError("IRC port must be an integer from 1 to 65535")
+        # Mirror Core start_irc's optional # prefix. Preserve channel spelling:
+        # do not assume the connected server's IRC casemapping rules.
+        if not recipient.startswith("#"):
+            recipient = "#" + recipient
+        if len(recipient) > 50 or not re.fullmatch(r"#[A-Za-z0-9_#.-]+", recipient):
+            raise ConfigError("IRC recipient must be a bounded #channel name")
+        egress = identifier("irc:" + server + ":" + str(port) + ":" + recipient)
+        permission = identifier("channels.send:" + egress)
+        return record("HostDestination", record("channel", channel),
+                      record("recipient", recipient), record("server", server),
+                      record("port", port),
+                      record("permissions", ["channels.send", permission]),
+                      record("egress", [egress]))
+    keys(value, ("channel", "recipient"))
     if channel != "local" or recipient != "stdout":
-        raise ConfigError("unsupported destination; expected local/stdout")
+        raise ConfigError("unsupported destination; expected local/stdout or IRC channel")
     return record("HostDestination", record("channel", channel),
                   record("recipient", recipient),
                   record("permissions", ["channels.send", "channels.send:local:stdout"]),

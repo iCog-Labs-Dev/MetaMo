@@ -223,7 +223,7 @@ class ResponseQueueTests(unittest.TestCase):
             return host.queue_response_preparation('ASICloud', 'Summarize', self.observations,
                                                    self.destination, required_reads=paths)
         self.assertEqual(queue(['/allowed/input.txt']), '(ResponsePreparationQueued)')
-        self.assertTrue(host._pending_response[-1])
+        self.assertTrue(host._pending_response[-2])
         self.assertEqual(queue(['/allowed/input.txt', '/missing']),
                          '(ResponseNoAction MissingRequiredReads)')
         self.assertIsNone(host._pending_response)
@@ -242,6 +242,18 @@ class ResponseQueueTests(unittest.TestCase):
             self.destination, required_reads=['/allowed/input.txt', '/second']),
             '(ResponsePreparationQueued)')
         self.assertEqual(self.provider.mock_calls, [])
+
+    def test_answer_identity_ignores_order_duplicates_and_provider_wording(self):
+        evidence = [{'path': '/a', 'content': 'A'}, {'path': '/b', 'content': 'B'}]
+        key = host._answer_key('owner', 'request', evidence, self.destination)
+        self.assertEqual(key, host._answer_key('owner', 'request',
+            list(reversed(evidence)) + evidence[:1], self.destination))
+        for owner, request, rows, destination in (
+                ('new-task-or-input', 'request', evidence, self.destination),
+                ('owner', 'new request', evidence, self.destination),
+                ('owner', 'request', [{'path': '/a', 'content': 'changed'}], self.destination),
+                ('owner', 'request', evidence, {'channel': 'local', 'recipient': 'other'})):
+            self.assertNotEqual(key, host._answer_key(owner, request, rows, destination))
 
 
 if __name__ == '__main__':

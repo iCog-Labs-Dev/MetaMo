@@ -98,8 +98,9 @@ field to the existing version-1 JSON configuration:
 "destination": {"channel": "local", "recipient": "stdout"}
 ```
 
-Only Core's existing local test-channel stdout outbox is supported in this
-increment. Both fields are required when `destination` is present; null, missing,
+F1.1 initially supports Core's local test-channel stdout outbox. F1.10 below
+extends metadata to IRC; executable IRC routing remains F1.11. Both fields are
+required for local destinations; null, missing,
 unknown, extra or unsupported values are rejected before policy installation.
 There is no environment-derived destination or fallback to a network channel.
 
@@ -116,6 +117,55 @@ output destination for policy matching even though this channel has no network
 transport. The declaration does not change either scope's allowlists, initialize
 a channel, or enable `send`. Existing read-only dispatch records remain unchanged.
 The existing read-only example intentionally omits this optional field.
+
+### IRC destination metadata and binding (F1.10)
+
+Implemented 14 October 2026. The same version-1 configuration parser and send
+catalog now accept this explicit destination:
+
+```json
+"destination": {
+  "channel": "irc",
+  "server": "irc.example.org",
+  "port": 6667,
+  "recipient": "#room"
+}
+```
+
+The metadata includes normalized `server`, integer `port` and `recipient` fields,
+permissions `channels.send` and `channels.send:irc:irc.example.org:6667:#room`,
+and exact egress `irc:irc.example.org:6667:#room`. Both `respond` and explicit
+`ask-clarification` reuse the existing exact `(send TEXT)` binding and prospective
+cost of one `commands/units` per invocation. Declaring this destination does not
+grant either scope any permission or egress; both scopes must explicitly allow
+the generated requirements. Existing read bindings and local metadata retain
+their previous representation.
+
+The bounded server format is an ASCII DNS hostname or canonical IPv4 address;
+DNS names are lowercased without resolving them. URLs, credentials, wildcards,
+IPv6 literals and trailing dots are outside this slice. Port must be an integer
+from 1 through 65535 (booleans and numeric strings are rejected). A missing `#`
+prefix is added as in Core's `start_irc`; channel spelling/case is otherwise
+preserved, without assuming a server's IRC casemapping. The initial channel
+alphabet is ASCII letters, digits, `_`, `#`, `.`, and `-`, with a leading `#` and
+at least one following character, at most 50 characters total. Private messages,
+multiple recipients, whitespace and protocol control characters are unsupported.
+Derived permission and egress identifiers must also fit the existing 256-character
+limit. Configuration inputs are not mutated and invalid destinations fail before
+policy installation or startup configuration replacement.
+
+**This is metadata/binding support, not IRC execution acceptance.** The existing
+`dispatchOperationGate` still blocks IRC sends with `DestinationMismatch` until
+F1.11 captures and checks authoritative endpoint/connection routing. That future
+check must use `destination_metadata` normalization on runtime routing too;
+comparing only `commchannel` or raw configuration strings is insufficient.
+F1.12–F1.14 cover observations, outcome handling and the runnable startup profile.
+
+Verification: 28 host-configuration Python tests, 18 response-preparation tests
+(provider mocked), 62 real local/typed-binding MeTTa assertions and 24 startup
+assertions pass. IRC cases install typed bindings for both candidates, reject
+missing exact permission/egress in either scope, and retain the routing block.
+No IRC transport or live provider was invoked.
 
 ### Send binding (F1.2)
 
@@ -325,8 +375,9 @@ outside this session contract.
 The trusted caller remains responsible for admitted evidence and deciding when
 to queue it. Ordinary startup does not automatically gather a task's observations
 or generate an answer on every message. F1.8 adds host-declared answer readiness; F1.7
-provides classification of send observations, and F1.9 owns task-level duplicate-answer
-suppression. An explicit new queue can prepare another reply in a later cycle.
+provides classification of send observations, and F1.9 suppresses repeated
+accepted answers. An explicit new queue prepares another reply only when its
+task, input, request, destination or read evidence has changed.
 There is no new IRC support, autonomous task planning or durable recovery here.
 
 The offline `tests/prepared_response_capture_test.metta` uses a real read,
@@ -384,7 +435,7 @@ failure streak, as it does for other successful operations.
 No task-completion rule changes: delivery success alone does not close a task or
 commitment. The real prepared-response regression verifies that a local reply
 produces success feedback while the task stays open. F1.8 adds answer availability
-below; F1.9 task-level suppression remains separate work.
+below; F1.9 adds task-level suppression for prepared answers.
 
 The existing signal projection now sees that success on the next cycle, rather
 than treating the send as an unknown result. In the prepared-response fixture,
@@ -433,12 +484,51 @@ permission and does not complete a task.
 The optional argument preserves existing four-argument callers: they can still
 prepare commands, but do not assert this new required-read readiness. Normal
 startup still needs trusted host code to collect observations and queue an answer.
-Task-level repeated-answer suppression remains F1.9.
+F1.9 below suppresses repeated accepted answers on subsequent queues.
 
 Verification covers multi-read coverage, missing requirements, readiness without
 fresh result feedback, actual local dispatch, cycle expiry, provider invalidation
 and policy denial. The 17 Python preparation tests, all 56 MeTTa test files, and
 dispatch/commitment boundary guards pass.
+
+### Suppress repeated answers (F1.9)
+
+Prepared read-based answers now carry a host-generated answer key. It identifies
+the session, native frame, commitment snapshot, task, most recently admitted input
+identity, request, destination, and read paths/content. Evidence order, duplicate
+content, new read tickets and alternative provider wording do not make unchanged
+evidence a new answer. The key is a SHA-256 digest; no additional evidence history
+or dispatch ledger is introduced.
+
+Selection retains the prepared key alongside its existing decision. Only the
+existing validated, once-consumed `respond` outcome with status `Success` records
+that key as accepted. Clarification, rejection, suppression and uncertain delivery
+do not mark an answer accepted. Duplicate callbacks cannot apply it again.
+
+The next capture checks the accepted key before invoking the provider. A matching
+queue publishes `(ResponseNoAction AlreadyAnswered)` and exposes no send binding.
+Binding resolution also excludes an already-accepted key. The existing final
+dispatch snapshot includes the marker, so a marker change invalidates an earlier
+ticket. This supplements Core's protection against replaying the same ticket:
+new tickets cannot make an unchanged prepared answer eligible again.
+
+Changed evidence, a new admitted input, a changed request/destination or different
+task/commitment ownership permits fresh preparation. Session reset clears the
+marker. One last-accepted marker is maintained for the bounded active-task flow;
+it is not durable delivery history across restarts or a ledger of every past
+answer. Fixed host-configured sends without prepared read evidence retain their
+existing explicit-command and ticket replay behavior.
+
+No automatic retry is added. Unknown delivery remains unknown; only a fresh
+explicit host queue can prepare another attempt. Acceptance still means local
+stdout write/flush, and it never completes a task. The host remains responsible
+for admitted observation authenticity and task membership.
+
+Verification: 18 Python preparation tests and all 57 MeTTa files pass. Real local
+handler regressions cover repeated idle queues without provider calls or sends,
+changed evidence, new input/task ownership, duplicate feedback, suppression,
+uncertain-send replay and session reset. Dispatch, commitment, adapter and source
+boundary guards pass.
 
 ### Startup invocation
 

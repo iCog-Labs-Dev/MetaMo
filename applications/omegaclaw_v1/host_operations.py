@@ -6,6 +6,7 @@ permissions nor executes commands. Use only in the serialized host interpreter.
 
 import json
 import copy
+import hashlib
 
 
 _pending_response = None
@@ -16,7 +17,8 @@ eval(['get-state','&operation-context'], Context),
 Context=['OperationContext',_Session,_Cycle,_Frame], _Frame \== [],
 eval([commitmentSnapshot], _Commitment),
 eval(['get-state','&active-task'], _Task),
-_Owner=[_Session,_Frame,_Commitment,_Task], swrite(_Owner, Owner)
+eval(['get-state','&cfv2-last-admitted-frame-id'], _Input),
+_Owner=[_Session,_Frame,_Commitment,_Task,_Input], swrite(_Owner, Owner)
 """
 
 
@@ -31,6 +33,8 @@ def queue_response_preparation(provider, request, observations, destination, req
     for this answer (1-16 unique paths). Every path must have successful evidence
     before queuing. Omitting it preserves preparation without asserting task
     answer readiness; the model never defines this requirement list.
+    Capture suppresses an answer already accepted and consumed for the same
+    task/input/evidence. Queuing alone never retries or sends a command.
     """
     from host_dispatch_config import (ConfigError, destination_metadata,
                                       identifier, validate_send_text)
@@ -55,10 +59,18 @@ def queue_response_preparation(provider, request, observations, destination, req
             if not set(required_reads) <= {row['path'] for row in evidence}:
                 return '(ResponseNoAction MissingRequiredReads)'
         _pending_response = copy.deepcopy((provider, request, observations, destination,
-                                           current['Owner'], required_reads is not None))
+                                           current['Owner'], required_reads is not None,
+                                           _answer_key(current['Owner'], request, evidence, destination)))
         return '(ResponsePreparationQueued)'
     except (ConfigError, ValueError, TypeError, RecursionError):
         return '(ResponseNoAction InvalidInput)'
+
+
+def _answer_key(owner, request, evidence, destination):
+    # Content identity, not ticket/cycle identity or provider phrasing. Re-reading
+    # unchanged content and reordering evidence must not evade suppression.
+    payload = [owner, request, sorted({(row['path'], row['content']) for row in evidence}), destination]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
 
 
 def _prepare_pending_response():
@@ -69,18 +81,20 @@ def _prepare_pending_response():
         return
     import janus
     from host_dispatch_config import binding, encode
-    provider, request, observations, destination, owner, reads_ready = pending
+    provider, request, observations, destination, owner, reads_ready, answer_key = pending
     captured = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[]], _)),
     ''' + _PREPARATION_CONTEXT + ''', sread(ExpectedOwner, _ExpectedOwner), _Owner == _ExpectedOwner,
         eval(['get-state','&active-frame-bundle'], _Bundle),
         eval([frameStateForMetaMo], _Bundle),
         mm_dispatch_snapshot(_Snapshot), term_string(_Snapshot, Snapshot),
-        swrite(Context, ContextSource), oc_dispatch_epoch(Epoch)
+        swrite(Context, ContextSource), oc_dispatch_epoch(Epoch),
+        eval(['get-state','&answered-operation-key'], Answered)
     ))''', {'ExpectedOwner': owner})
     if not captured.get('truth', False):
         return
-    prepared = prepare_response(provider, request, captured['Context'], observations)
+    prepared = ('(ResponseNoAction AlreadyAnswered)' if captured['Answered'] == answer_key
+                else prepare_response(provider, request, captured['Context'], observations))
     # Only the fixed send catalog builds executable metadata. Parse preparation
     # as inert data below; no model-produced expression is evaluated.
     template = encode(binding({'skill': 'send', 'arguments': ['placeholder']},
@@ -100,13 +114,13 @@ def _prepare_pending_response():
                         _Skill,_Permissions,_Egress,_Costs],
             (ReadsReady == 1 -> _Readiness=['ReadEvidenceReady',_Task]; _Readiness='NoReadReadiness'),
             _Value=['PreparedHostOperation',Context,_Commitment,
-                    [send,_Text],_Request,_Operation,_Readiness]
+                    [send,_Text],_Request,_Operation,_Readiness,AnswerKey]
          ; _Value=_Prepared),
         oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[quote,_Value]], _))
     ))''', {'Epoch': captured['Epoch'], 'Snapshot': captured['Snapshot'],
             'ContextSource': captured['ContextSource'], 'ExpectedOwner': owner,
             'PreparedSource': prepared, 'Template': template,
-            'ReadsReady': int(reads_ready)})
+            'ReadsReady': int(reads_ready), 'AnswerKey': answer_key})
 
 
 def _read_observations(context, observations):

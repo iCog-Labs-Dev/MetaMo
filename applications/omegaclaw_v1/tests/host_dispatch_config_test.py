@@ -47,6 +47,93 @@ class HostDispatchConfigTests(unittest.TestCase):
             config.build_config(dict(self.value,
                                      commands=[{"skill": "send", "arguments": ["hello"]}]))
 
+    def test_irc_destination_normalization_and_identity(self):
+        destination = dict(channel="irc", recipient="Room", server="IRC.Example.org", port=6667)
+        expected = ['HostDestination', ['channel', 'irc'], ['recipient', '#Room'],
+                    ['server', 'irc.example.org'], ['port', 6667],
+                    ['permissions', ['channels.send', 'channels.send:irc:irc.example.org:6667:#Room']],
+                    ['egress', ['irc:irc.example.org:6667:#Room']]]
+        self.assertEqual(config.destination_metadata(destination), expected)
+        self.assertEqual(config.destination_metadata(dict(destination, recipient='#Room',
+                                                          server='irc.example.org')), expected)
+        self.assertEqual(destination['recipient'], 'Room')
+        for change in ({'server': 'other.example.org'}, {'port': 6697},
+                       {'recipient': '#room'}, {'recipient': '##Room'}):
+            with self.subTest(change=change):
+                self.assertNotEqual(config.destination_metadata(dict(destination, **change))[-1], expected[-1])
+        self.assertEqual(dict(config.destination_metadata(dict(destination, server='127.0.0.1'))[1:])
+                         ['server'], '127.0.0.1')
+
+    def test_irc_bindings_preserve_arguments_candidates_and_cost_without_grants(self):
+        destination = dict(channel='irc', recipient='#room', server='irc.example.org', port=6667)
+        for candidate in ('respond', 'ask-clarification'):
+            command = dict(skill='send', arguments=['Observed "text"\nnext line'], candidate=candidate)
+            row = config.binding(command, 'frame-1', [], destination)
+            self.assertEqual(row[1], ['send', command['arguments'][0]])
+            self.assertEqual(row[2][-1], candidate)
+            self.assertEqual(dict(row[3][1:]), {
+                'candidate': candidate, 'target': 'frame-1', 'skill': 'send',
+                'permissions': ['channels.send', 'channels.send:irc:irc.example.org:6667:#room'],
+                'egress': ['irc:irc.example.org:6667:#room'],
+                'costs': [['ResourceCost', 'commands', 'units', 1]]})
+            value = dict(self.value, destination=destination, commands=[command])
+            original = copy.deepcopy(value)
+            encoded = config.build_config(value)
+            self.assertIn(config.encode(row[1]), encoded)
+            for scope_name in ('global', 'frame'):
+                self.assertEqual(value[scope_name], original[scope_name])
+            self.assertEqual(value, original)
+        self.assertEqual(config.build_config(dict(self.value, destination=destination)),
+                         config.build_config(self.value))
+
+    def test_invalid_irc_destination_never_reaches_installer(self):
+        valid = dict(channel='irc', recipient='#room', server='irc.example.org', port=6667)
+        invalid = [{k: v for k, v in valid.items() if k != missing} for missing in valid]
+        for field, values in {
+            'server': ['irc://host', 'host:6667', '*.example.org', 'user@host',
+                       'host.', '-host', 'host..org', 'h ost', 'h\nQUIT', 'h\x7f',
+                       'éxample.org', 'a' * 64 + '.org', '999.1.1.1', '127.00.0.1',
+                       '::1', None, True],
+            'recipient': ['#', 'nick:target', '#a,#b', '#a b', '#a\r\nQUIT',
+                          '#a\x00', '#a\x7f', '#a\t', '#*', '#é', '#a/b', '#a;b',
+                          '#' + 'x' * 50, None, True],
+            'port': [0, 65536, -1, True, None, '6667', 6667.0],
+        }.items():
+            invalid.extend(dict(valid, **{field: value}) for value in values)
+        for field in ('permissions', 'egress', 'costs', 'token'):
+            invalid.append(dict(valid, **{field: []}))
+        path = self.root / 'irc-invalid.json'
+        janus = Mock()
+        for destination in invalid:
+            path.write_text(json.dumps(dict(self.value, destination=destination)))
+            with self.subTest(destination=destination), patch.dict('sys.modules', {'janus': janus}), \
+                    self.assertRaises(config.ConfigError):
+                config.provision(str(path))
+        janus.query_once.assert_not_called()
+
+    def test_irc_derived_identifier_bounds(self):
+        destination = dict(channel='irc', recipient='#' + 'r' * 49, port=65535,
+                           server='a' * 63 + '.' + 'b' * 63 + '.' + 'c' * 53)
+        metadata = dict(config.destination_metadata(destination)[1:])
+        self.assertEqual(len(metadata['permissions'][1]), 256)
+        with self.assertRaises(config.ConfigError):
+            config.destination_metadata(dict(destination, server=destination['server'] + 'c'))
+        for port in (1, 65535):
+            self.assertEqual(dict(config.destination_metadata(dict(destination, port=port))[1:])['port'], port)
+
+    def test_invalid_irc_startup_preserves_previous_config(self):
+        path = self.root / 'irc-startup.json'
+        destination = dict(channel='irc', recipient='#room', server='irc.example.org', port=6667)
+        path.write_text(json.dumps(dict(self.value, destination=destination)))
+        config.configure_startup(str(path))
+        retained = config._startup_config
+        with patch.object(config, '_startup_installed', True):
+            path.write_text(json.dumps(dict(self.value, destination=dict(destination, port=True))))
+            with self.assertRaises(config.ConfigError):
+                config.configure_startup(str(path))
+            self.assertIs(config._startup_config, retained)
+            self.assertTrue(config._startup_installed)
+
     def test_send_derives_respond_requirements_without_grants(self):
         destination = {"channel": "local", "recipient": "stdout"}
         command = {"skill": "send", "arguments": ['Observed "content"\nnext line']}

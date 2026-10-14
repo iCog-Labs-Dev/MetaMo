@@ -93,6 +93,28 @@ def write_clarification(variant):
     return str(_path)
 
 
+def write_irc(variant):
+    write_clarification('allowed')
+    config = json.loads(_path.read_text(encoding='utf-8'))
+    config['destination'] = dict(channel='irc', recipient='#room',
+                                 server='IRC.Example.org', port=6667)
+    destination = 'irc:irc.example.org:6667:#room'
+    for name in ('global', 'frame'):
+        config[name]['permissions'].remove('channels.send:local:stdout')
+        config[name]['permissions'].append('channels.send:' + destination)
+        config[name]['egress'] = [destination]
+    if variant != 'allowed':
+        name, denied = variant.split('-')
+        if name not in ('global', 'frame') or denied not in ('permission', 'egress'):
+            raise ValueError('unknown IRC variant')
+        if denied == 'permission':
+            config[name]['permissions'].remove('channels.send:' + destination)
+        else:
+            config[name]['egress'] = ['irc:other.example.org:6667:#room']
+    _path.write_text(json.dumps(config), encoding='utf-8')
+    return str(_path)
+
+
 _send_output = None
 _send_capture = None
 

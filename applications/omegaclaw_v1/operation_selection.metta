@@ -11,18 +11,23 @@
 ;; One generated command, owned by its capture cycle and host commitment.
 ;; It is data, never a policy grant or a replacement dispatch ledger.
 !(bind! &prepared-host-operation (new-state ()))
+;; The selected key belongs to the retained decision. Only validated, consumed
+;; respond success publishes the last accepted answer; it is not task completion.
+!(bind! &selected-answer-key (new-state ()))
+!(bind! &answered-operation-key (new-state ()))
 
 (= (preparedHostBinding)
    (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation $context $owner $command $request $operation $_readiness)
+      ((PreparedHostOperation $context $owner $command $request $operation $_readiness $key)
        (if (and (== $context (get-state &operation-context))
-                (== $owner (commitmentSnapshot)))
+                (and (== $owner (commitmentSnapshot))
+                     (!= $key (get-state &answered-operation-key))))
            (HostCommandBinding $command $request $operation) ()))
       ($_ ()))))
 
 (= (revokePreparedHostCommand $command)
    (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation $_ $_ $prepared $_ $_ $_)
+      ((PreparedHostOperation $_ $_ $prepared $_ $_ $_ $_)
        (if (== $command $prepared) (change-state! &prepared-host-operation ()) False))
       ($_ False))))
 
@@ -31,7 +36,7 @@
 (= (preparedResponseReadyForBundle $bundle)
    (case (get-state &prepared-host-operation) (
       ((PreparedHostOperation (OperationContext $session $cycle $frame) $_ $_ $_ $_
-          (ReadEvidenceReady $task))
+          (ReadEvidenceReady $task) $_key)
        (and (!= (preparedHostBinding) ())
             (and (== $frame (frameBundleCurrentId $bundle))
                  (and (hostTaskValuePresent $task)
@@ -55,6 +60,8 @@
           (change-state! &selected-operation-commitment ())
           (change-state! &last-operation-outcome ())
           (change-state! &prepared-host-operation ())
+          (change-state! &selected-answer-key ())
+          (change-state! &answered-operation-key ())
           (change-state! &applied-operation-decision ())
           (change-state! &operation-failure-streak 0)
           (change-state! &host-recovery NoRecovery)
@@ -140,10 +147,18 @@
          (if (or (== $rows LegacyCandidateAdmission) (== $candidate none)) ()
              (let $matches (hostRowsForCandidate $candidate $rows)
                 (if (== (size-atom $matches) 1) (car-atom $matches) ()))))))
+      (progn
+       (change-state! &selected-answer-key
+         (case (get-state &prepared-host-operation) (
+            ((PreparedHostOperation $context $_ $command $_ $_ $_ $key)
+             (if (and (== $candidate respond)
+                      (and (== $context (get-state &operation-context))
+                           (== $command (selectedHostCommand)))) $key ()))
+            ($_ ()))))
       (change-state! &selected-operation-decision
          (if (== (get-state &operation-context) ()) ()
              (OperationDecision (get-state &operation-context) $candidate
-                (selectedHostCommand) (selectedHostTicket))))))
+                (selectedHostCommand) (selectedHostTicket)))))))
 
 ;; Only documented handler observations establish success; invocation alone
 ;; does not. Keep the raw result, including error/rejection reasons, untouched.
@@ -267,6 +282,9 @@
                                (!= $decision (get-state &applied-operation-decision))))
                      (progn
                         (change-state! &applied-operation-decision $decision)
+                        (if (and (== $action respond) (and (== $status Success)
+                                 (!= (get-state &selected-answer-key) ())))
+                            (change-state! &answered-operation-key (get-state &selected-answer-key)) True)
                         (recordOperationRecovery $status $frame)
                         (change-state! &operation-failure-streak
                            (if (== $status Failure) (+ (get-state &operation-failure-streak) 1)

@@ -30,7 +30,8 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     sort(Unsorted,FrameRaw),
     eval([commchannel], Channel),
     eval(['get-state','&prepared-host-operation'], Prepared),
-    Raw=[channel-Channel,prepared-Prepared|FrameRaw].
+    eval(['get-state','&answered-operation-key'], Answered),
+    Raw=[channel-Channel,prepared-Prepared,answered-Answered|FrameRaw].
 mm_dispatch_resolve(Intent, Command, Operation) :-
     mm_dispatch_binding(Command,Intent,Operation).
 mm_dispatch_resolve(Intent, Command, Operation) :-
