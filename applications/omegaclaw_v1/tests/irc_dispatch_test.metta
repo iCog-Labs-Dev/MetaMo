@@ -64,12 +64,14 @@
 !(bind! &irc-ticket (new-state (selectedHostTicket)))
 !(coreLoopDispatchCommand (get-state &irc-ticket) (selectedHostCommand))
 !(test (py-call (irc_routing_fixture.writes)) 1)
-;; IRC submission observation/classification is F1.12/F1.13; do not invent success.
+;; A legacy empty result still cannot establish submission success.
 !(test (operationOutcomeStatus (selectedHostCommand) (DispatchResult Executed Feasible ())) Unobserved)
 !(change-state! &lastsend "")
 !(coreLoopDispatchCommand (get-state &irc-ticket) (selectedHostCommand))
 !(test (py-call (irc_routing_fixture.writes)) 1)
 
+;; Use a new input after the accepted answer; F1.9 suppresses the old answer.
+!(py-call (prepared_response_fixture.new_input))
 ;; Captured ticket cannot survive server transition.
 !(py-call (irc_routing_fixture.connect "same"))
 !(sread (py-call (irc_routing_fixture.queue "answer")))
@@ -159,7 +161,7 @@
 !(test (installIrcTestGate) True)
 !(change-state! &lastsend "")
 !(test (operationOutcomeStatus (selectedHostCommand)
-   (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))) Unobserved)
+   (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))) Success)
 !(test (py-call (irc_routing_fixture.finish_writer)) 1)
 !(test (py-call (irc_routing_fixture.writes)) 2)
 !(test (py-call (irc_routing_fixture.route_lock_available)) 1)

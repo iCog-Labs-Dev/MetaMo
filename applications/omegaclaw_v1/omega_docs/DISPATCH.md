@@ -155,8 +155,8 @@ limit. Configuration inputs are not mutated and invalid destinations fail before
 policy installation or startup configuration replacement.
 
 F1.10 alone adds metadata/binding support. F1.11 below adds authoritative routing;
-F1.12–F1.14 still cover observations, outcome handling and the runnable startup
-profile. Comparing only `commchannel` or raw configuration is insufficient.
+F1.12–F1.13 below add observations and outcome handling; F1.14 remains planned
+for the runnable startup profile. Comparing only `commchannel` or raw configuration is insufficient.
 
 Verification: 28 host-configuration Python tests, 18 response-preparation tests
 (provider mocked), 62 real local/typed-binding MeTTa assertions and 24 startup
@@ -229,10 +229,121 @@ python3 ../../scripts/run-omegaclaw.py tests/irc_dispatch_test.metta
 python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
 ```
 
-IRC handler results still use their legacy return contract. F1.11 does not claim
-successful delivery: correlated IRC sends remain `Unobserved` until F1.12–F1.13
-add truthful submission observations and classification. Automatic greeting
-preparation remains F2.9, and no live-channel acceptance is claimed.
+F1.11 alone does not define a submission result. F1.12 below adds observations;
+F1.13 below classifies confirmed submissions for the selected destination.
+Automatic greeting preparation remains F2.9, and no live-channel acceptance is
+claimed.
+
+### Observable IRC submission (F1.12)
+
+Implemented 14 October 2026 in Core `channels/irc.py` and `src/channels.metta`.
+The existing `send` handler parses the IRC adapter's safely encoded observation
+and returns it through normal dispatch. Its shape is:
+
+```metta
+(SendObservation "irc:irc.example.org:6667:#room"
+  (TransportSubmission Submitted Complete 1 1))
+```
+
+The final two integers are the number of complete chunks whose socket write
+returned normally and the total number of preflighted chunks. A failed chunk
+may have written partial bytes; these counts do not estimate those bytes.
+Only `Submitted Complete N N` confirms complete **socket submission**. It does
+not confirm server acceptance, channel membership, recipient receipt or reading.
+
+| Status | Reason | Meaning |
+| --- | --- | --- |
+| `Submitted` | `Complete` | Every chunk's `sendall` returned normally. |
+| `NotSubmitted` | `Disconnected` | The adapter could establish before writing that the connection/socket was unavailable. |
+| `NotSubmitted` | `InvalidDestination` | No supported, safely encoded endpoint/channel; destination is `()` and counts are zero. |
+| `NotSubmitted` | `InvalidText` | Preflight rejected the text; counts are zero and no socket write occurred. |
+| `NotSubmitted` | `SuppressedDuplicate` | The same wire text was already fully submitted on this destination and connection generation; this invocation wrote zero chunks. |
+| `Uncertain` | `WriteUncertain` | A write raised, possibly after partial bytes, even when the completed count is zero. |
+| `Uncertain` | `SubmissionInterrupted` | Pacing was interrupted after some chunks but before the whole message was submitted. |
+| `Uncertain` | `Disconnected` | Some chunks completed but the low-level helper could not write a later chunk. |
+
+All message framing is validated before the first effect. UTF-8 code points are
+kept intact, and each encoded `PRIVMSG` line is at most 512 bytes including its
+command, channel and trailing CRLF, following the framing limit in
+[RFC 2812 §2.3](https://www.rfc-editor.org/rfc/rfc2812.html#section-2.3).
+Both actual LF and Core's existing literal `\\n` convention create separate
+message bodies; an apparent command on a later line remains `PRIVMSG` text.
+CR, NUL, other disallowed ASCII controls, DEL and lone surrogates fail preflight.
+Tabs and ordinary text/whitespace within nonempty lines are preserved. Blank-only
+messages are rejected and empty newline segments produce no empty wire message.
+
+F1.11's route lock covers the complete attempt, including all chunks. The first
+uncertain write stops the attempt; no remaining chunks, reconnect, or automatic
+whole-message retry are attempted. Core's existing ticket ledger replays the
+same recorded observation without reinvoking the socket. Exceptions are reduced
+to fixed reasons rather than logged with potentially sensitive message/details.
+The existing one-second pacing is retained after successful chunks. A pacing
+exception after the final completed write cannot erase the known complete
+submission; an exception before remaining chunks yields uncertainty.
+
+For IRC only, `send` no longer uses the shared pre-invocation `&lastsend` marker.
+The IRC adapter keeps one last-confirmed-submission marker under the route lock,
+keyed by destination, connection generation and actual wire commands. Failed,
+invalid, disconnected and uncertain attempts never become delivered duplicates.
+Reconnecting or changing destination cannot inherit an old connection's marker.
+Local/stdout and other channel paths keep their existing behavior. This is the
+channel's consecutive-text guard, not task completion or a new retry ledger;
+F1.9's task/input/evidence answer suppression remains separate.
+
+Verification: 14 Python submission tests, seven routing tests and 29 MeTTa
+submission assertions use socket doubles with the real handler and dispatcher.
+They cover both send candidates, successful/uncertain replay, failed first and
+later chunks, definite non-submission, marker ownership, UTF-8 framing and input
+injection. Local behavior and the F1.11 concurrent-routing tests remain covered
+by the focused suite; all 59 MeTTa test files pass. No live IRC messages or
+provider requests are made.
+
+F1.12 supplies transport evidence; F1.13 below consumes it. Neither step
+completes a commitment or automatically queues a reply.
+
+### Consume IRC observations (F1.13)
+
+Implemented 14 October 2026 in `channel_outcomes.metta` and
+`host_operations.py`, delegated from `operationOutcomeStatus`. The shared
+`sendOutcomeStatus` entry point resolves the channel from the recorded destination
+and calls `channelOutcomeStatus CHANNEL COMMAND DESTINATION OBSERVATION`. Explicit
+`local` and `irc` branches own their observation contracts; other channels return
+`Unobserved` until a handler is added. Selection matching and submission-count
+validation are separate helpers. No live channel is consulted for classification.
+The IRC handler recognizes an exact
+`DispatchResult Executed Feasible` containing `SendObservation DESTINATION
+(TransportSubmission Submitted Complete N N)` as `Success` only when N is a
+positive bounded integer and the observation matches the retained selected send
+operation's sole canonical IRC destination. The command, candidate (`respond`
+or `ask-clarification`), ticket and current operation context must also match
+the retained decision. Classification uses that selection, not the current
+socket: a later disconnect cannot erase an already observed complete submission.
+
+This profile defines send-operation success as transport submission, not server
+or recipient acknowledgement. Partial/uncertain writes, definite non-submission,
+suppressed duplicates, malformed counts, unknown shapes and mismatched destinations
+remain `Unobserved`; no retry is queued. Explicit dispatch rejection remains
+`Blocked` and handler `Error` retains the existing `Failure` classification.
+Local/stdout classification is unchanged.
+
+Existing `ingestOperationOutcome` correlation, duplicate/conflicting replay
+checks and one-shot consumption remain the only feedback path. A successful
+prepared `respond` publishes the F1.9 answer key when consumed; a clarification
+never publishes that marker. IRC answer identity includes the canonical server,
+port and channel, so equivalent destination spellings share suppression while
+different destinations do not. A reconnect to the same destination does not
+change task/input/evidence identity. Uncertainty cannot overwrite a prior accepted
+answer marker. Send success leaves the task and commitment open.
+
+Verification: 46 outcome assertions cover exact classification, both candidates,
+callback validation, replay and one-shot feedback. Another 21 assertions exercise
+real preparation, capture, dispatch and socket-double submission, including a
+disconnect after submission, answer suppression, uncertainty and no automatic
+retry. Twenty-one Python preparation tests include canonical IRC answer identity,
+channel routing and supported observation destinations. All 61 MeTTa test files, 14 Python submission
+tests and seven routing tests pass. No live IRC or provider calls are used.
+Automatic greeting preparation remains F2.9; the runnable IRC profile remains
+F1.14.
 
 ### Send binding (F1.2)
 
@@ -483,7 +594,7 @@ write/flush exceptions, suppression, acceptance replay and uncertain replay.
 
 ### Send outcome classification (F1.7)
 
-For a `send` command, `operationOutcomeStatus` now recognizes exactly
+For a local `send` command, `operationOutcomeStatus` recognizes exactly
 `(DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted))`
 as `Success`. This means the local output operation succeeded, with only the
 write-and-flush guarantee described above. It does not assert remote delivery.

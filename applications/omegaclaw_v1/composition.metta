@@ -31,6 +31,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_continuation))
 !(import! &self (library MetaMo applications/omegaclaw_v1/task_lifecycle))
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
+!(import! &self (library MetaMo applications/omegaclaw_v1/channel_outcomes))
 !(import! &self (library MetaMo applications/omegaclaw_v1/operation_selection))
 !(import! &self (library MetaMo applications/omegaclaw_v1/omegaclaw_decision))
 ;; Proposal adapters and inference are opt-in extensions. The native loop

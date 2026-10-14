@@ -102,9 +102,36 @@ def queue_response_preparation(provider, request, observations, destination, req
         return '(ResponseNoAction InvalidInput)'
 
 
+def send_observation_channel(destination):
+    """Route recorded destination data; this does not validate send evidence."""
+    if type(destination) is not str:
+        return ''
+    channel, separator, recipient = destination.partition(':')
+    return channel if separator and recipient else ''
+
+
+def supported_irc_destination(destination):
+    """Validate canonical observation identity without consulting a live socket."""
+    from host_dispatch_config import ConfigError, destination_metadata
+    try:
+        if type(destination) is not str:
+            return 0
+        channel, server, port, recipient = destination.split(':')
+        if channel != 'irc':
+            return 0
+        metadata = dict(destination_metadata(dict(
+            channel=channel, server=server, port=int(port), recipient=recipient))[1:])
+        return int(metadata['egress'] == [destination])
+    except (ConfigError, ValueError, TypeError):
+        return 0
+
+
 def _answer_key(owner, request, evidence, destination):
     # Content identity, not ticket/cycle identity or provider phrasing. Re-reading
     # unchanged content and reordering evidence must not evade suppression.
+    if destination.get('channel') == 'irc':
+        from host_dispatch_config import destination_metadata
+        destination = dict(destination_metadata(destination)[1:])['egress'][0]
     payload = [owner, request, sorted({(row['path'], row['content']) for row in evidence}), destination]
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
 

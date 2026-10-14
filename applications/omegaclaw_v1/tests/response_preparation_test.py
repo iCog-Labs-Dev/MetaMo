@@ -243,6 +243,30 @@ class ResponseQueueTests(unittest.TestCase):
             '(ResponsePreparationQueued)')
         self.assertEqual(self.provider.mock_calls, [])
 
+    def test_irc_answer_identity_uses_canonical_destination(self):
+        destination = dict(channel='irc', server='IRC.Example.org', port=6667, recipient='room')
+        key = host._answer_key('owner', 'request', [], destination)
+        canonical = dict(destination, server='irc.example.org', recipient='#room')
+        self.assertEqual(key, host._answer_key('owner', 'request', [], canonical))
+        for changed in (dict(canonical, server='other.example.org'),
+                        dict(canonical, port=6697), dict(canonical, recipient='#other')):
+            self.assertNotEqual(key, host._answer_key('owner', 'request', [], changed))
+
+    def test_observation_channel_routes_recorded_destination_only(self):
+        for destination, channel in (
+                ('local:stdout', 'local'), ('irc:irc.example.org:6667:#room', 'irc'),
+                ('slack:room', 'slack'), ('telegram:room', 'telegram'),
+                (None, ''), ([], ''), ('irc', ''), ('irc:', '')):
+            self.assertEqual(host.send_observation_channel(destination), channel)
+
+    def test_observation_destination_requires_supported_canonical_irc_route(self):
+        self.assertEqual(host.supported_irc_destination('irc:irc.example.org:6667:#room'), 1)
+        for destination in (None, [], 'local:stdout', 'irc:room',
+                            'irc:IRC.example.org:6667:#room', 'irc:irc.example.org:06667:#room',
+                            'irc:irc.example.org:0:#room', 'irc:irc.example.org:6667:room',
+                            'irc:irc.example.org:6667:#room\r\nJOIN #other'):
+            self.assertEqual(host.supported_irc_destination(destination), 0)
+
     def test_answer_identity_ignores_order_duplicates_and_provider_wording(self):
         evidence = [{'path': '/a', 'content': 'A'}, {'path': '/b', 'content': 'B'}]
         key = host._answer_key('owner', 'request', evidence, self.destination)

@@ -169,11 +169,7 @@
       ((DispatchResult Executed $_ $value)
        (case (car-atom $command) (
           (read-file (if (== (get-type $value) String) Success Unobserved))
-          ;; Only the supported local channel's completed write/flush is known.
-          ;; Suppression, legacy return values and unknown delivery stay unknown.
-          (send (if (== $result
-                     (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
-                    Success Unobserved))
+          (send (sendOutcomeStatus $command $result))
           (show-current-frame
            (if (== (get-metatype $value) Expression)
                (if (== $value ()) Unobserved
