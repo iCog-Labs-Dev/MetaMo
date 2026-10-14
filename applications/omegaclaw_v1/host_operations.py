@@ -8,8 +8,44 @@ import json
 import copy
 import hashlib
 
+import sys
+
 
 _pending_response = None
+
+
+def _irc_transport():
+    # Startup owns loading the actual Core module; never import/start a channel
+    # as a side effect of policy evaluation.
+    module = sys.modules.get('irc')
+    if module is None or not all(callable(getattr(module, name, None)) for name in
+                                 ('route_snapshot', 'acquire_route', 'release_route')):
+        raise RuntimeError('Core IRC routing guard is unavailable')
+    return module
+
+
+def irc_route_snapshot():
+    """Bounded authoritative route for tickets and preparation CAS snapshots."""
+    from host_dispatch_config import ConfigError, destination_metadata, encode, record, Symbol
+    try:
+        route = _irc_transport().route_snapshot()
+        metadata = dict(destination_metadata(dict(channel='irc', server=route['server'],
+                            port=route['port'], recipient=route['recipient']))[1:])
+        generation = route['generation']
+        if type(generation) is not int or generation < 0 or type(route['connected']) is not bool:
+            raise ConfigError('invalid transport state')
+        return encode(record('IrcRoute', metadata['egress'][0], generation,
+                             Symbol('Ready' if route['connected'] else 'Unavailable')))
+    except (RuntimeError, ConfigError, KeyError, TypeError):
+        return '(IrcRouteUnavailable)'
+
+
+def acquire_irc_route():
+    return _irc_transport().acquire_route()
+
+
+def release_irc_route():
+    return _irc_transport().release_route()
 
 # Read native identity as data; swrite preserves symbol/string distinctions.
 _PREPARATION_CONTEXT = r"""
@@ -102,6 +138,8 @@ def _prepare_pending_response():
     janus.query_once('''with_mutex(omegaclaw_dispatch, (
         oc_dispatch_epoch(Epoch),
         mm_dispatch_snapshot(_Current), term_string(_ExpectedSnapshot, Snapshot), _Current == _ExpectedSnapshot,
+        _Current=['DispatchContext',_,_,_,_,_Raw],
+        memberchk(channel-_Channel, _Raw), memberchk(route-_Route, _Raw),
     ''' + _PREPARATION_CONTEXT + ''', sread(ExpectedOwner, _ExpectedOwner), _Owner == _ExpectedOwner,
         sread(ContextSource, _ExpectedContext), Context == _ExpectedContext,
         sread(PreparedSource, _Prepared),
@@ -114,7 +152,8 @@ def _prepare_pending_response():
                         _Skill,_Permissions,_Egress,_Costs],
             (ReadsReady == 1 -> _Readiness=['ReadEvidenceReady',_Task]; _Readiness='NoReadReadiness'),
             _Value=['PreparedHostOperation',Context,_Commitment,
-                    [send,_Text],_Request,_Operation,_Readiness,AnswerKey]
+                    [send,_Text],_Request,_Operation,_Readiness,AnswerKey,
+                    ['PreparedRouting',_Channel,_Route]]
          ; _Value=_Prepared),
         oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[quote,_Value]], _))
     ))''', {'Epoch': captured['Epoch'], 'Snapshot': captured['Snapshot'],
@@ -251,6 +290,7 @@ with_mutex(omegaclaw_dispatch, (
         (_Count =< 128
          -> findall(['HostOperation',_Candidate,_Command,_Operation,_Global,_Frame,_Ticket],
               (member([_Candidate,_Command,_Operation], _Bindings),
+               mm_dispatch_operation_route(_Operation),
                coreDispatchCapture(
                  ['AdmissionRequest','propose-candidate','current-frame',_Candidate], _Ticket)),
               _Rows)

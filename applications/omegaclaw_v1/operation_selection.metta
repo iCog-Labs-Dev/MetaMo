@@ -18,7 +18,7 @@
 
 (= (preparedHostBinding)
    (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation $context $owner $command $request $operation $_readiness $key)
+      ((PreparedHostOperation $context $owner $command $request $operation $_readiness $key $_routing)
        (if (and (== $context (get-state &operation-context))
                 (and (== $owner (commitmentSnapshot))
                      (!= $key (get-state &answered-operation-key))))
@@ -27,7 +27,7 @@
 
 (= (revokePreparedHostCommand $command)
    (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation $_ $_ $prepared $_ $_ $_ $_)
+      ((PreparedHostOperation $_ $_ $prepared $_ $_ $_ $_ $_)
        (if (== $command $prepared) (change-state! &prepared-host-operation ()) False))
       ($_ False))))
 
@@ -36,7 +36,7 @@
 (= (preparedResponseReadyForBundle $bundle)
    (case (get-state &prepared-host-operation) (
       ((PreparedHostOperation (OperationContext $session $cycle $frame) $_ $_ $_ $_
-          (ReadEvidenceReady $task) $_key)
+          (ReadEvidenceReady $task) $_key $_routing)
        (and (!= (preparedHostBinding) ())
             (and (== $frame (frameBundleCurrentId $bundle))
                  (and (hostTaskValuePresent $task)
@@ -150,7 +150,7 @@
       (progn
        (change-state! &selected-answer-key
          (case (get-state &prepared-host-operation) (
-            ((PreparedHostOperation $context $_ $command $_ $_ $_ $key)
+            ((PreparedHostOperation $context $_ $command $_ $_ $_ $key $_routing)
              (if (and (== $candidate respond)
                       (and (== $context (get-state &operation-context))
                            (== $command (selectedHostCommand)))) $key ()))

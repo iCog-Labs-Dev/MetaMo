@@ -154,18 +154,85 @@ Derived permission and egress identifiers must also fit the existing 256-charact
 limit. Configuration inputs are not mutated and invalid destinations fail before
 policy installation or startup configuration replacement.
 
-**This is metadata/binding support, not IRC execution acceptance.** The existing
-`dispatchOperationGate` still blocks IRC sends with `DestinationMismatch` until
-F1.11 captures and checks authoritative endpoint/connection routing. That future
-check must use `destination_metadata` normalization on runtime routing too;
-comparing only `commchannel` or raw configuration strings is insufficient.
-F1.12–F1.14 cover observations, outcome handling and the runnable startup profile.
+F1.10 alone adds metadata/binding support. F1.11 below adds authoritative routing;
+F1.12–F1.14 still cover observations, outcome handling and the runnable startup
+profile. Comparing only `commchannel` or raw configuration is insufficient.
 
 Verification: 28 host-configuration Python tests, 18 response-preparation tests
 (provider mocked), 62 real local/typed-binding MeTTa assertions and 24 startup
 assertions pass. IRC cases install typed bindings for both candidates, reject
 missing exact permission/egress in either scope, and retain the routing block.
 No IRC transport or live provider was invoked.
+
+### Authoritative IRC routing and dispatch guard (F1.11)
+
+Implemented 14 October 2026 across the v1 adapter and matching Core changes in
+`src/dispatch.pl` and `channels/irc.py`. These Core sources must be deployed with
+the adapter; an older Core lacks the required guard registration API.
+
+Core IRC now owns a route snapshot containing its actual server, port, channel,
+monotonic connection-state generation and availability. Socket publication,
+registration, start, stop and disconnect are synchronized by its reentrant
+socket lock. Restarting the same endpoint changes the generation; retiring
+receiver threads cannot publish against or clear a newer connection. Old
+protocol callbacks cannot send through a replacement socket.
+
+`host_operations.irc_route_snapshot` applies F1.10's `destination_metadata`
+normalization to that actual transport state. It returns bounded
+`(IrcRoute EGRESS GENERATION Ready|Unavailable)` data, or `IrcRouteUnavailable`
+for missing/incompatible/malformed transport state. It never starts or imports
+a channel during policy checks. This is connection readiness, not confirmation
+of channel membership or message delivery.
+
+`mm_dispatch_snapshot` retains this route alongside the channel selector, frame
+state and prepared command. Ticket comparison therefore rejects changed endpoints,
+channels, disconnects and same-endpoint reconnects. Operation capture filters sends
+whose destination is not currently available; the final `dispatchOperationGate`
+independently requires exactly the current destination. Existing local/stdout
+routing and both-scope feasibility checks remain in force.
+
+Core's optional trusted `oc_dispatch_configure_guard(Enter, Leave)` hook runs
+inside its existing dispatch mutex. The v1 adapter takes the IRC route lock
+before the final snapshot, policy gate and handler invocation, releasing it with
+`setup_call_cleanup` on success, rejection or exception. The lock order is always
+**Core dispatch mutex → IRC route lock**. IRC receiver callbacks never acquire
+Core's mutex or call its interpreter while holding the route lock. Guard
+acquisition failure returns `Blocked MissingPolicyContext`; it cannot invoke a
+handler. Reconfiguration clears the optional guard; other Core consumers retain
+their existing four-hook configuration behavior.
+
+Preparation still calls the provider outside these locks. Its before/after
+snapshot comparison now includes the route generation. The internal
+`PreparedHostOperation` record appends `(PreparedRouting CHANNEL ROUTE)`; all
+its v1 producers/consumers were updated together, while the public queue API
+is unchanged. Resolution checks this captured route too, preventing a newly
+captured ticket from adopting preparation published before a reconnect.
+No policy grant, new execution path or automatic retry is introduced.
+
+Verification uses real Core dispatch and IRC adapter code with socket/provider
+doubles, without contacting IRC or a provider. `tests/irc_dispatch_test.metta`
+covers exact destination matching, replay, route changes, reconnect during and
+after preparation, and a writer attempting to disconnect between the final gate
+and handler. The writer waits until invocation finishes. Seven Python routing
+tests cover receiver lifecycle and socket ownership; five Prolog guard tests
+cover cleanup, replay, acquisition failure and reconfiguration. The existing
+Core dispatch suite (20 declared tests / 22 generated cases), all 58 focused
+MeTTa files, 28 host-configuration and 18 mocked-provider preparation tests pass.
+The complete MeTTa run includes the existing local/preparation regressions.
+
+From the application directory, after installing matching Core sources:
+
+```sh
+python3 tests/irc_routing_test.py
+swipl -q -s tests/dispatch_guard_test.pl
+python3 ../../scripts/run-omegaclaw.py tests/irc_dispatch_test.metta
+python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
+```
+
+IRC handler results still use their legacy return contract. F1.11 does not claim
+successful delivery: correlated IRC sends remain `Unobserved` until F1.12–F1.13
+add truthful submission observations and classification. Automatic greeting
+preparation remains F2.9, and no live-channel acceptance is claimed.
 
 ### Send binding (F1.2)
 

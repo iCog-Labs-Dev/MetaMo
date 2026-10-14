@@ -29,13 +29,42 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     findall(K-V, (nb_current(K,V), atom(K), sub_atom(K,0,6,_,'&cfv2-')), Unsorted),
     sort(Unsorted,FrameRaw),
     eval([commchannel], Channel),
+    mm_dispatch_route(Channel, Route),
     eval(['get-state','&prepared-host-operation'], Prepared),
     eval(['get-state','&answered-operation-key'], Answered),
-    Raw=[channel-Channel,prepared-Prepared,answered-Answered|FrameRaw].
+    Raw=[channel-Channel,route-Route,prepared-Prepared,answered-Answered|FrameRaw].
+
+mm_dispatch_route(irc, Route) :- !,
+    py_call(host_operations:irc_route_snapshot(), Source), sread(Source, Parsed), Route=Parsed.
+mm_dispatch_route(_, none).
+
+dispatchRoutingAllowed(Destinations, Result) :-
+    eval([commchannel], Channel),
+    ( (Channel == local, Destinations == ["local:stdout"]
+      ; Channel == irc, mm_dispatch_route(irc, ['IrcRoute',Egress,_, 'Ready']),
+        Destinations == [Egress]) -> Result=true ; Result=false).
+
+mm_dispatch_operation_route(Operation) :-
+    (memberchk([skill,"send"], Operation)
+     -> memberchk([egress,Destinations], Operation), dispatchRoutingAllowed(Destinations,true)
+     ; true).
+
+% Core holds its mutex before acquiring the transport guard. The IRC receiver
+% owns only its route lock and must never call the interpreter while holding it.
+mm_dispatch_enter_route(Token) :-
+    eval([commchannel], Channel),
+    (Channel == irc -> py_call(host_operations:acquire_irc_route(), 1), Token=irc
+     ; Token=none).
+mm_dispatch_leave_route(irc) :- !, py_call(host_operations:release_irc_route(), 1).
+mm_dispatch_leave_route(none).
 mm_dispatch_resolve(Intent, Command, Operation) :-
     mm_dispatch_binding(Command,Intent,Operation).
 mm_dispatch_resolve(Intent, Command, Operation) :-
-    eval([preparedHostBinding], ['HostCommandBinding',Command,Intent,Operation]).
+    eval([preparedHostBinding], ['HostCommandBinding',Command,Intent,Operation]),
+    eval(['get-state','&prepared-host-operation'],
+         ['PreparedHostOperation',_,_,Command,Intent,Operation,_,_,
+          ['PreparedRouting',Channel,Route]]),
+    eval([commchannel], Channel), mm_dispatch_route(Channel, Current), Route == Current.
 mm_dispatch_gate(Intent, ['DispatchContext',Bundle,Global,Frame,_,_], Operation, Decision) :-
     eval([dispatchOperationGate, [quote,Bundle], [quote,Bundle],
           [quote,Intent], [quote,Operation], [quote,Global], [quote,Frame]],Decision).
@@ -43,4 +72,5 @@ mm_dispatch_execute(_, Command, Result) :- eval(Command,Result).
 
 initMetaMoDispatch(true) :-
     oc_dispatch_configure(mm_dispatch_snapshot,mm_dispatch_resolve,mm_dispatch_gate,mm_dispatch_execute),
+    oc_dispatch_configure_guard(mm_dispatch_enter_route,mm_dispatch_leave_route),
     retractall(oc_dispatch_intent(_)), assertz(oc_dispatch_intent(mm_dispatch_intent)).
