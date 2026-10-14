@@ -63,77 +63,87 @@
       )
          (if $result True (anyTrue $bundle $tail)))))
 
+;; Availability follows an ordered decision chain. Each stage either decides
+;; or delegates, preserving precedence without evaluating later branches early.
 (= (candidateIsAvailableRaw $bundle $name)
    (if (idleAutonomyActiveForBundle $bundle)
-       (if (hasErrors)
-           (== $name self-improve)
-           (autonomyPhaseAllows $name))
-       (if (directUserResponseNeededForBundle $bundle)
-           (== $name respond)
-           (if (resultQuestionNeedsResponseForBundle $bundle)
-               (== $name respond)
-               (if (taskResultReadyForBundle $bundle)
-                   (if (executionContinuationNeededForBundle $bundle)
-                       (if (executionRiskCurrentlyHighForBundle $bundle)
-                           (== $name ask-clarification)
-                           (== $name execute-skill))
-                       (== $name respond))
-                   (if (freshExecutionRequestNeededForBundle $bundle)
-                       (if (executionRiskCurrentlyHighForBundle $bundle)
-                           (== $name ask-clarification)
-                           (== $name execute-skill))
-                       (let* (
-                          ($andRows
-                             (collapse (match &self
-                                (CandidateCondition $name $t $p $h)
-                                (CandidateCondition $name $t $p $h))))
-                          ($orRows
-                             (collapse (match &self
-                                (CandidateConditionAny $name $t $p $h)
-                                (CandidateConditionAny $name $t $p $h))))
-                          ($hasAnd (not (== $andRows ())))
-                          ($hasOr (not (== $orRows ())))
-                          ($highExecutionIntent
-                             (and (frameRuntimeTaskOpen $bundle)
-                                  (> (extractAppraisalDim opportunity)
-                                     (executionOpportunityThreshold))))
-                          ($executionIntent
-                             (and (frameRuntimeTaskOpen $bundle)
-                                  (> (extractAppraisalDim opportunity)
-                                     (executionIntentThreshold))))
-                          ($executionRisky (executionRiskCurrentlyHighForBundle $bundle))
-                          ($executionContinuation (executionContinuationNeededForBundle $bundle))
-                          ($blockedExecution
-                             (and (or $executionIntent $executionContinuation)
-                                  $executionRisky))
-                          ($safeHighExecutionIntent
-                             (and $highExecutionIntent (not $executionRisky)))
-                          ($safeExecutionContinuation
-                             (and $executionContinuation (not $executionRisky)))
-                          ($awaitingClarification
-                             (awaitingClarificationResponseForBundle $bundle))
-                          ($needsRepair
-                             (and (frameRuntimeTaskOpen $bundle) (hasErrors)))
-                       )
-                       (if $needsRepair
-                           (== $name repair-failure)
-                           (if $awaitingClarification
-                               False
-                               (if $blockedExecution
-                                   (== $name ask-clarification)
-                                   (if $safeExecutionContinuation
-                                       (== $name execute-skill)
-                                       (if $safeHighExecutionIntent
-                                           (== $name execute-skill)
-                                           (if (and (not $hasAnd) (not $hasOr))
-                                               False
-                                               (and
-                                                  (if $hasAnd
-                                                      (eval (allTrue $bundle $andRows))
-                                                      True)
-                                                  (if $hasOr
-                                                      (eval (anyTrue $bundle $orRows))
-                                                      True)))))))))))))))
+       (autonomousCandidateAvailable $name)
+       (responseCandidateAvailable $bundle $name)))
+
+(= (autonomousCandidateAvailable $name)
+   (if (hasErrors) (== $name self-improve) (autonomyPhaseAllows $name)))
+
+(= (responseCandidateAvailable $bundle $name)
+   (if (or (directUserResponseNeededForBundle $bundle)
+           (resultQuestionNeedsResponseForBundle $bundle))
+       (== $name respond)
+       (taskResultCandidateAvailable $bundle $name)))
+
+(= (taskResultCandidateAvailable $bundle $name)
+   (if (taskResultReadyForBundle $bundle)
+       (readyResultCandidateAvailable $bundle $name)
+       (freshRequestCandidateAvailable $bundle $name)))
+
+(= (readyResultCandidateAvailable $bundle $name)
+   (if (executionContinuationNeededForBundle $bundle)
+       (executionCandidateAvailable $bundle $name)
+       (== $name respond)))
+
+(= (executionCandidateAvailable $bundle $name)
+   (if (executionRiskCurrentlyHighForBundle $bundle)
+       (== $name ask-clarification)
+       (== $name execute-skill)))
+
+(= (freshRequestCandidateAvailable $bundle $name)
+   (if (freshExecutionRequestNeededForBundle $bundle)
+       (executionCandidateAvailable $bundle $name)
+       (repairCandidateAvailable $bundle $name)))
+
+(= (repairCandidateAvailable $bundle $name)
+   (if (and (frameRuntimeTaskOpen $bundle) (hasErrors))
+       (== $name repair-failure)
+       (clarificationCandidateAvailable $bundle $name)))
+
+(= (clarificationCandidateAvailable $bundle $name)
+   (if (awaitingClarificationResponseForBundle $bundle)
+       False
+       (blockedExecutionCandidateAvailable $bundle $name)))
+
+(= (executionIntentAbove $bundle $threshold)
+   (and (frameRuntimeTaskOpen $bundle)
+        (> (extractAppraisalDim opportunity) $threshold)))
+
+(= (executionIsBlockedForCandidates $bundle)
+   (and (or (executionIntentAbove $bundle (executionIntentThreshold))
+            (executionContinuationNeededForBundle $bundle))
+        (executionRiskCurrentlyHighForBundle $bundle)))
+
+(= (blockedExecutionCandidateAvailable $bundle $name)
+   (if (executionIsBlockedForCandidates $bundle)
+       (== $name ask-clarification)
+       (safeExecutionCandidateAvailable $bundle $name)))
+
+(= (safeExecutionCandidateAvailable $bundle $name)
+   (if (and (not (executionRiskCurrentlyHighForBundle $bundle))
+            (or (executionContinuationNeededForBundle $bundle)
+                (executionIntentAbove $bundle (executionOpportunityThreshold))))
+       (== $name execute-skill)
+       (registryCandidateAvailable $bundle $name)))
+
+(= (registryCandidateAvailable $bundle $name)
+   (let* (
+      ($andRows (collapse (match &self
+         (CandidateCondition $name $t $p $h)
+         (CandidateCondition $name $t $p $h))))
+      ($orRows (collapse (match &self
+         (CandidateConditionAny $name $t $p $h)
+         (CandidateConditionAny $name $t $p $h)))))
+      (case ((== $andRows ()) (== $orRows ())) (
+         ((True True) False)
+         ((False True) (eval (allTrue $bundle $andRows)))
+         ((True False) (eval (anyTrue $bundle $orRows)))
+         ((False False) (and (eval (allTrue $bundle $andRows))
+                            (eval (anyTrue $bundle $orRows))))))))
 
 ;; A possible same-frame relation is advisory evidence, but it must route the
 ;; cycle through the explicit frame-state verification operation before other
