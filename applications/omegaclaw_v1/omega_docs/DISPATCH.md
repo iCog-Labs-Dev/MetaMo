@@ -15,7 +15,7 @@ implementation, not the durable v1 dispatch ledger in `CONTRACTS.md`.
 
 ## Trusted host configuration
 
-`host_dispatch_config.py` provisions a bounded set of real Core read and local send commands.
+`host_dispatch_config.py` provisions a bounded set of real Core read and local/IRC send commands.
 Copy `host_dispatch.example.json` into host-owned configuration, replace its
 absolute file paths, and explicitly set both policy scopes. The
 example is a template; importing the module installs nothing.
@@ -155,8 +155,8 @@ limit. Configuration inputs are not mutated and invalid destinations fail before
 policy installation or startup configuration replacement.
 
 F1.10 alone adds metadata/binding support. F1.11 below adds authoritative routing;
-F1.12–F1.13 below add observations and outcome handling; F1.14 remains planned
-for the runnable startup profile. Comparing only `commchannel` or raw configuration is insufficient.
+F1.12–F1.13 below add observations and outcome handling; F1.14 supplies the
+explicit startup profile. Comparing only `commchannel` or raw configuration is insufficient.
 
 Verification: 28 host-configuration Python tests, 18 response-preparation tests
 (provider mocked), 62 real local/typed-binding MeTTa assertions and 24 startup
@@ -342,8 +342,70 @@ disconnect after submission, answer suppression, uncertainty and no automatic
 retry. Twenty-one Python preparation tests include canonical IRC answer identity,
 channel routing and supported observation destinations. All 61 MeTTa test files, 14 Python submission
 tests and seven routing tests pass. No live IRC or provider calls are used.
-Automatic greeting preparation remains F2.9; the runnable IRC profile remains
-F1.14.
+Automatic greeting preparation remains F2.9; F1.14 below supplies the explicit
+IRC startup profile.
+
+### Explicit IRC startup profile (F1.14)
+
+Copy `host_dispatch.irc.example.json` to an operator-owned absolute path. It uses
+the existing version-1 schema and `frame_id: current-frame`, with exact `respond`
+and `ask-clarification` send bindings. The example contains placeholder endpoint
+`irc.example.org:6667/#room` and fixed example text, not generated answers. Replace
+the destination, both scopes' exact permission/egress identifiers and command
+text together. Both scopes explicitly grant `send`, `channels.send`,
+`channels.send:irc:SERVER:PORT:#CHANNEL` and `irc:SERVER:PORT:#CHANNEL`.
+No permissions or destination values are derived from incoming messages.
+
+From the PeTTa workspace root, the existing launcher accepts Core runtime
+arguments after its options:
+
+```bash
+python3 MetaMo/scripts/run-omegaclaw.py \
+  MetaMo/applications/omegaclaw_v1/run.metta \
+  --host-config /absolute/path/host-irc.json \
+  commchannel=irc IRC_server=irc.example.org IRC_port=6667 'IRC_channel=#room' IRC_user=omegaclaw
+```
+
+Replace the example route with the intended route in both places. Provider and
+memory configuration remain the existing Core setup. Keep authentication in the
+existing Core secret mechanism (`OMEGACLAW_AUTH_SECRET`); no credentials belong
+in policy JSON or diagnostics. The JSON grants authority but does not configure
+or connect the transport. The launcher flag overrides `OMEGACLAW_HOST_CONFIG`.
+An import-only `--audit` checks source resolution, not live route consistency.
+
+Startup validates the JSON before the loop starts. Core initializes its channel
+later, so route validation occurs at the first active frame, before installing
+policies or selecting an operation. It compares `commchannel` and the IRC
+adapter's actual normalized server/port/channel with the host destination.
+`StartupChannelMismatch`, `StartupIrcDestinationMismatch` or
+`StartupIrcRouteUnavailable` raises a fixed diagnostic and prevents installation;
+an already installed configuration is not replaced. No endpoint, message or
+credential value is included in those diagnostics. A disconnected but configured
+matching route can install policy; F1.11 still blocks dispatch until ready.
+
+Missing configuration prints `MissingReplyPolicy` once and keeps dispatch closed.
+A read-only profile without a destination prints `MissingReplyDestination` and
+remains usable. Missing required send grants are reported by scope as
+`MissingReplyPolicy`; missing `respond` bindings produce `MissingReplyBinding`,
+with instructions to supply an exact command or queue trusted preparation.
+These diagnostics never add grants, relax denials, create bindings, or claim that
+the final gate will admit a command. Constraints, budgets, freshness and connection
+availability are still enforced by the existing gate. A preparation-only profile
+can intentionally omit static send bindings and receive that diagnostic.
+
+Repeated cycles neither reprint diagnostics nor reinstall the policy. Later
+frames do not inherit the first frame's grants; F2.8 owns per-task provisioning.
+F1.14 does not queue a generated greeting or complete a task: automatic replies
+still require F2.1, F2.8 and F2.9. An explicitly authorized fixed binding is not
+the automatic conversational preparation path.
+
+Verification: 12 Python startup tests and 28 real startup/dispatch assertions
+cover the shipped example, both candidates, normalized and mismatched routes,
+missing policy/bindings, read-only operation, credential-free diagnostics,
+first-frame installation, ticket replay and later-frame isolation. All 62 MeTTa
+test files pass, as do the existing 28 configuration, 21 preparation, seven
+routing and 14 submission Python tests. All sockets/providers are doubled;
+no live IRC messages are sent.
 
 ### Send binding (F1.2)
 
@@ -731,7 +793,7 @@ and exact bindings using the existing host installer.
 Repeated cycles do not reload the file or restore revoked grants. Later frames
 do not inherit the first frame's permissions; mismatched targets remain denied.
 Changing configuration requires explicit trusted reprovisioning or a new process.
-Only `read-file`, `show-current-frame` and local `send` are supported. Candidate
+Only `read-file`, `show-current-frame` and local/IRC `send` are supported. Candidate
 generation and policy still determine which operation can be selected on a given cycle.
 The default Core preparation hook does nothing when the v1 startup adapter is
 absent. Preserve the updated Core `src/dispatch.metta` and `src/loop.metta` with

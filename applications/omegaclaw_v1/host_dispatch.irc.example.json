@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "frame_id": "current-frame",
+  "allowed_files": [],
+  "destination": {
+    "channel": "irc",
+    "server": "irc.example.org",
+    "port": 6667,
+    "recipient": "#room"
+  },
+  "frame": {
+    "skills": [
+      "send"
+    ],
+    "permissions": [
+      "channels.send",
+      "channels.send:irc:irc.example.org:6667:#room"
+    ],
+    "egress": [
+      "irc:irc.example.org:6667:#room"
+    ],
+    "constraints": [
+      [
+        "DenySkill",
+        "shell"
+      ],
+      [
+        "DenySkill",
+        "write-file"
+      ],
+      [
+        "MaxCost",
+        "commands",
+        "units",
+        1
+      ]
+    ],
+    "budgets": [
+      {
+        "resource": "commands",
+        "unit": "units",
+        "available": 10,
+        "status": "Open"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "skill": "send",
+      "arguments": [
+        "Configured IRC reply."
+      ]
+    },
+    {
+      "skill": "send",
+      "candidate": "ask-clarification",
+      "arguments": [
+        "Which task should I help with?"
+      ]
+    }
+  ],
+  "global": {
+    "skills": [
+      "send"
+    ],
+    "permissions": [
+      "channels.send",
+      "channels.send:irc:irc.example.org:6667:#room"
+    ],
+    "egress": [
+      "irc:irc.example.org:6667:#room"
+    ],
+    "constraints": [
+      [
+        "DenySkill",
+        "shell"
+      ],
+      [
+        "DenySkill",
+        "write-file"
+      ],
+      [
+        "MaxCost",
+        "commands",
+        "units",
+        1
+      ]
+    ],
+    "budgets": [
+      {
+        "resource": "commands",
+        "unit": "units",
+        "available": 10,
+        "status": "Open"
+      }
+    ]
+  }
+}

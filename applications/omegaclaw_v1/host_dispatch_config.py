@@ -292,6 +292,46 @@ def provision(path):
 
 _startup_config = None
 _startup_installed = False
+_startup_checked = False
+
+
+def startup_channel_diagnostics(config, channel, route=None):
+    """Check recorded configuration against Core; never grant or send anything.
+
+    Called before first-frame installation, after Core has configured channels.
+    Diagnostics contain fixed instructions, never configuration values/secrets.
+    Read-only profiles remain valid; missing reply setup is informational.
+    Final feasibility, connection availability and route freshness belong to Core.
+    """
+    destination = config.get('destination') if config else None
+    expected = dict(destination_metadata(destination)[1:]) if destination else None
+    if expected and expected['channel'] != channel:
+        raise ConfigError('StartupChannelMismatch: match host destination.channel to Core commchannel; no policy installed')
+    if channel != 'irc':
+        return []
+    if expected:
+        try:
+            actual = dict(destination_metadata(dict(channel='irc', server=route['server'],
+                          port=route['port'], recipient=route['recipient']))[1:])
+        except (ConfigError, KeyError, TypeError):
+            raise ConfigError('StartupIrcRouteUnavailable: initialize the matching Core IRC adapter before policy installation') from None
+        if actual['egress'] != expected['egress']:
+            raise ConfigError('StartupIrcDestinationMismatch: match host server, port and recipient to the Core IRC route; no policy installed')
+    if config is None:
+        return ['MissingReplyPolicy: supply --host-config /absolute/path/host.json to enable explicitly authorized replies; dispatch remains closed']
+    if expected is None:
+        return ['MissingReplyDestination: read-only profile retained; add an explicit IRC destination, both-scope send policy and reply binding to enable replies']
+    diagnostics = []
+    for name in ('global', 'frame'):
+        policy = config[name]
+        if ('send' not in policy['skills']
+                or not set(expected['permissions']) <= set(policy['permissions'])
+                or not set(expected['egress']) <= set(policy['egress'])):
+            diagnostics.append('MissingReplyPolicy: explicitly configure send skill, generic and destination-specific permissions, and exact egress in the ' + name + ' scope; no grants added')
+    if not any(row['skill'] == 'send' and row.get('candidate', 'respond') == 'respond'
+               for row in config['commands']):
+        diagnostics.append('MissingReplyBinding: configure an exact respond/send command or queue a trusted prepared reply; automatic incoming-message preparation remains F2.9')
+    return diagnostics
 
 
 def configure_startup(path=None):
@@ -301,13 +341,14 @@ def configure_startup(path=None):
     frame. A concrete ID must match that frame. No grants follow frame switches.
     """
     import os
-    global _startup_config, _startup_installed
+    global _startup_config, _startup_installed, _startup_checked
     selected = path if path is not None else os.environ.get('OMEGACLAW_HOST_CONFIG')
     config = read_config(selected) if selected else None
     if config is not None:
         build_config(config)
     _startup_config = config
     _startup_installed = False
+    _startup_checked = False
     return 1
 
 
@@ -316,12 +357,13 @@ def provision_startup():
     import copy
     import re
     import janus
-    global _startup_installed
-    if _startup_config is None or _startup_installed:
+    global _startup_installed, _startup_checked
+    if _startup_installed or (_startup_config is None and _startup_checked):
         return 1
     current = janus.query_once('''
         with_mutex(omegaclaw_dispatch,
           (eval(['cfv2-root-current-frame-id'], Frame),
+           eval([commchannel], Channel),
            (atom(Frame) -> Symbolic=1 ; Symbolic=0)))
     ''')
     frame = current.get('Frame')
@@ -329,6 +371,20 @@ def provision_startup():
         return 1  # No active frame yet; missing bindings keep admission closed.
     if not current.get('truth') or not isinstance(frame, str) or not frame:
         raise ConfigError('startup requires a valid active Core frame')
+    if not _startup_checked:
+        route = None
+        if current.get('Channel') == 'irc' and _startup_config and _startup_config.get('destination'):
+            from host_operations import _irc_transport
+            try:
+                route = _irc_transport().route_snapshot()
+            except RuntimeError:
+                pass  # Report a fixed, credential-free diagnostic below.
+        diagnostics = startup_channel_diagnostics(_startup_config, current.get('Channel'), route)
+        for diagnostic in diagnostics:
+            print('[HostStartup] ' + diagnostic)
+        _startup_checked = True
+    if _startup_config is None:
+        return 1
     configured = _startup_config['frame_id']
     if configured != 'current-frame' and configured != frame:
         raise ConfigError('configured frame does not match the active Core frame')
