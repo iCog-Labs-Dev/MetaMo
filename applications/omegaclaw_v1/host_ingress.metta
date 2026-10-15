@@ -2,6 +2,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_ingress.py))
 !(bind! &last-host-input (new-state ()))
 !(bind! &last-host-followup (new-state ()))
+!(bind! &last-host-replacement (new-state ()))
 
 ;; Example: a blocked frame stays blocked even when the message says follow-up.
 (= (hostIngressFrameDecision $id $frame $revision)
@@ -23,6 +24,8 @@
             ((FollowUp False) (HostInput Held FrameMismatch))
             ((Cancel True) (HostInput Cancel $id $frame $revision))
             ((Cancel False) (HostInput Held FrameMismatch))
+            ((Replace True) (HostInput Replace $id $frame $revision))
+            ((Replace False) (HostInput Held FrameMismatch))
             ($_ (HostInput Held ExplicitFollowupRequired))
         )
     )
@@ -67,12 +70,47 @@
 ;; Example: retain a Held diagnostic while keeping case branch outputs separate.
 (= (hostIngressRetain $decision) $decision)
 
+;; Example: remember the successor identity, never treat a stale predecessor as current.
+(= (hostIngressReplaceOnce $decision $message)
+    (let*
+        (
+            ($source (repr $decision))
+            ($result (sread (py-call (host_ingress.replace $source $message))))
+        )
+        (progn
+            (change-state! &last-host-followup ())
+            (case $result
+                (
+                    ((HostInput Replaced $_ $next $frame $revision)
+                        (change-state! &last-host-replacement
+                            (HostReplacement (HostInput Replace $next $frame $revision)
+                                $message $result)))
+                    ($_ False)
+                )
+            )
+            $result
+        )
+    )
+)
+
+;; Example: redelivery against the successor returns the original replacement receipt.
+(= (hostIngressReplacement $decision $message)
+    (case (get-state &last-host-replacement)
+        (
+            ((HostReplacement $decision $message $receipt) $receipt)
+            ($_ (hostIngressReplaceOnce $decision $message))
+        )
+    )
+)
+
 ;; Example: Held has no frame effects; NewTask delegates to Core's admission.
 (= (hostIngressApply $decision $message)
     (case $decision
         (
             ((HostInput FollowUp $_ $_ $_)
                 (hostIngressFollowup $decision $message))
+            ((HostInput Replace $_ $_ $_)
+                (hostIngressReplacement $decision $message))
             ((HostInput Cancel $_ $_ $_)
                 (progn
                     (change-state! &last-host-followup ())

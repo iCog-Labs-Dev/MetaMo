@@ -13,7 +13,7 @@ def classify_message(message):
     except UnicodeEncodeError:
         return 'InvalidInput'
     prefix, separator, body = message.strip().partition(':')
-    kinds = {'follow-up': 'FollowUp', 'cancel': 'Cancel'}
+    kinds = {'follow-up': 'FollowUp', 'cancel': 'Cancel', 'replace': 'Replace'}
     if prefix.casefold() not in kinds or not separator:
         return 'NewTask'
     return kinds[prefix.casefold()] if body.strip() else 'InvalidInput'
@@ -38,35 +38,56 @@ def ingest(message):
     return result['Source']
 
 
-# Example: cancel('(HostInput Cancel "c1" frame-1 0)', 'cancel: no longer needed').
+# Example: cancel(decision, 'cancel: no longer needed') records abandonment.
 def cancel(decision, message):
-    """Recheck ownership, abandon, and revoke pending work under the dispatch lock."""
     if classify_message(message) != 'Cancel':
         return '(HostInput Held InvalidInput)'
+    from host_dispatch_config import record
+    reason = message.strip().partition(':')[2].strip()
+    return apply_transition(decision, 'Cancel', record('Abandoned', reason))
+
+
+# Example: replace(decision, 'replace: summarize B') creates a distinct successor.
+def replace(decision, message):
+    if classify_message(message) != 'Replace':
+        return '(HostInput Held InvalidInput)'
+    from uuid import uuid4
+    from host_dispatch_config import record
+    summary = message.strip().partition(':')[2].strip()
+    change = record('Superseded', str(uuid4()), summary, 'Explicit user replacement')
+    return apply_transition(decision, 'Replace', change)
+
+
+# Example: a stale decision cannot abandon or supersede the new current owner.
+def apply_transition(decision, kind, change):
+    """Apply the event and revoke predecessor work while holding the dispatch lock."""
     import janus
     from uuid import uuid4
     from host_dispatch_config import encode
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
-        sread(DecisionSource, _Decision),
-        sread(EventSource, _EventId), sread(ReasonSource, _Reason),
-        (_Decision = ['HostInput','Cancel',_Id,_Frame,_Revision],
+        sread(DecisionSource, _Decision), sread(KindSource, _Kind),
+        sread(EventSource, _EventId), sread(ChangeSource, _Change),
+        (_Decision = ['HostInput',_Kind,_Id,_Frame,_Revision],
          commitmentSnapshot(['CommitmentSnapshot',_Id,_Frame,_Revision,'Open',_]),
          eval(['get-state','&cfv2-current-frame-id'], _Current), _Current == _Frame
          -> mm_commitment_apply(
-              ['CommitmentEvent',_EventId,_Id,_Revision,['Abandoned',_Reason]],
-              ['CommitmentApplied',_EventId,_Id,'Abandoned',_Next]),
+              ['CommitmentEvent',_EventId,_Id,_Revision,_Change],
+              ['CommitmentApplied',_EventId,_Id,_Status,_Next]),
             findall(_Command,
               (mm_dispatch_binding(_Command,_,_Operation),
                memberchk([target,_Frame],_Operation)), _Commands),
             maplist(mm_dispatch_revoke, _Commands),
             eval(['change-state!','&prepared-host-operation',[]], _),
-            _Result = ['HostInput','Cancelled',_Id,_Frame,_Next]
+            (_Status == 'Abandoned'
+             -> _Result = ['HostInput','Cancelled',_Id,_Frame,_Next]
+             ; _Change = ['Superseded',_Successor,_,_],
+               _Result = ['HostInput','Replaced',_Id,_Successor,_Frame,0])
          ; _Result = ['HostInput','Held','StaleCommitment']),
         swrite(_Result, Source)))''',
-        {'DecisionSource': decision, 'EventSource': encode(str(uuid4())),
-         'ReasonSource': encode(message.strip().partition(':')[2].strip())})
+        {'DecisionSource': decision, 'KindSource': kind,
+         'EventSource': encode(str(uuid4())), 'ChangeSource': encode(change)})
     if not result.get('truth', False):
-        raise RuntimeError('host cancellation failed')
+        raise RuntimeError('host lifecycle transition failed')
     return result['Source']
 
 

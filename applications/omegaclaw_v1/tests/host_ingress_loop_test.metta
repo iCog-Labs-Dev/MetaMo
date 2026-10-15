@@ -1,4 +1,4 @@
-;; Actual Core polling loop, bounded to four turns; only external I/O doubled.
+;; Actual Core polling loop, bounded to five turns; only external I/O doubled.
 !(import! &self (library lib_import))
 !(import! &self fixtures/full_loop.metta)
 !(import! &self (library MetaMo applications/omegaclaw_v1/runtime_support))
@@ -17,7 +17,7 @@
 !(initializeHostStartup)
 !(py-call (host_ingress_loop.install))
 ;; Start at turn 2 to use explicit offline initialization rather than live I/O.
-!(configure maxSessionCycles 5)
+!(configure maxSessionCycles 6)
 !(configure maxNewInputLoops 5)
 !(configure maxWakeLoops 1)
 !(configure spamShield True)
@@ -29,6 +29,6 @@
 !(test (py-call (host_ingress_loop.verified)) 1)
 !(test (size-atom (cfv2-frame-refs-by-status Active)) 1)
 !(test (get-state &task-open) False)
-!(test (py-call (lib_llm_ext.call_count "semantics")) 2)
+!(test (py-call (lib_llm_ext.call_count "semantics")) 3)
 !(test (py-call (offline_guard.optional_modules_absent)) 1)
 !(py-call (host_config_fixture.cleanup))

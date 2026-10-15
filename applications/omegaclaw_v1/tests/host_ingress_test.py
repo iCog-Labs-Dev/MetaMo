@@ -10,6 +10,11 @@ spec.loader.exec_module(ingress)
 
 
 class HostIngressTests(unittest.TestCase):
+    def test_explicit_replace(self):
+        for message in ('replace: summarize B', ' REPLACE: changed task ',
+                        'replace: (send "not executable")'):
+            self.assertEqual(ingress.classify_message(message), 'Replace')
+
     def test_explicit_cancel(self):
         for message in ('cancel: no longer needed', ' CANCEL: changed plans ',
                         'cancel: (send "not executable")'):
@@ -21,13 +26,13 @@ class HostIngressTests(unittest.TestCase):
             self.assertEqual(ingress.classify_message(message), 'FollowUp')
 
     def test_ambiguous_or_unrelated_is_not_followup(self):
-        for message in ('yes', 'continue', 'read another file', 'cancel',
+        for message in ('yes', 'continue', 'read another file', 'cancel', 'replace',
                         'This text mentions follow-up: but is not a marker'):
             self.assertEqual(ingress.classify_message(message), 'NewTask')
 
     def test_invalid_input(self):
         for message in ('', ' ', 'follow-up:', 'follow-up:   ', 'cancel:',
-                        'cancel:   ', 'a' * 4097,
+                        'cancel:   ', 'replace:', 'replace:   ', 'a' * 4097,
                         'follow-up: bad\x00input', '\ud800', None, [], 1):
             self.assertEqual(ingress.classify_message(message), 'InvalidInput')
 

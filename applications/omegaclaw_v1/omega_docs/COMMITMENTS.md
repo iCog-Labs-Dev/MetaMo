@@ -75,8 +75,8 @@ polling a previously committed frame cannot reopen its terminal commitment.
 `&last-host-commitment-admission` exposes the opened, retained, skipped, or
 rejected result for diagnostics. No admission API is registered as a model skill.
 
-This connects task opening only. Replacement routing,
-automatic completion, per-task policy provisioning, and response preparation
+This connects task opening only. Automatic completion,
+per-task policy provisioning, and response preparation
 remain later F2 work. Direct Core ingestion can still admit a frame that is
 rejected while an earlier commitment stays open; the production ingress hook
 below handles follow-ups before frame creation. Startup policy remains bound
@@ -143,9 +143,9 @@ durable message-ID ledger. Input text is quoted data throughout the boundary.
 `&last-host-input` exposes the routing result. No routing helper is a model skill.
 
 Tests exercise the real ingress callback, typed dispatch, frame history, and
-commitment state. `host_ingress_loop_test.metta` additionally runs four turns of
+commitment state. `host_ingress_loop_test.metta` additionally runs five turns of
 the real Core polling loop: initial task, explicit follow-up, unrelated text,
-and explicit cancellation.
+explicit replacement, and explicit cancellation.
 Only external channel/provider/memory boundaries are doubled. Follow-up text
 does not alter a read plan or its required evidence; automatic replanning and
 response generation remain separate increments.
@@ -175,7 +175,43 @@ No completion outcome is registered and no further Core change is required.
 The ingress tests cover missing reasons/owners, mismatched frames, blocked work,
 inert reasons, repeated and delayed decisions, terminal-state preservation, and
 dispatch rejection with both old and new tickets. The polling-loop test checks
-that the same owner becomes Abandoned on the fourth turn.
+that the replacement owner becomes Abandoned on the fifth turn.
+
+## Explicit replacement (F2.4)
+
+Use `replace: Summarize document B` to supersede the current open commitment.
+The case-insensitive marker requires a nonblank new task description and obeys
+the same input bounds as follow-ups. The host records the fixed reason
+`Explicit user replacement`; the new description is quoted data, never code.
+Unmarked replacement language remains held while a commitment is open.
+
+The host rechecks the exact predecessor identity, native frame, and revision
+under the dispatch mutex. The existing `Superseded` event atomically retains the
+predecessor as terminal and opens a UUID-named successor at revision zero on the
+same frame. `HostInput Replaced` reports predecessor ID, successor ID, native frame,
+and successor revision. Missing owners, frame mismatches, and stale decisions
+are held. A blocked frame remains blocked.
+
+As with cancellation, the event invalidates old dispatch tickets and the host
+revokes the frame's configured command bindings and clears the prepared operation.
+The normal prepare hook publishes the successor's description as `active-task`
+and clears the predecessor's execution-observation accumulator. Replacement is
+fresh input. It does not create another frame or rewrite the frame's original
+deliverables/history; the commitment snapshot supplies the current task identity
+and description. Neither task is marked completed.
+
+Repeating the exact replacement message against its unchanged successor returns
+the original receipt without another event. This session-local receipt is not
+durable channel-message deduplication. Replaying an admitted predecessor decision
+cannot supersede the successor. A different explicit replacement can supersede it.
+
+Per-task command provisioning remains F2.8: replacement alone does not authorize
+the successor to execute the predecessor's commands. Automatic replanning and
+response preparation also remain separate work. No Core changes or new Prolog
+files are required. `host_replacement_test.metta` covers retained predecessor
+records, new identities, replay/staleness, inert descriptions, blocked frames,
+and dispatch revocation. The polling-loop test replaces on turn four and cancels
+the successor on turn five.
 
 ## Publication and motivation separation
 
@@ -200,9 +236,9 @@ completion. A new message alone is not an abandonment or supersession event.
 
 ## Scope and remaining integration
 
-Trusted ingress opens commitments and routes explicit cancellation through the
-existing event API. Replacement routing and a host completion adjudicator that
-registers confirmed outcomes remain pending. The adapter does not automatically
+Trusted ingress opens commitments and routes explicit cancellation and replacement
+through the existing event API. A host completion adjudicator that registers
+confirmed outcomes remains pending. The adapter does not automatically
 equate Core's `DispatchResult Executed` with completion.
 
 The store is local to one process and tracks one current commitment. It is not a

@@ -6,3 +6,7 @@ commitmentFixtureOpen(Id,Frame,Summary,Result) :- mm_commitment_open(Id,Frame,Su
 commitmentFixtureOutcome(Outcome,Id,Revision,Status,Result) :-
     mm_commitment_record_outcome(Outcome,Id,Revision,Status,Result).
 commitmentFixtureApply(Event,Result) :- mm_commitment_apply(Event,Result).
+% Example: inspect the retained predecessor after a replacement opens its successor.
+commitmentFixtureRecord(Id,Record) :-
+    mm_commitment(Id,Frame,Summary,Status,Revision),
+    Record=['CommitmentSnapshot',Id,Frame,Revision,Status,Summary].
