@@ -75,11 +75,12 @@ polling a previously committed frame cannot reopen its terminal commitment.
 `&last-host-commitment-admission` exposes the opened, retained, skipped, or
 rejected result for diagnostics. No admission API is registered as a model skill.
 
-This connects task opening only. Follow-up/cancellation/replacement routing,
+This connects task opening only. Cancellation/replacement routing,
 automatic completion, per-task policy provisioning, and response preparation
-remain later F2 work. In particular, a newly admitted frame can be rejected
-while an earlier commitment stays open; this slice does not reroute or undo
-Core's ingestion. Startup policy remains bound to its first configured frame.
+remain later F2 work. Direct Core ingestion can still admit a frame that is
+rejected while an earlier commitment stays open; the production ingress hook
+below handles follow-ups before frame creation. Startup policy remains bound
+to its first configured frame.
 
 `tests/host_startup_test.metta` exercises the real Core prepare hook with offline
 services, including native identity, duplicate preparation with a retained
@@ -105,6 +106,48 @@ Mutations share Core dispatch's lock and advance its session revision when the
 dispatcher is loaded. This invalidates outstanding tickets after commitment
 changes. Supersession commits both records and the event in one Prolog transaction.
 The offline path uses the same mutex without requiring a configured dispatcher.
+
+## Explicit same-task follow-ups (F2.2)
+
+The v1 startup installs `ingestHostMessage` through Core's optional
+`configureCoreLoopIngest` callback. The polling loop invokes that callback
+before frame creation; its standalone default remains `ctx-ingest-user-message`.
+Deploy the matching Core `src/dispatch.metta` and `src/loop.metta` changes with
+this adapter. The existing post-ingestion prepare hook still performs F2.1.
+
+Use `follow-up: include examples` to explicitly associate input with the current
+open commitment. The marker is case-insensitive and permits surrounding
+whitespace; its body must be nonblank. Input is bounded to 4096 characters.
+`host_ingress.py` recognizes this syntax without model inference, while
+`host_ingress.metta` owns the routing rules:
+
+- An explicit follow-up requires an open commitment whose native frame ID
+  exactly matches the current Active/Focused frame. The host records the message
+  through Core's existing `cfv2-record-message-for-current-frame` API. It creates
+  no frame, replaces no deliverable, and changes no commitment ID or revision.
+- While a commitment is open, unmarked, ambiguous, or unrelated input returns
+  `HostInput Held ExplicitFollowupRequired`. It does not attach to that frame,
+  create another frame, or terminate the commitment. Held input is not marked
+  fresh for the current task's signal extraction. It produces no automatic reply.
+- An explicit follow-up without an open commitment, with a mismatched current
+  frame, or with an inactive frame is held. Routing never switches or unblocks
+  frames. Without an open commitment, ordinary input uses existing Core admission.
+- Cancellation/replacement language is not interpreted as a lifecycle event.
+  Even an explicit follow-up saying “done” is message data, not completion proof.
+
+The host checks ownership and records the message under Core's dispatch mutex;
+accepted mutations advance its epoch, invalidating earlier tickets. Immediate
+duplicate follow-ups for the same owner and text do not append another history
+entry or invalidate a new ticket. This is session-local suppression, not a
+durable message-ID ledger. Input text is quoted data throughout the boundary.
+`&last-host-input` exposes the routing result. No routing helper is a model skill.
+
+Tests exercise the real ingress callback, typed dispatch, frame history, and
+commitment state. `host_ingress_loop_test.metta` additionally runs three turns of
+the real Core polling loop: initial task, explicit follow-up, and unrelated text.
+Only external channel/provider/memory boundaries are doubled. Follow-up text
+does not alter a read plan or its required evidence; automatic replanning and
+response generation remain separate increments.
 
 ## Publication and motivation separation
 
