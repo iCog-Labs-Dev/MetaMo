@@ -246,8 +246,8 @@ the owner snapshot alongside each outcome accepted through `ingestOperationOutco
 the outcome alone has no commitment ID. These pairs are input data, not a new
 observation ledger. They must never be accepted from a model or reconstructed
 by attaching the current owner to old results. This pure check verifies matching
-records, not their external provenance. Retention/publication wiring belongs to
-the later host integration.
+records, not their external provenance. The F2.6 publisher below accepts these
+host-retained inputs; automatic live evidence gathering remains separate work.
 
 Every required read needs exactly one matching `Success` / `Executed Feasible`
 string result (including an empty file). The answer requires the exact command,
@@ -261,12 +261,61 @@ F2.5 supports the acknowledged local read-and-answer slice. IRC transport
 submission is not recipient acknowledgement and remains incomplete here.
 Explicit transport-specific completion criteria and declared no-tool tasks are
 F2.10; empty required reads cannot bypass this predicate. Registering an outcome
-and publishing `Completed` remain F2.6; completing the Core frame remains F2.7.
+and publishing `Completed` use F2.6 below; completing the Core frame remains F2.7.
 
 `host_completion_test.metta` uses a host-owned two-read fixture and an actual open
 commitment. It checks partial progress, answer acknowledgement, correlation,
 malformed data, replay, ordering, bounds, and that a successful check leaves the
 commitment and event history unchanged.
+
+## Completion publication (F2.6)
+
+Trusted host code can now call:
+
+```prolog
+mm_commitment_complete(OutcomeId, EventId, Requirements, Evidence, Result).
+```
+
+This API lives in the existing `commitments.pl`. It is not exported through
+`commitments.metta` or registered as a model skill. Requirements and evidence use
+the F2.5 contract above. The host must retain stable, nonblank string outcome and
+event IDs for retries; neither IDs nor completion evidence come from model claims.
+
+Under the dispatch mutex, the publisher checks the requirements' exact open owner
+against the authoritative commitment snapshot. It reads the actual current native
+frame and operation context, then invokes `hostCompletionReady` with quoted data.
+Stale owners return `CommitmentRejected StaleCommitment`; missing, failed or
+uncertain evidence (including a missing/mismatched live context) returns
+`CommitmentRejected IncompleteEvidence`. Invalid envelopes return
+`CommitmentRejected InvalidCompletion`. These paths register no outcomes or events.
+
+When ready, one transaction calls the existing `mm_commitment_record_outcome`
+and `mm_commitment_apply` APIs to record a confirmed outcome and apply
+`(Completed OutcomeId)`. A publication conflict rolls back both writes and returns
+`CommitmentRejected PublicationConflict`. Success returns the existing
+`CommitmentApplied` receipt, advances the revision, and invalidates prior dispatch
+tickets through the existing mutation mechanism.
+
+An existing event ID uses the store's replay checks: the same lifecycle event
+returns its original receipt without another write or dispatch invalidation;
+different event contents return `ConflictingReplay`. Replay acknowledges an
+already recorded event, rather than re-adjudicating newly supplied evidence.
+It may return an old receipt after another task becomes current, but cannot mutate
+that successor. A new event attempting to complete a cancelled, superseded or
+already completed owner is stale.
+
+This implements trusted publication from supplied retained evidence. It does not
+yet automatically collect evidence or invoke publication from the polling loop;
+production read-evidence gathering remains F3.7. Core frame completion remains
+F2.7, and IRC/no-tool completion criteria remain F2.10. The normal existing
+`refreshTaskCommitment` mirrors a published terminal record into task state.
+
+`host_completion_publication_test.metta` runs the real pure predicate and store
+APIs with a two-read fixture. It covers partial/failed/uncertain evidence, exact
+native identity, stale sessions/revisions, accepted publication, replay, ID
+conflicts, cancellation/replacement races represented by delayed publication,
+and unchanged Core frame status. Prolog tests additionally check rollback of a
+new outcome when event publication conflicts.
 
 ## Publication and motivation separation
 
@@ -293,8 +342,9 @@ completion. A new message alone is not an abandonment or supersession event.
 
 Trusted ingress opens commitments and routes explicit cancellation and replacement
 through the existing event API. A pure read-and-answer completion predicate is
-available; retaining its inputs and registering/publishing confirmed completion
-through the live host lifecycle remain pending. The adapter does not automatically
+available, and trusted host code can publish its confirmed result through F2.6.
+Automatic evidence retention and polling-loop invocation remain pending.
+The adapter does not automatically
 equate Core's `DispatchResult Executed` with completion.
 
 The store is local to one process and tracks one current commitment. It is not a

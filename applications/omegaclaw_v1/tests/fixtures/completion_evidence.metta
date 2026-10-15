@@ -1,0 +1,18 @@
+;; Trusted two-read requirements and correlated evidence shared by lifecycle tests.
+(= (completionOwner) (CommitmentSnapshot "task" frame 0 Open "Read A and B"))
+(= (completionContext) (OperationContext "session" 3 frame))
+(= (readA) (OperationDecision (OperationContext "session" 1 frame) execute-skill (read-file "/a") (DispatchTicket "t1")))
+(= (readB) (OperationDecision (OperationContext "session" 2 frame) execute-skill (read-file "/b") (DispatchTicket "t2")))
+(= (answerDecision) (OperationDecision (OperationContext "session" 3 frame) respond (send "A and B") (DispatchTicket "t3")))
+(= (requiredAnswer) (RequiredAnswer (answerDecision) "local:stdout"))
+(= (requirements) (CompletionRequirements (completionOwner) ((readA) (readB)) (requiredAnswer)))
+(= (readEvidence $owner $decision $status $value)
+    ($owner (OperationOutcome $decision (attempted-command (index-atom $decision 3)) $status
+        (DispatchResult Executed Feasible $value))))
+(= (aEvidence) (readEvidence (completionOwner) (readA) Success "A"))
+(= (bEvidence) (readEvidence (completionOwner) (readB) Success ""))
+(= (answerEvidence $status $destination $ack)
+    (readEvidence (completionOwner) (answerDecision) $status (SendObservation $destination $ack)))
+(= (ackEvidence) (answerEvidence Success "local:stdout" Accepted))
+(= (allEvidence) ((aEvidence) (bEvidence) (ackEvidence)))
+(= (ready $evidence) (hostCompletionReady (completionOwner) (completionContext) (requirements) $evidence))

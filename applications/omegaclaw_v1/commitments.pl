@@ -100,6 +100,52 @@ mm_commitment_successor(successor(Id,Summary),Frame) :-
     assertz(mm_commitment(Id,Frame,Summary,'Open',0)),
     retractall(mm_commitment_current(_)), assertz(mm_commitment_current(Id)).
 
+% Example: publish only after all required reads and the local answer are observed.
+% Requirements/evidence are trusted host-retained data, not model assertions.
+% Stable outcome/event IDs let the caller retry without a second publication.
+mm_commitment_complete(Outcome,EventId,Requirements,Evidence,Result) :-
+    with_mutex(omegaclaw_dispatch,
+      (ground(Outcome-EventId-Requirements-Evidence),
+       maplist(mm_commitment_text,[Outcome,EventId]),
+       Requirements=['CompletionRequirements',Expected,_,_],
+       Expected=['CommitmentSnapshot',Id,Frame,Revision,'Open',Summary],
+       maplist(mm_commitment_text,[Id,Summary]), mm_commitment_frame_id(Frame),
+       integer(Revision), Revision>=0
+       -> Event=['CommitmentEvent',EventId,Id,Revision,['Completed',Outcome]],
+          mm_commitment_complete_checked(Expected,Requirements,Evidence,Event,Result)
+       ; mm_commitment_reject('InvalidCompletion',Result))).
+
+% Example: replay returns its recorded receipt even after a successor is current.
+% No new mutation occurs on replay, incomplete evidence, or displaced ownership.
+mm_commitment_complete_checked(Expected,Requirements,Evidence,Event,Result) :-
+    Event=['CommitmentEvent',EventId,_,_,_],
+    (mm_commitment_event(EventId,_,_)
+     -> mm_commitment_apply_locked(Event,Result)
+     ; commitmentSnapshot(Current), Current \== Expected
+     -> mm_commitment_reject('StaleCommitment',Result)
+     ; mm_commitment_completion_ready(Expected,Requirements,Evidence)
+     -> mm_commitment_publish_completion(Event,Result)
+     ; mm_commitment_reject('IncompleteEvidence',Result)).
+
+% Example: a stale session/frame fails against the live context, not caller context.
+mm_commitment_completion_ready(Expected,Requirements,Evidence) :-
+    Expected=['CommitmentSnapshot',_,Frame,_,_,_],
+    nb_current('&cfv2-current-frame-id',CurrentFrame), CurrentFrame == Frame,
+    nb_current('&operation-context',Context),
+    once(eval([hostCompletionReady,[quote,Expected],[quote,Context],
+               [quote,Requirements],[quote,Evidence]],true)).
+
+% Example: an outcome-ID conflict leaves both the event and outcome stores unchanged.
+% Reuse the existing outcome/event validation inside one rollback boundary.
+mm_commitment_publish_completion(Event,Result) :-
+    Event=['CommitmentEvent',_,Id,Revision,['Completed',Outcome]],
+    (transaction((
+       mm_commitment_record_outcome(Outcome,Id,Revision,'Completed',['OutcomeRecorded',Outcome]),
+       mm_commitment_apply(Event,Applied),
+       Applied=['CommitmentApplied',_,Id,'Completed',_]))
+     -> Result=Applied
+     ; mm_commitment_reject('PublicationConflict',Result)).
+
 commitmentSnapshot(Snapshot) :-
     with_mutex(omegaclaw_dispatch,
       (mm_commitment_current(Id), mm_commitment(Id,Frame,Summary,Status,Revision)

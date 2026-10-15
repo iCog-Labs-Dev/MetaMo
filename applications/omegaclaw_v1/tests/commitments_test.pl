@@ -98,4 +98,15 @@ test(replay_after_replacement_does_not_close_successor, [setup((commitmentFixtur
     event(['Superseded',"task-2","Other","Replacement"],E),
     mm_commitment_apply(E,A), mm_commitment_apply(E,B), assertion(A==B),
     mm_commitment("task-2",_,_,'Open',0), commitmentEvents([E]).
+test(publication_rolls_back_outcome_on_event_conflict,
+     [setup((commitmentFixtureReset(_),open_task))]) :-
+    event(['Abandoned',"Cancelled"],Prior), mm_commitment_apply(Prior,_),
+    mm_commitment_open("task-2","frame-1","New task",_),
+    oc_dispatch_epoch(Before),
+    Conflicting=['CommitmentEvent',"event-1","task-2",0,['Completed',"new-outcome"]],
+    mm_commitment_publish_completion(Conflicting,Result),
+    assertion(Result == ['CommitmentRejected','PublicationConflict']),
+    assertion(\+ mm_commitment_outcome("new-outcome",_,_,_)),
+    mm_commitment("task-2",_,_,'Open',0), commitmentEvents([Prior]),
+    oc_dispatch_epoch(After), assertion(After == Before).
 :- end_tests(commitments).
