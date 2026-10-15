@@ -29,6 +29,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/resurfacing))
 !(import! &self (library MetaMo applications/omegaclaw_v1/commitments))
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_continuation))
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_completion))
 !(import! &self (library MetaMo applications/omegaclaw_v1/task_lifecycle))
 !(import! &self (library MetaMo applications/omegaclaw_v1/candidate_selection))
 !(import! &self (library MetaMo applications/omegaclaw_v1/channel_outcomes))

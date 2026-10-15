@@ -213,6 +213,61 @@ records, new identities, replay/staleness, inert descriptions, blocked frames,
 and dispatch revocation. The polling-loop test replaces on turn four and cancels
 the successor on turn five.
 
+## Pure completion check (F2.5)
+
+`host_completion.metta`, loaded by composition, exposes:
+
+```metta
+(hostCompletionReady $currentSnapshot $currentContext $requirements $evidence)
+```
+
+It returns `True` only for a matching open commitment with all required reads and
+the exact accepted answer. It reads no mutable state, changes no frames or
+commitments, invokes no provider/channel, and publishes no completion event.
+The host must supply the authoritative current snapshot and context.
+
+Requirements have this shape:
+
+```metta
+(CompletionRequirements $ownerSnapshot ($readDecision1 $readDecision2)
+    (RequiredAnswer $answerDecision "local:stdout"))
+```
+
+Decisions reuse `OperationDecision`, including the exact session, cycle, native
+frame, command and dispatch ticket. The host supplies the complete required set
+of 1–16 distinct read-file commands; it must not build requirements by filtering
+only the successful observations. The required answer is a `respond` decision,
+never `ask-clarification`, and must follow all reads. Tickets and cycles must be
+distinct. The caller may assemble exact invocation identities as work proceeds;
+missing requirements or evidence remain incomplete.
+
+Evidence is a list of pairs `($ownerSnapshot $operationOutcome)`. The host retains
+the owner snapshot alongside each outcome accepted through `ingestOperationOutcome`;
+the outcome alone has no commitment ID. These pairs are input data, not a new
+observation ledger. They must never be accepted from a model or reconstructed
+by attaching the current owner to old results. This pure check verifies matching
+records, not their external provenance. Retention/publication wiring belongs to
+the later host integration.
+
+Every required read needs exactly one matching `Success` / `Executed Feasible`
+string result (including an empty file). The answer requires the exact command,
+ticket and destination with `SendObservation "local:stdout" Accepted`. Missing,
+failed, uncertain, duplicate, conflicting, malformed, or mismatched evidence
+returns `False`. Old sessions, frames, owners and revisions cannot satisfy the
+requirements. The supplied evidence list must contain exactly the required reads
+and answer, without extra records.
+
+F2.5 supports the acknowledged local read-and-answer slice. IRC transport
+submission is not recipient acknowledgement and remains incomplete here.
+Explicit transport-specific completion criteria and declared no-tool tasks are
+F2.10; empty required reads cannot bypass this predicate. Registering an outcome
+and publishing `Completed` remain F2.6; completing the Core frame remains F2.7.
+
+`host_completion_test.metta` uses a host-owned two-read fixture and an actual open
+commitment. It checks partial progress, answer acknowledgement, correlation,
+malformed data, replay, ordering, bounds, and that a successful check leaves the
+commitment and event history unchanged.
+
 ## Publication and motivation separation
 
 Before publishing a frame bundle, `prepareTaskStateForMetaMo`:
@@ -237,8 +292,9 @@ completion. A new message alone is not an abandonment or supersession event.
 ## Scope and remaining integration
 
 Trusted ingress opens commitments and routes explicit cancellation and replacement
-through the existing event API. A host completion adjudicator that registers
-confirmed outcomes remains pending. The adapter does not automatically
+through the existing event API. A pure read-and-answer completion predicate is
+available; retaining its inputs and registering/publishing confirmed completion
+through the live host lifecycle remain pending. The adapter does not automatically
 equate Core's `DispatchResult Executed` with completion.
 
 The store is local to one process and tracks one current commitment. It is not a
