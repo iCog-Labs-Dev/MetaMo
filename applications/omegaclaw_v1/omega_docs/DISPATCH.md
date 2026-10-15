@@ -1052,3 +1052,67 @@ Logs: `/tmp/omegaclaw-startup-regressions.log` and
 fixture without an open task; it was corrected to load the admitted native frame
 and establish the task before checking candidate admission. No live services or
 external channel messages were used.
+
+
+## Increment 1 acceptance
+
+Verified 14 October 2026 after the candidate-availability refactor. F1.A1–F1.A11
+pass in the bounded offline scope: one active frame, serialized dispatch,
+explicit host preparation and policy, real Core read/send handlers, with only
+providers and IRC sockets doubled. This does not establish live recipient receipt,
+automatic greeting preparation, generated clarification, or task completion.
+
+| Checks | Evidence |
+| --- | --- |
+| F1.A1–F1.A8 | `tests/increment1_local_acceptance_test.metta`: 48 assertions. |
+| F1.A9: repeat A1–A8 on IRC | `tests/increment1_irc_acceptance_test.metta`: the same 48 assertions. |
+| F1.A10: route/connection changes | `tests/irc_dispatch_test.metta`: 56 assertions; seven Python routing tests; five Prolog guard tests. |
+| F1.A11: truthful failure/uncertainty and framing | `tests/irc_submission_test.metta`: 29 assertions; `tests/irc_outcome_test.metta`: 46 assertions; 14 Python submission tests; shared uncertainty scenarios. |
+
+The shared fixture reads a real temporary file, supplies its accepted observation
+to bounded preparation, and checks that `File says: observed local file content`
+is actually emitted to stdout or PRIVMSG. The offline provider constructs text
+from that observation, rather than returning an unrelated canned answer. The
+explicit clarification is host-supplied; both commands traverse selected dispatch.
+Substituted commands and changed routes cause no send. Denying egress in either
+scope prevents reply selection. Clearing channel duplicate markers demonstrates
+that ticket replay alone prevents a second invocation. After successful delivery,
+the idle decision is actually dispatched and both send effects and executed-read
+ledger counts remain unchanged.
+
+Uncertain attempts retain `Unobserved`, preserve the previous accepted-answer key,
+and replay without another effect. The following cycle cannot resend the uncertain
+answer or invoke preparation again. A separately configured clarification can
+remain eligible; the test distinguishes it from an automatic resend.
+
+From `MetaMo/applications/omegaclaw_v1`, reproduce the acceptance scenarios:
+
+```bash
+python3 ../../scripts/run-omegaclaw.py tests/increment1_local_acceptance_test.metta
+python3 ../../scripts/run-omegaclaw.py tests/increment1_irc_acceptance_test.metta
+python3 ../../scripts/run-omegaclaw.py tests/irc_dispatch_test.metta
+python3 ../../scripts/run-omegaclaw.py tests/irc_submission_test.metta
+python3 ../../scripts/run-omegaclaw.py tests/irc_outcome_test.metta
+python3 tests/irc_submission_test.py
+python3 tests/irc_routing_test.py
+swipl -q -s tests/dispatch_guard_test.pl
+```
+
+The complete regression run passed all 64 MeTTa files, 82 Python tests and both
+boundary checks. Reproduce it with:
+
+```bash
+python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
+python3 tests/host_dispatch_config_test.py
+python3 tests/response_preparation_test.py
+python3 tests/irc_startup_test.py
+python3 tests/irc_routing_test.py
+python3 tests/irc_submission_test.py
+bash tests/dispatch_boundary_test.sh
+bash tests/commitment_boundary_test.sh
+```
+
+Current-run full-suite output is `/tmp/increment1-acceptance-suite.log`; per-channel
+logs are `/tmp/f1-acceptance-local.log` and `/tmp/f1-acceptance-irc.log`. These are
+local temporary evidence, not portable release artifacts. The fixture
+sources and commands above are the reproducible acceptance record.

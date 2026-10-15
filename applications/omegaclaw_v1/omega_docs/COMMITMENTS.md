@@ -52,10 +52,40 @@ These Prolog APIs are intentionally **not exported as model skills**:
 | `mm_commitment_record_outcome(Outcome, Id, Revision, Status, Result)` | Register the host's adjudicated outcome: `Completed`, `Failed`, or `Unobserved`. Reusing an outcome ID with conflicting content is rejected. |
 | `mm_commitment_apply(Event, Result)` | Validate identity, revision, evidence/reason, and lifecycle state, then apply a terminal event. |
 
-IDs, frame IDs, descriptions, and reasons are nonblank Prolog strings. The host
+Commitment/event IDs, descriptions, and reasons are nonblank Prolog strings.
+Frame IDs preserve Core's native nonblank symbol or string, including its type. The host
 must authenticate the source and decide whether an observed result actually
 satisfies the commitment. Calling `record_outcome` is that trusted adjudication;
 the store cannot independently prove the real-world task succeeded.
+
+## Automatic admission (F2.1)
+
+`prepareHostStartup` now calls `host_dispatch_config.admit_startup_commitment`
+through Core's existing post-ingestion prepare hook. It opens a UUID-named
+commitment through `mm_commitment_open` when the current Active/Focused
+UserDirective frame matches Core's last admitted frame and supplies a nonblank
+task summary. Native frame identity is read and retained inside the host query;
+it is not converted to a string through Python. The existing
+`refreshTaskCommitment` mirrors the authoritative record before selection.
+
+Admission reads and mutation share the dispatch mutex. Repeated preparation
+retains the existing commitment without changing its revision or invalidating
+dispatch tickets. A different frame cannot replace an open commitment, and
+polling a previously committed frame cannot reopen its terminal commitment.
+`&last-host-commitment-admission` exposes the opened, retained, skipped, or
+rejected result for diagnostics. No admission API is registered as a model skill.
+
+This connects task opening only. Follow-up/cancellation/replacement routing,
+automatic completion, per-task policy provisioning, and response preparation
+remain later F2 work. In particular, a newly admitted frame can be rejected
+while an earlier commitment stays open; this slice does not reroute or undo
+Core's ingestion. Startup policy remains bound to its first configured frame.
+
+`tests/host_startup_test.metta` exercises the real Core prepare hook with offline
+services, including native identity, duplicate preparation with a retained
+dispatch ticket, invalid admission inputs, open-commitment protection, and
+terminal-state preservation. `tests/commitments_test.pl` also checks symbol/string
+identity distinction and malformed frame IDs.
 
 Example host code, after the adapter has loaded:
 

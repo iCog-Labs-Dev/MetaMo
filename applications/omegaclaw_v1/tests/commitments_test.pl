@@ -83,6 +83,17 @@ test(outcome_conflict, [setup((commitmentFixtureReset(_),open_task))]) :-
     assertion(R==['CommitmentRejected','ConflictingOutcome']).
 test(open_idempotent, [setup((commitmentFixtureReset(_),open_task))]) :-
     open_task, findall(Id,mm_commitment(Id,_,_,_,_),Ids), assertion(Ids==["task-1"]).
+test(native_symbol_frame, [setup(commitmentFixtureReset(_))]) :-
+    mm_commitment_open("native", 'Frame_1', "Inspect", ['CommitmentOpened',"native"]),
+    commitmentSnapshot(['CommitmentSnapshot',"native",Frame,0,'Open',"Inspect"]),
+    assertion(Frame == 'Frame_1'),
+    mm_commitment_open("native", "Frame_1", "Inspect", Result),
+    assertion(Result == ['CommitmentRejected','IdentityConflict']).
+test(invalid_frame, [setup(commitmentFixtureReset(_)),
+                     forall(member(Frame,[[],42,[frame],"","  "]))]) :-
+    mm_commitment_open("invalid",Frame,"Inspect",Result),
+    assertion(Result == ['CommitmentRejected','InvalidCommitment']),
+    commitmentSnapshot('NoCommitment').
 test(replay_after_replacement_does_not_close_successor, [setup((commitmentFixtureReset(_),open_task))]) :-
     event(['Superseded',"task-2","Other","Replacement"],E),
     mm_commitment_apply(E,A), mm_commitment_apply(E,B), assertion(A==B),

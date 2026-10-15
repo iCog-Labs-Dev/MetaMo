@@ -352,6 +352,40 @@ def configure_startup(path=None):
     return 1
 
 
+def admit_startup_commitment():
+    """Open a commitment for Core's admitted current user frame.
+
+    Called by prepareHostStartup after ingestion, before selection. For example,
+    an Active UserDirective returns CommitmentOpened; idle polling retains it.
+    Read native IDs inside Prolog so symbol/string identity survives Janus.
+    Rejections and repeated polling do not mutate state or invalidate tickets.
+    """
+    import janus
+    import uuid
+    result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        (eval(['get-state','&cfv2-current-frame-id'], _Frame),
+         mm_commitment_frame_id(_Frame),
+         eval(['get-state','&cfv2-last-admitted-frame-id'], _Admitted), _Frame == _Admitted,
+         eval(['get-state','&cfv2-current-source'], 'UserDirective'),
+         eval(['get-state','&cfv2-current-status'], _Status),
+         memberchk(_Status, ['Active','Focused']),
+         eval(['get-state','&cfv2-current-deliverables'], [_Summary|_]),
+         mm_commitment_text(_Summary)
+         -> (mm_commitment_current(_Id), mm_commitment(_Id,_Frame,_,_,_)
+             -> _Result=['CommitmentRetained',_Id]
+             ; mm_commitment_current(_Id), mm_commitment(_Id,_,_,'Open',_)
+             -> _Result=['CommitmentRejected','ActiveCommitmentExists']
+             ; mm_commitment(_Id,_Frame,_,_,_)
+             -> _Result=['CommitmentRetained',_Id]
+             ; sread(NewIdSource, _NewId),
+               mm_commitment_open(_NewId,_Frame,_Summary,_Result))
+         ; _Result=['CommitmentAdmissionSkipped','NoAdmittedUserFrame']),
+        swrite(_Result, Source)))''', {'NewIdSource': encode(str(uuid.uuid4()))})
+    if not result.get('truth', False):
+        raise ConfigError('host commitment admission failed')
+    return result['Source']
+
+
 def provision_startup():
     """Called by Core after ingestion/maintenance and before first selection."""
     import copy

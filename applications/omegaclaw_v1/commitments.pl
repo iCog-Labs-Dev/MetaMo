@@ -12,6 +12,10 @@ mm_commitment_mutate(Goal) :-
      ; with_mutex(omegaclaw_dispatch, once(Goal))).
 
 mm_commitment_text(X) :- string(X), normalize_space(string(T), X), T \== "".
+% Preserve native frame identity, including its symbol/string type.
+% Example: mm_commitment_frame_id('Frame_1') succeeds without string conversion.
+mm_commitment_frame_id(X) :- mm_commitment_text(X), !.
+mm_commitment_frame_id(X) :- atom(X), normalize_space(atom(T), X), T \== ''.
 mm_commitment_reject(Why, ['CommitmentRejected',Why]).
 
 % IDs may never be reused, even after termination. Opening another task while
@@ -19,7 +23,8 @@ mm_commitment_reject(Why, ['CommitmentRejected',Why]).
 mm_commitment_open(Id, Frame, Summary, Result) :-
     mm_commitment_mutate(mm_commitment_open_locked(Id,Frame,Summary,Result)).
 mm_commitment_open_locked(Id,Frame,Summary,Result) :-
-    ( \+ (ground(Id-Frame-Summary), maplist(mm_commitment_text,[Id,Frame,Summary]))
+    ( \+ (ground(Id-Frame-Summary), maplist(mm_commitment_text,[Id,Summary]),
+           mm_commitment_frame_id(Frame))
       -> mm_commitment_reject('InvalidCommitment',Result)
     ; mm_commitment(Id,OldFrame,OldSummary,Status,_)
       -> (OldFrame==Frame, OldSummary==Summary, Status=='Open'
