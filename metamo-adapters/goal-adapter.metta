@@ -1,12 +1,18 @@
 ;; Standalone goal adapter for frame atomspaces.
 ;; This file intentionally does not import any project modules.
 
+;; Example: Focused scores 1.0; an unrecognized status scores 0.0.
 (= (goalScoreFromStatus $status)
-   (if (== $status Focused) 1.0
-      (if (== $status Active) 0.9
-         (if (== $status Suspended) 0.5
-            (if (== $status Blocked) 0.2
-               0.0)))))
+    (case $status
+        (
+            (Focused 1.0)
+            (Active 0.9)
+            (Suspended 0.5)
+            (Blocked 0.2)
+            ($_ 0.0)
+        )
+    )
+)
 
 (= (frameToScore
       (Frame
