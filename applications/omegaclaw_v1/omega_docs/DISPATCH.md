@@ -393,10 +393,12 @@ the final gate will admit a command. Constraints, budgets, freshness and connect
 availability are still enforced by the existing gate. A preparation-only profile
 can intentionally omit static send bindings and receive that diagnostic.
 
-Repeated cycles neither reprint diagnostics nor reinstall the policy. Later
-frames do not inherit the first frame's grants; F2.8 owns per-task provisioning.
+Repeated cycles neither reprint diagnostics nor reinstall the same owner's policy.
+F2.8 now installs the operator template separately for each admitted commitment;
+arbitrary frame switches do not inherit grants.
 F1.14 does not queue a generated greeting or complete a task: automatic replies
-still require F2.1, F2.8 and F2.9. An explicitly authorized fixed binding is not
+still require F2.9's response preparation after F2.1/F2.8 admission and provisioning.
+An explicitly authorized fixed binding is not
 the automatic conversational preparation path.
 
 Verification: 12 Python startup tests and 28 real startup/dispatch assertions
@@ -782,16 +784,19 @@ before starting the loop/services. Missing configuration leaves dispatch closed;
 an explicitly supplied unreadable or malformed configuration stops startup.
 No secrets belong in this policy file.
 
-Use `"frame_id": "current-frame"` to bind once to the first active frame, or a
+Use `"frame_id": "current-frame"` as a template for each admitted open task, or a
 concrete ID to require an exact match. Core's initial context has no active frame:
 `coreLoopPrepare` runs after message ingestion/frame maintenance, before
 `getContext` performs motivational selection. Until a frame exists no bindings
 are installed. Native frame IDs are preserved, never renamed. Installation
-rechecks the target under the dispatch mutex and atomically replaces the policies
+rechecks the admitted commitment and target under the dispatch mutex and atomically replaces the policies
 and exact bindings using the existing host installer.
 
-Repeated cycles do not reload the file or restore revoked grants. Later frames
-do not inherit the first frame's permissions; mismatched targets remain denied.
+Repeated cycles for one owner do not reload the file or restore revoked grants.
+Later admitted commitments receive fresh bindings from the same operator template;
+arbitrary frame switches and mismatched fixed targets remain denied. Outstanding
+or unresolved invocations hold task handoff. See
+`COMMITMENTS.md#per-task-provisioning-f28` for ownership and diagnostics.
 Changing configuration requires explicit trusted reprovisioning or a new process.
 Only `read-file`, `show-current-frame` and local/IRC `send` are supported. Candidate
 generation and policy still determine which operation can be selected on a given cycle.

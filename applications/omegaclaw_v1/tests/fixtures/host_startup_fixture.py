@@ -22,3 +22,18 @@ def mismatched():
     except host.ConfigError:
         return 1
     return 0
+
+
+# Example: a captured predecessor owner fails the install-time ownership recheck.
+def stale_owner(source):
+    try:
+        host.provision_startup(expected_owner=source)
+    except host.ConfigError:
+        return 1
+    return 0
+
+
+# Example: removing operator configuration revokes previously automatic grants.
+def disable():
+    os.environ.pop('OMEGACLAW_HOST_CONFIG', None)
+    return host.configure_startup()

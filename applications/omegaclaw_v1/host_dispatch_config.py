@@ -270,7 +270,9 @@ oc_dispatch_mutate(transaction((
     mm_dispatch_set_policies(_Global, _Frame),
     retractall(mm_dispatch_binding(_, _, _)),
     forall(member(['HostCommandBinding', _Command, _Request, _Operation], _Bindings),
-           mm_dispatch_register(_Command, _Request, _Operation))
+           mm_dispatch_register(_Command, _Request, _Operation)),
+    retractall(mm_dispatch_owner(_)),
+    (var(_InstallOwner) -> true ; assertz(mm_dispatch_owner(_InstallOwner)))
 )))
 """
 
@@ -337,8 +339,8 @@ def startup_channel_diagnostics(config, channel, route=None):
 def configure_startup(path=None):
     """Read trusted startup configuration once, before starting external services.
 
-    frame_id="current-frame" explicitly binds once to the first active native
-    frame. A concrete ID must match that frame. No grants follow frame switches.
+    frame_id="current-frame" is a template for admitted task owners. A concrete
+    ID stays pinned to that frame. Arbitrary frame switches never retarget grants.
     """
     import os
     global _startup_config, _startup_installed, _startup_checked
@@ -373,7 +375,9 @@ def admit_startup_commitment():
     import janus
     import uuid
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
-        (eval(['get-state','&cfv2-current-frame-id'], _Frame),
+        (mm_dispatch_busy
+         -> _Result=['CommitmentRejected','OutstandingInvocation']
+         ; eval(['get-state','&cfv2-current-frame-id'], _Frame),
          mm_commitment_frame_id(_Frame),
          eval(['get-state','&cfv2-last-admitted-frame-id'], _Admitted), _Frame == _Admitted,
          eval(['get-state','&cfv2-current-source'], 'UserDirective'),
@@ -396,13 +400,56 @@ def admit_startup_commitment():
     return result['Source']
 
 
-def provision_startup():
-    """Called by Core after ingestion/maintenance and before first selection."""
+# Example: an unchanged owner retains tickets; a replacement receives fresh bindings.
+def provision_admitted_task():
+    """Install only for an admitted open owner, rechecked atomically at installation."""
+    import janus
+    current = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        (mm_dispatch_busy -> State='OutstandingInvocation', Source=''
+         ; mm_dispatch_task_owner(_Owner)
+         -> swrite(_Owner, Source),
+            (mm_dispatch_owner(_Prior), _Prior == _Owner
+             -> State='Retained'
+             ; State='Ready')
+         ; State='NoAdmittedCommitment', Source='')))''')
+    if not current.get('truth', False):
+        raise ConfigError('task provisioning ownership check failed')
+    if current['State'] == 'Retained' and not _startup_installed:
+        current['State'] = 'Ready'
+    if current['State'] != 'Ready':
+        return encode(record('TaskProvisioning', Symbol(current['State'])))
+    try:
+        provision_startup(expected_owner=current['Source'])
+    except ConfigError as error:
+        if str(error) == 'configured frame does not match the active Core frame':
+            return '(TaskProvisioning TargetMismatch)'
+        raise
+    if _startup_config is None:
+        clear_task_policy()
+    status = 'Installed' if _startup_config is not None else 'MissingConfiguration'
+    return encode(record('TaskProvisioning', Symbol(status)))
+
+
+# Example: removing automatic task configuration revokes its old bindings.
+def clear_task_policy():
+    import janus
+    result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        \\+ mm_dispatch_busy,
+        (mm_dispatch_owner(_)
+         -> oc_dispatch_mutate((retractall(mm_dispatch_binding(_,_,_)),
+              retractall(mm_dispatch_owner(_)), mm_dispatch_set_policies([],[])))
+         ; true)))''')
+    if not result.get('truth', False):
+        raise ConfigError('task policy revocation failed')
+
+
+def provision_startup(expected_owner=None):
+    """Install a checked task owner, or once for explicit standalone host setup."""
     import copy
     import re
     import janus
     global _startup_installed, _startup_checked
-    if _startup_installed or (_startup_config is None and _startup_checked):
+    if (expected_owner is None and _startup_installed) or (_startup_config is None and _startup_checked):
         return 1
     current = janus.query_once('''
         with_mutex(omegaclaw_dispatch,
@@ -442,13 +489,20 @@ def provision_startup():
     source = build_config(config)
     # Guard the native target and installation with the same host mutex. Reuse
     # the existing atomic installer; do not rename or rewrite the Core frame.
+    owner_guard = '''sread(OwnerSource, _InstallOwner),
+        mm_dispatch_task_owner(_ActualOwner), _ActualOwner == _InstallOwner,
+        \\+ mm_dispatch_busy,
+    ''' if expected_owner is not None else ''
     query = '''with_mutex(omegaclaw_dispatch, (
         sread(Source, _StartupParsed),
         _StartupParsed = ['HostDispatchConfig', _,
                       ['PolicyScope', [target, ['FrameTarget', Expected]]|_], _],
         eval(['cfv2-root-current-frame-id'], Actual), Actual == Expected,
-    ''' + _INSTALL + '))'
-    if not janus.query_once(query, {'Source': source}).get('truth', False):
+    ''' + owner_guard + _INSTALL + '))'
+    inputs = {'Source': source}
+    if expected_owner is not None:
+        inputs['OwnerSource'] = expected_owner
+    if not janus.query_once(query, inputs).get('truth', False):
         raise ConfigError('startup policy installation failed or active frame changed')
     _startup_installed = True
     return 1

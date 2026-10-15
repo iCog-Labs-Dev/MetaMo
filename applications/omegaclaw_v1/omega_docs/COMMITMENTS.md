@@ -75,12 +75,12 @@ polling a previously committed frame cannot reopen its terminal commitment.
 `&last-host-commitment-admission` exposes the opened, retained, skipped, or
 rejected result for diagnostics. No admission API is registered as a model skill.
 
-This connects task opening only. Automatic completion,
-per-task policy provisioning, and response preparation
-remain later F2 work. Direct Core ingestion can still admit a frame that is
+This connects task opening only. Per-task provisioning now follows admission
+through F2.8; automatic response preparation remains F2.9.
+Direct Core ingestion can still admit a frame that is
 rejected while an earlier commitment stays open; the production ingress hook
-below handles follow-ups before frame creation. Startup policy remains bound
-to its first configured frame.
+below handles follow-ups before frame creation. Policy is bound to the exact
+admitted commitment/frame, not to arbitrary frame switches.
 
 `tests/host_startup_test.metta` exercises the real Core prepare hook with offline
 services, including native identity, duplicate preparation with a retained
@@ -205,8 +205,9 @@ the original receipt without another event. This session-local receipt is not
 durable channel-message deduplication. Replaying an admitted predecessor decision
 cannot supersede the successor. A different explicit replacement can supersede it.
 
-Per-task command provisioning remains F2.8: replacement alone does not authorize
-the successor to execute the predecessor's commands. Automatic replanning and
+Per-task command provisioning now runs through F2.8 on the next prepare hook:
+replacement alone does not authorize the successor to execute the predecessor's
+commands. Automatic replanning and
 response preparation also remain separate work. No Core changes or new Prolog
 files are required. `host_replacement_test.metta` covers retained predecessor
 records, new identities, replay/staleness, inert descriptions, blocked frames,
@@ -360,6 +361,52 @@ dispatch invalidation, replay, cancellation, and a queued successor surviving
 automatic selection. This full Core fixture also exposed and fixes a F2.5
 compilation issue: command patterns now inspect fields as data instead of
 evaluating loaded `read-file` or `send` skills during validation.
+
+## Per-task provisioning (F2.8)
+
+After completing any terminal frame and admitting its next commitment,
+`prepareHostStartup` calls `provision_admitted_task`. An operator configuration
+with `frame_id: "current-frame"` is a template for each admitted task, including
+a replacement on the same frame. A concrete configured frame ID stays pinned;
+a different frame returns `TaskProvisioning TargetMismatch` and receives no grants.
+
+Provisioning requires an open current commitment, the exact native current and
+last-admitted frame, a UserDirective source, and Active/Focused status. The
+installer rechecks that owner under the dispatch mutex immediately before
+atomically replacing policies and exact command bindings. `mm_dispatch_owner/1`
+retains the installed snapshot; resolution checks it against the authoritative
+current commitment. Terminal/replaced owners cannot execute old bindings with
+newly captured tickets. Normal mutation invalidates prior unexecuted tickets and
+clears prepared operations. Late prepared responses remain fenced by their
+existing owner checks.
+
+The configured skills, file paths, destinations, permissions, constraints and
+budgets are reused unchanged; user messages supply none of these grants. A new
+task receives only the same operator-approved command catalog with its own native
+target. This does not generate a plan or an answer. Existing budget accounting
+and outcome ledgers are not reset by provisioning.
+
+Repeated preparation for the installed owner returns `TaskProvisioning Retained`
+without reinstalling, restoring individually revoked commands, or invalidating
+tickets. Explicit trusted reconfiguration can update the same owner's policy.
+Removing the automatic configuration revokes its old bindings and clears the
+policy. The original direct `provision_startup()` API retains its once-only
+behavior for standalone trusted fixtures; production uses the admitted-task path.
+
+Core executes handlers under the dispatch mutex, so another thread's admission
+waits until execution returns. Its existing `ExecutionUncertain` record also
+guards reentrant admission and unresolved effects: new-task/replacement ingress,
+commitment admission, and provisioning are held as `OutstandingInvocation`.
+Captured but unexecuted tickets do not count as running invocations and can be
+invalidated. Uncertain executions require trusted reconciliation; this increment
+adds no retry or outcome-clearing mechanism. Explicit cancellation can still
+abandon the task, but cannot authorize its successor while uncertainty remains.
+
+`&last-host-task-provisioning` reports Installed, Retained, MissingConfiguration,
+NoAdmittedCommitment, OutstandingInvocation or TargetMismatch. Tests cover
+completed/cancelled predecessors, second-frame and same-frame replacement
+provisioning, stale tickets and install-time ownership, permission denial,
+concrete-target pinning, configuration removal, and unresolved invocation holds.
 
 ## Publication and motivation separation
 

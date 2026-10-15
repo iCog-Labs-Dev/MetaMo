@@ -29,7 +29,9 @@ def ingest(message):
     from host_dispatch_config import encode
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         sread(MessageSource, _Message), sread(KindSource, _Kind),
-        eval([hostIngressDecision, [quote,_Kind]], _Decision),
+        (memberchk(_Kind, ['NewTask','Replace']), mm_dispatch_busy
+         -> _Decision=['HostInput','Held','OutstandingInvocation']
+         ; eval([hostIngressDecision, [quote,_Kind]], _Decision)),
         eval([hostIngressApply, [quote,_Decision], [quote,_Message]], _Result),
         swrite(_Result, Source)))''',
         {'MessageSource': encode(message), 'KindSource': kind})
@@ -67,7 +69,9 @@ def apply_transition(decision, kind, change):
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         sread(DecisionSource, _Decision), sread(KindSource, _Kind),
         sread(EventSource, _EventId), sread(ChangeSource, _Change),
-        (_Decision = ['HostInput',_Kind,_Id,_Frame,_Revision],
+        (_Kind == 'Replace', mm_dispatch_busy
+         -> _Result = ['HostInput','Held','OutstandingInvocation']
+         ; _Decision = ['HostInput',_Kind,_Id,_Frame,_Revision],
          commitmentSnapshot(['CommitmentSnapshot',_Id,_Frame,_Revision,'Open',_]),
          eval(['get-state','&cfv2-current-frame-id'], _Current), _Current == _Frame
          -> mm_commitment_apply(

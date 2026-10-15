@@ -157,6 +157,13 @@
 
 !(test (get-state &task-open) True)
 
+!(test (get-state &last-host-task-provisioning) (TaskProvisioning Retained))
+
+!(test (coreDispatchCommand
+    (coreDispatchCapture (AdmissionRequest propose-candidate current-frame execute-skill))
+    (sread (py-call (host_config_fixture.command))))
+    (DispatchResult Executed Feasible "observed local file content"))
+
 ;; Abandonment is not successful frame completion.
 !(coreLoopIngest "cancel: no longer needed")
 !(coreLoopPrepare)

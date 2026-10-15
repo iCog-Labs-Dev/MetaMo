@@ -1,7 +1,24 @@
 % Trusted host adapter for the session dispatcher. No model-accessible policy
 % setters or registration functions are exported to MeTTa. Provision exact
 % command/metadata bindings and typed policies from host configuration.
-:- dynamic mm_dispatch_binding/3, mm_dispatch_policies/2.
+:- dynamic mm_dispatch_binding/3, mm_dispatch_policies/2, mm_dispatch_owner/1.
+
+% Example: an invoked command with unresolved effects prevents task handoff.
+mm_dispatch_busy :-
+    oc_dispatch_result(_,_,['DispatchResult','Unobserved','ExecutionUncertain',none]).
+
+% Example: an arbitrary frame switch cannot inherit the operator's task policy.
+mm_dispatch_task_owner(Owner) :-
+    commitmentSnapshot(Owner),
+    Owner=['CommitmentSnapshot',_,Frame,_,'Open',_],
+    nb_current('&cfv2-current-frame-id',Current), Current == Frame,
+    nb_current('&cfv2-last-admitted-frame-id',Admitted), Admitted == Frame,
+    nb_current('&cfv2-current-source','UserDirective'),
+    nb_current('&cfv2-current-status',Status), memberchk(Status,['Active','Focused']).
+
+% Example: terminal or replaced owners cannot execute previously installed bindings.
+mm_dispatch_owner_current :-
+    (mm_dispatch_owner(Owner) -> commitmentSnapshot(Current), Current == Owner ; true).
 
 mm_dispatch_register(Command, Request, Operation) :-
     ground(Command-Request-Operation), is_list(Command), Command=[_|_],
@@ -58,8 +75,10 @@ mm_dispatch_enter_route(Token) :-
 mm_dispatch_leave_route(irc) :- !, py_call(host_operations:release_irc_route(), 1).
 mm_dispatch_leave_route(none).
 mm_dispatch_resolve(Intent, Command, Operation) :-
+    mm_dispatch_owner_current,
     mm_dispatch_binding(Command,Intent,Operation).
 mm_dispatch_resolve(Intent, Command, Operation) :-
+    mm_dispatch_owner_current,
     eval([preparedHostBinding], ['HostCommandBinding',Command,Intent,Operation]),
     eval(['get-state','&prepared-host-operation'],
          ['PreparedHostOperation',_,_,Command,Intent,Operation,_,_,

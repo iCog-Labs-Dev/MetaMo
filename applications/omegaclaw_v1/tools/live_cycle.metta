@@ -23,7 +23,8 @@
          (progn
             (println! (LivePolicy $label $outputs))
             (py-call (live_cycle_probe.capture $label "selection"))
-            (size-atom $outputs)))))
+            (size-atom $outputs))))
+)
 
 (= (liveDispatch $label)
    (let $result (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
