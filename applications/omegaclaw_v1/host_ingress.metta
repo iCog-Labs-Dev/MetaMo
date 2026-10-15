@@ -21,6 +21,8 @@
             ((FollowUp True)
                 (hostIngressFrameDecision $id $frame $revision))
             ((FollowUp False) (HostInput Held FrameMismatch))
+            ((Cancel True) (HostInput Cancel $id $frame $revision))
+            ((Cancel False) (HostInput Held FrameMismatch))
             ($_ (HostInput Held ExplicitFollowupRequired))
         )
     )
@@ -62,22 +64,32 @@
     )
 )
 
+;; Example: retain a Held diagnostic while keeping case branch outputs separate.
+(= (hostIngressRetain $decision) $decision)
+
 ;; Example: Held has no frame effects; NewTask delegates to Core's admission.
 (= (hostIngressApply $decision $message)
     (case $decision
         (
             ((HostInput FollowUp $_ $_ $_)
                 (hostIngressFollowup $decision $message))
+            ((HostInput Cancel $_ $_ $_)
+                (progn
+                    (change-state! &last-host-followup ())
+                    (let $source (repr $decision)
+                        (sread (py-call (host_ingress.cancel $source $message)))
+                    )
+                ))
             ((HostInput NewTask)
                 (progn
                     (py-call (host_ingress.mutate "NewTask" $message))
                     (change-state! &last-host-followup ())
-                    $decision
+                    (hostIngressRetain $decision)
                 ))
             ($_
                 (progn
                     (change-state! &last-host-followup ())
-                    $decision
+                    (hostIngressRetain $decision)
                 ))
         )
     )
@@ -98,6 +110,7 @@
     (case (get-state &last-host-input)
         (
             ((HostInput Held $_) False)
+            ((HostInput Cancelled $_ $_ $_) False)
             ($_ (get-state &core-loop-new-message))
         )
     )

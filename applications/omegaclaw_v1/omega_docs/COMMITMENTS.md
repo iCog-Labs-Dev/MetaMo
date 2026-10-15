@@ -75,7 +75,7 @@ polling a previously committed frame cannot reopen its terminal commitment.
 `&last-host-commitment-admission` exposes the opened, retained, skipped, or
 rejected result for diagnostics. No admission API is registered as a model skill.
 
-This connects task opening only. Cancellation/replacement routing,
+This connects task opening only. Replacement routing,
 automatic completion, per-task policy provisioning, and response preparation
 remain later F2 work. Direct Core ingestion can still admit a frame that is
 rejected while an earlier commitment stays open; the production ingress hook
@@ -132,7 +132,7 @@ whitespace; its body must be nonblank. Input is bounded to 4096 characters.
 - An explicit follow-up without an open commitment, with a mismatched current
   frame, or with an inactive frame is held. Routing never switches or unblocks
   frames. Without an open commitment, ordinary input uses existing Core admission.
-- Cancellation/replacement language is not interpreted as a lifecycle event.
+- Unmarked cancellation/replacement language is not interpreted as a lifecycle event.
   Even an explicit follow-up saying “done” is message data, not completion proof.
 
 The host checks ownership and records the message under Core's dispatch mutex;
@@ -143,11 +143,39 @@ durable message-ID ledger. Input text is quoted data throughout the boundary.
 `&last-host-input` exposes the routing result. No routing helper is a model skill.
 
 Tests exercise the real ingress callback, typed dispatch, frame history, and
-commitment state. `host_ingress_loop_test.metta` additionally runs three turns of
-the real Core polling loop: initial task, explicit follow-up, and unrelated text.
+commitment state. `host_ingress_loop_test.metta` additionally runs four turns of
+the real Core polling loop: initial task, explicit follow-up, unrelated text,
+and explicit cancellation.
 Only external channel/provider/memory boundaries are doubled. Follow-up text
 does not alter a read plan or its required evidence; automatic replanning and
 response generation remain separate increments.
+
+## Explicit cancellation (F2.3)
+
+Use `cancel: no longer needed` to abandon the current open commitment. The marker
+is case-insensitive; the trimmed reason must be nonblank and obeys the same input
+bounds as follow-ups. Bare `cancel` remains ambiguous while work is open.
+The reason is stored as data in the existing `Abandoned` event, never evaluated.
+
+The current native frame must match the commitment owner. Cancellation is allowed
+for blocked work too, without activating or completing the frame. The host checks
+the exact commitment identity, frame, and revision again when applying the event.
+It returns `HostInput Cancelled` with the owner and new revision; stale decisions
+are held. A repeated cancellation while the commitment is terminal adds no event.
+This is not durable channel-message deduplication across different tasks.
+
+Ownership checks, abandonment, and pending-command revocation share the dispatch
+mutex. The event invalidates captured tickets; the host also revokes configured
+commands targeting the cancelled frame and clears the prepared operation, so a
+new ticket cannot execute the old task's commands. Previously executed effects
+are not undone. Cancellation is not fresh task input, and the normal prepare hook
+mirrors the terminal commitment into `task-open = False` without reopening it.
+No completion outcome is registered and no further Core change is required.
+
+The ingress tests cover missing reasons/owners, mismatched frames, blocked work,
+inert reasons, repeated and delayed decisions, terminal-state preservation, and
+dispatch rejection with both old and new tickets. The polling-loop test checks
+that the same owner becomes Abandoned on the fourth turn.
 
 ## Publication and motivation separation
 
@@ -172,10 +200,10 @@ completion. A new message alone is not an abandonment or supersession event.
 
 ## Scope and remaining integration
 
-Trusted ingress must call `mm_commitment_open`; explicit cancellation/replacement
-handlers must apply the corresponding events; a host completion adjudicator must
-register confirmed outcomes. This change does not infer these events from user
-text or automatically equate Core's `DispatchResult Executed` with completion.
+Trusted ingress opens commitments and routes explicit cancellation through the
+existing event API. Replacement routing and a host completion adjudicator that
+registers confirmed outcomes remain pending. The adapter does not automatically
+equate Core's `DispatchResult Executed` with completion.
 
 The store is local to one process and tracks one current commitment. It is not a
 durable event log, a multi-frame commitment scheduler, or a restart recovery

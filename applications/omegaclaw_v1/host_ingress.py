@@ -13,9 +13,10 @@ def classify_message(message):
     except UnicodeEncodeError:
         return 'InvalidInput'
     prefix, separator, body = message.strip().partition(':')
-    if prefix.casefold() != 'follow-up' or not separator:
+    kinds = {'follow-up': 'FollowUp', 'cancel': 'Cancel'}
+    if prefix.casefold() not in kinds or not separator:
         return 'NewTask'
-    return 'FollowUp' if body.strip() else 'InvalidInput'
+    return kinds[prefix.casefold()] if body.strip() else 'InvalidInput'
 
 
 # Example: ingest('follow-up: include examples') returns a quoted HostInput result.
@@ -34,6 +35,38 @@ def ingest(message):
         {'MessageSource': encode(message), 'KindSource': kind})
     if not result.get('truth', False):
         raise RuntimeError('host input routing failed')
+    return result['Source']
+
+
+# Example: cancel('(HostInput Cancel "c1" frame-1 0)', 'cancel: no longer needed').
+def cancel(decision, message):
+    """Recheck ownership, abandon, and revoke pending work under the dispatch lock."""
+    if classify_message(message) != 'Cancel':
+        return '(HostInput Held InvalidInput)'
+    import janus
+    from uuid import uuid4
+    from host_dispatch_config import encode
+    result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        sread(DecisionSource, _Decision),
+        sread(EventSource, _EventId), sread(ReasonSource, _Reason),
+        (_Decision = ['HostInput','Cancel',_Id,_Frame,_Revision],
+         commitmentSnapshot(['CommitmentSnapshot',_Id,_Frame,_Revision,'Open',_]),
+         eval(['get-state','&cfv2-current-frame-id'], _Current), _Current == _Frame
+         -> mm_commitment_apply(
+              ['CommitmentEvent',_EventId,_Id,_Revision,['Abandoned',_Reason]],
+              ['CommitmentApplied',_EventId,_Id,'Abandoned',_Next]),
+            findall(_Command,
+              (mm_dispatch_binding(_Command,_,_Operation),
+               memberchk([target,_Frame],_Operation)), _Commands),
+            maplist(mm_dispatch_revoke, _Commands),
+            eval(['change-state!','&prepared-host-operation',[]], _),
+            _Result = ['HostInput','Cancelled',_Id,_Frame,_Next]
+         ; _Result = ['HostInput','Held','StaleCommitment']),
+        swrite(_Result, Source)))''',
+        {'DecisionSource': decision, 'EventSource': encode(str(uuid4())),
+         'ReasonSource': encode(message.strip().partition(':')[2].strip())})
+    if not result.get('truth', False):
+        raise RuntimeError('host cancellation failed')
     return result['Source']
 
 

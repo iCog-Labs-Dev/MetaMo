@@ -10,6 +10,11 @@ spec.loader.exec_module(ingress)
 
 
 class HostIngressTests(unittest.TestCase):
+    def test_explicit_cancel(self):
+        for message in ('cancel: no longer needed', ' CANCEL: changed plans ',
+                        'cancel: (send "not executable")'):
+            self.assertEqual(ingress.classify_message(message), 'Cancel')
+
     def test_explicit_followup(self):
         for message in ('follow-up: add examples', ' FOLLOW-UP: more detail ',
                         'follow-up: (send "quoted text")'):
@@ -21,7 +26,8 @@ class HostIngressTests(unittest.TestCase):
             self.assertEqual(ingress.classify_message(message), 'NewTask')
 
     def test_invalid_input(self):
-        for message in ('', ' ', 'follow-up:', 'follow-up:   ', 'a' * 4097,
+        for message in ('', ' ', 'follow-up:', 'follow-up:   ', 'cancel:',
+                        'cancel:   ', 'a' * 4097,
                         'follow-up: bad\x00input', '\ud800', None, [], 1):
             self.assertEqual(ingress.classify_message(message), 'InvalidInput')
 

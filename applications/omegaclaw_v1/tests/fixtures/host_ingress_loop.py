@@ -1,6 +1,7 @@
 """Only channel/provider boundaries are doubled for the real Core polling loop."""
 _messages = iter(('Inspect the configured local file',
-                  'follow-up: include examples', 'An unrelated request'))
+                  'follow-up: include examples', 'An unrelated request',
+                  'cancel: no longer needed'))
 _observations = []
 
 
@@ -29,15 +30,18 @@ def install():
     return 1
 
 
-# Example: verified() checks that all three loop turns retain the same open owner.
+# Example: verified() checks retained ownership followed by explicit abandonment.
 def verified():
-    assert len(_observations) == 3, _observations
-    first, followup, held = _observations
+    assert len(_observations) == 4, _observations
+    first, followup, held, cancelled = _observations
     assert first['Owner'] == followup['Owner'] == held['Owner']
     assert ' Open ' in first['Owner']
     assert first['Frame'] == followup['Frame'] == held['Frame']
     assert first['Route'] == '(HostInput NewTask)'
     assert followup['Route'].startswith('(HostInput FollowUp ')
     assert held['Route'] == '(HostInput Held ExplicitFollowupRequired)'
-    assert [row['Fresh'] for row in _observations] == ['true', 'true', 'false']
+    assert cancelled['Owner'] == first['Owner'].replace(' 0 Open ', ' 1 Abandoned ')
+    assert cancelled['Frame'] == first['Frame']
+    assert cancelled['Route'].startswith('(HostInput Cancelled ')
+    assert [row['Fresh'] for row in _observations] == ['true', 'true', 'false', 'false']
     return 1
