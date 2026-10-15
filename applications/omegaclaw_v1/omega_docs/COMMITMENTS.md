@@ -261,7 +261,8 @@ F2.5 supports the acknowledged local read-and-answer slice. IRC transport
 submission is not recipient acknowledgement and remains incomplete here.
 Explicit transport-specific completion criteria and declared no-tool tasks are
 F2.10; empty required reads cannot bypass this predicate. Registering an outcome
-and publishing `Completed` use F2.6 below; completing the Core frame remains F2.7.
+and publishing `Completed` use F2.6 below; the prepare hook completes the matching
+Core frame through F2.7.
 
 `host_completion_test.metta` uses a host-owned two-read fixture and an actual open
 commitment. It checks partial progress, answer acknowledgement, correlation,
@@ -306,8 +307,8 @@ already completed owner is stale.
 
 This implements trusted publication from supplied retained evidence. It does not
 yet automatically collect evidence or invoke publication from the polling loop;
-production read-evidence gathering remains F3.7. Core frame completion remains
-F2.7, and IRC/no-tool completion criteria remain F2.10. The normal existing
+production read-evidence gathering remains F3.7. Core frame completion uses
+F2.7 below, and IRC/no-tool completion criteria remain F2.10. The normal existing
 `refreshTaskCommitment` mirrors a published terminal record into task state.
 
 `host_completion_publication_test.metta` runs the real pure predicate and store
@@ -316,6 +317,49 @@ native identity, stale sessions/revisions, accepted publication, replay, ID
 conflicts, cancellation/replacement races represented by delayed publication,
 and unchanged Core frame status. Prolog tests additionally check rollback of a
 new outcome when event publication conflicts.
+
+## Core frame completion (F2.7)
+
+The existing `prepareHostStartup` hook now calls the trusted
+`mm_commitment_complete_frame/1` adapter before provisioning/admission and task
+state refresh. It requires the current commitment to be `Completed`, with its
+matching accepted completion event and confirmed outcome. Open, abandoned and
+superseded commitments do not trigger successful frame completion.
+
+Under the dispatch mutex, the adapter verifies the exact native current-frame
+identity, then calls Core's existing `cfv2-complete-current-frame-to-stm` handler.
+That path records the completed status, timestamp, summary and history; archives
+the frame in completed space; updates the frame index; clears the active cache;
+and selects another eligible frame if present. The summary is the completed
+commitment's description. This uses the existing STM path, not long-term memory
+publication; Core's current `pin` implementation is a stub, so this is in-process
+frame bookkeeping rather than a new durability guarantee.
+
+The v1 adapter preserves unrelated `FrameRef` entries around the handler because
+Core's Frame-only removal helper otherwise drops them from the index. It restores
+their exact records and reruns selection if the current cache is empty. This
+compatibility fix is local to v1; no Core source is modified.
+
+Core's completed-frame record acts as the duplicate-processing guard. A repeated
+prepare returns a retained diagnostic without rewriting history/timestamps or
+invalidating fresh dispatch tickets. A mismatched current frame is held; the
+adapter never switches to an old frame in order to complete it. A successor
+commitment, including one on the same frame, cannot be closed by an old completion
+receipt. The whole operation shares the dispatch lock, and actual frame mutations
+invalidate previously captured tickets.
+
+`&last-host-frame-completion` records `FrameCompleted`, `FrameCompletionRetained`,
+`FrameCompletionSkipped`, or `FrameCompletionHeld`. The adapter is not exported
+as a model skill. Completion publication remains separate: F2.6 must first receive
+the host-retained requirements/evidence. Once published, the next prepare hook
+automatically performs frame bookkeeping.
+
+`host_frame_completion_test.metta` exercises the real F2.5/F2.6 path and Core
+handler, including native symbol/string mismatch, completed records/index/cache,
+dispatch invalidation, replay, cancellation, and a queued successor surviving
+automatic selection. This full Core fixture also exposed and fixes a F2.5
+compilation issue: command patterns now inspect fields as data instead of
+evaluating loaded `read-file` or `send` skills during validation.
 
 ## Publication and motivation separation
 
@@ -349,7 +393,7 @@ equate Core's `DispatchResult Executed` with completion.
 
 The store is local to one process and tracks one current commitment. It is not a
 durable event log, a multi-frame commitment scheduler, or a restart recovery
-protocol. It does not change ContextFrames' separate goal-completion commands.
+protocol. It reuses ContextFrames' existing goal-completion bookkeeping.
 Motivational persistence does not save or restore this authoritative host store.
 
 ## Verification

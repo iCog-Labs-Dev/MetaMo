@@ -352,6 +352,16 @@ def configure_startup(path=None):
     return 1
 
 
+# Example: after confirmed completion, archive its matching Core frame once.
+def complete_host_frame():
+    """Reconcile terminal commitment bookkeeping before admitting the next task."""
+    import janus
+    result = janus.query_once('mm_commitment_complete_frame(_Result), swrite(_Result, Source)')
+    if not result.get('truth', False):
+        raise ConfigError('host frame completion failed')
+    return result['Source']
+
+
 def admit_startup_commitment():
     """Open a commitment for Core's admitted current user frame.
 

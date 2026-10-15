@@ -17,6 +17,7 @@ assert 'Fixture' not in exports
 assert 'mm_commitment_apply' not in exports
 assert 'mm_commitment_open' not in exports
 assert 'mm_commitment_complete' not in exports
+assert 'mm_commitment_complete_frame' not in exports
 lifecycle = (root / 'task_lifecycle.metta').read_text()
 assert '(= (completeTaskIfTerminal $_candidate) False)' in lifecycle
 assert '(= (completePreviousTaskIfSuccessful)\n   False)' in lifecycle

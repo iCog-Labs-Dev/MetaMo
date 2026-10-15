@@ -146,6 +146,53 @@ mm_commitment_publish_completion(Event,Result) :-
      -> Result=Applied
      ; mm_commitment_reject('PublicationConflict',Result)).
 
+% Example: prepare after F2.6 archives only the exact completed owner's frame.
+% Core's completed-frame record is the replay marker; no second lifecycle ledger.
+mm_commitment_complete_frame(Result) :-
+    with_mutex(omegaclaw_dispatch,
+      (mm_commitment_current(Id), mm_commitment(Id,Frame,Summary,'Completed',Revision),
+       Previous is Revision-1,
+       mm_commitment_event(_,['CommitmentEvent',_,Id,Previous,['Completed',Outcome]],
+                           ['CommitmentApplied',_,Id,'Completed',Revision]),
+       mm_commitment_outcome(Outcome,Id,Previous,'Completed')
+       -> mm_commitment_finish_frame(Id,Frame,Summary,Result)
+       ; Result=['FrameCompletionSkipped','NoCompletedCommitment'])).
+
+% Example: replay after Core selects another frame cannot close that next frame.
+mm_commitment_finish_frame(Id,Frame,Summary,Result) :-
+    (mm_commitment_frame_archived(Frame)
+     -> Result=['FrameCompletionRetained',Id,Frame]
+     ; \+ (nb_current('&cfv2-current-frame-id',Current), Current == Frame)
+     -> Result=['FrameCompletionHeld','FrameMismatch']
+     ; \+ current_predicate('cfv2-complete-current-frame-to-stm'/2)
+     -> Result=['FrameCompletionHeld','CoreCompletionUnavailable']
+     ; mm_commitment_mutate(mm_commitment_archive_frame(Frame,Summary)),
+       mm_commitment_frame_archived(Frame)
+     -> Result=['FrameCompleted',Id,Frame]
+     ; Result=['FrameCompletionHeld','CoreCompletionFailed']).
+
+% Example: Core's Frame-only removal also drops unrelated FrameRef entries.
+% Preserve their exact records around its STM handler, then resume selection.
+mm_commitment_archive_frame(Frame,Summary) :-
+    nb_current('&cfv2-frame-indexspace',Index),
+    findall(Ref,(member(Ref,Index), Ref=['FrameRef'|Fields],
+                 memberchk([frameID,Other],Fields), Other \== Frame),Retained),
+    once(eval(['cfv2-complete-current-frame-to-stm',[quote,Summary]],
+              'FRAME-COMPLETED-STORED-STM')),
+    nb_current('&cfv2-frame-indexspace',After),
+    append(After,Retained,Combined), list_to_set(Combined,Restored),
+    once(eval(['change-state!','&cfv2-frame-indexspace',[quote,Restored]],_)),
+    (nb_current('&cfv2-current-frame-id',[]), Retained \== []
+     -> once(eval(['cfv2-select-next-frame'],_))
+     ; true).
+
+% Example: symbol Frame-1 and string "Frame-1" remain different native identities.
+mm_commitment_frame_archived(Frame) :-
+    nb_current('&cfv2-completed-framespace',Frames),
+    member(['Frame'|Fields],Frames),
+    memberchk([frameID,Stored],Fields), Stored == Frame,
+    memberchk([status,'Completed'],Fields), !.
+
 commitmentSnapshot(Snapshot) :-
     with_mutex(omegaclaw_dispatch,
       (mm_commitment_current(Id), mm_commitment(Id,Frame,Summary,Status,Revision)

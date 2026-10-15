@@ -33,13 +33,28 @@
     )
 )
 
+;; Example: inspect (read-file "/a") as data even when the Core skill is loaded.
+(= (completionCommandValid $skill $command)
+    (case (get-metatype $command)
+        (
+            (Expression
+                (if (== (size-atom $command) 2)
+                    (and (== (index-atom $command 0) $skill)
+                         (tpId (index-atom $command 1)))
+                    False
+                ))
+            ($_ False)
+        )
+    )
+)
+
 ;; Example: only a bounded read-file invocation can be a required read.
 (= (completionReadValid $context $decision)
     (case $decision
         (
-            ((OperationDecision $_ execute-skill (read-file $path) $_)
+            ((OperationDecision $_ execute-skill $command $_)
                 (and (completionDecisionValid $context $decision)
-                    (tpId $path)))
+                    (completionCommandValid read-file $command)))
             ($_ False)
         )
     )
@@ -49,8 +64,8 @@
 (= (completionAnswerValid $context $answer)
     (case $answer
         (
-            ((RequiredAnswer (OperationDecision $_ respond (send $text) $_) "local:stdout")
-                (and (tpId $text)
+            ((RequiredAnswer (OperationDecision $_ respond $command $_) "local:stdout")
+                (and (completionCommandValid send $command)
                     (let (RequiredAnswer $decision $_) $answer
                         (completionDecisionValid $context $decision))))
             ($_ False)
