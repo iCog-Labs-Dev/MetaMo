@@ -1121,3 +1121,93 @@ Current-run full-suite output is `/tmp/increment1-acceptance-suite.log`; per-cha
 logs are `/tmp/f1-acceptance-local.log` and `/tmp/f1-acceptance-irc.log`. These are
 local temporary evidence, not portable release artifacts. The fixture
 sources and commands above are the reproducible acceptance record.
+
+
+## Automatic conversational preparation (F2.9)
+
+### IRC input normalization (F2.9a)
+
+The v1 ingress callback reads the configured `commchannel`. For IRC only,
+`Nahom: hello` becomes body `hello` before routing, frame/commitment admission
+and response preparation. Only the first transport prefix is removed; colons
+inside the body and all non-IRC message text remain intact. Invalid envelopes
+return `HostInput Held InvalidIrcEnvelope` (invalid/empty bodies use
+`InvalidInput`). Core's receiver authentication remains unchanged and precedes
+normalization; sender metadata is not a new authentication mechanism.
+
+Core joins pending IRC messages with unescaped ` | `, so their original
+boundaries cannot be recovered reliably. V1 holds the **entire** input as
+`HostInput Held AmbiguousIrcBatch` with no partial routing, frame creation or
+commitment changes. Single messages containing that delimiter are also held.
+Resend held input as separate messages without that delimiter. Supporting
+lossless batches requires a structured transport interface in a future change.
+
+Accepted input retains host-owned provenance:
+`(HostTransportInput SESSION FRAME (TransportInput CHANNEL SENDER ORIGINAL) BODY)`.
+This state joins the preparation owner alongside the current commitment and
+admitted input, so provider results cannot outlive their captured ownership.
+Session reset clears it. An open IRC owner's sender is checked before routing
+follow-up, cancel or replacement input; a different sender returns `SenderMismatch`
+without mutation. Nickname comparison follows Core's lowercase authentication
+convention while the original spelling is preserved. Trusted internal `ingest`
+calls accept body text directly; only the channel callback unwraps envelopes.
+
+Reproduce the offline checks from the application directory:
+
+```bash
+python3 tests/host_ingress_test.py
+python3 ../../scripts/run-omegaclaw.py tests/irc_ingress_test.metta
+python3 ../../scripts/run-omegaclaw.py tests/conversational_response_loop_test.metta
+```
+
+The focused fixture exercises real authentication and the real IRC receive
+queue, including same/different-sender batches, sender isolation, follow-up,
+replacement, native identity preservation, non-IRC colons and session reset.
+Conversational polling fixtures now feed transport-prefixed messages through
+Core's queue; providers and sockets remain doubled. No live channel is started.
+
+### Bounded greeting preparation
+
+After host ingress admits input and F2.8 provisions its open commitment,
+operation capture can prepare a greeting automatically. The host recognizes
+only `hi`, `hello`, or `hey` (case insensitive, surrounding whitespace and
+trailing `!`, `.`, or `?` allowed). Both the admitted input and commitment
+summary must satisfy that contract. Follow-ups and other work are not silently
+converted into greetings. Automatic file planning and read-backed answers remain
+F3.1–F3.7; recovery questions remain F4.2.
+
+Configure an explicit local/IRC `destination` and grant the required send skill,
+permissions, egress and command budget in both scopes. For automatic greeting
+replies, omit fixed `respond`/`send` entries from `commands` (an empty list is
+valid). Multiple commands for the same candidate still fail as ambiguous;
+automatic preparation does not override the configured command catalog or grants.
+The existing configured `provider` prepares bounded JSON text or explicit
+no-action. Preparation uses the existing provider interface and never opens a channel.
+
+The trusted queue accepts `requirements="GreetingNoTools"` with no observations,
+separately from required-read readiness. It publishes
+`(NoToolEvidenceReady Greeting TASK)` on the prepared operation. There are no
+fabricated read outcomes, and `required_reads=[]` remains invalid. The model
+cannot select requirements, install permissions, or supply an executable command.
+Only the catalog builds the exact send operation around validated response text.
+
+Preparation retains session, native frame, commitment, task and admitted-input
+identity; publication rechecks them together with the dispatch epoch, policy and
+route snapshot after the provider returns. New follow-up/replacement input or a
+session reset invalidates earlier preparation. One automatic attempt is made per
+owned input/destination, including no-action or rejected attempts, so idle turns
+do not repeatedly call the preparation provider. F1.9 still records accepted
+answers and prevents reuse. Core's separate command-generation provider may
+continue to be called while its polling loop is active.
+
+The dispatch snapshot normalizes only runtime `next-wake-at`: Core updates that
+scheduling deadline between ticket capture and command generation. All other
+runtime fields, wake-loop budget, native frame state, policy, channel route and
+mutation epoch remain checked. OmegaClaw-Core is unchanged.
+
+`tests/conversational_*_test.metta` exercise the actual Core polling loop with
+provider/socket doubles: one greeting submission, idle suppression, unsupported
+work, denied egress, malformed/no-action responses, session reset, and input
+changes during preparation or before dispatch. They do not directly queue
+preparation or dispatch commands. Conversational task completion remains F2.10;
+a successful greeting submission alone leaves the commitment open.

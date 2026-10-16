@@ -1,5 +1,38 @@
 """Trusted ingress transport helpers; routing rules live in host_ingress.metta."""
 
+import re
+
+
+# Example: only IRC's transport envelope turns 'Nahom: hello' into 'hello'.
+def normalize_transport(message, channel):
+    """Return sender/body or a Held reason without interpreting message content.
+
+    Core joins IRC messages with an unescaped ' | '. Its flattened batches are
+    ambiguous, including a single body containing that delimiter; hold the whole
+    input rather than invent boundaries or apply partial lifecycle changes.
+    """
+    if classify_message(message) == 'InvalidInput':
+        return '', '', 'InvalidInput'
+    if channel != 'irc':
+        return '', message, ''
+    if ' | ' in message:
+        return '', '', 'AmbiguousIrcBatch'
+    sender, separator, body = message.partition(': ')
+    if (not separator or not re.fullmatch(r'[A-Za-z\[\]\\`_^{|}][A-Za-z0-9\[\]\\`_^{|}-]*', sender)
+            or '\r' in message or '\n' in message):
+        return '', '', 'InvalidIrcEnvelope'
+    if classify_message(body) == 'InvalidInput':
+        return '', '', 'InvalidInput'
+    return sender, body, ''
+
+
+# Example: the live callback supplies commchannel; trusted internal ingest stays raw.
+def ingest_transport(message, channel):
+    sender, body, reason = normalize_transport(message, channel)
+    if reason:
+        return '(HostInput Held ' + reason + ')'
+    return ingest(body, (str(channel), sender, message))
+
 
 # Example: classify_message('follow-up: use the second section') -> FollowUp.
 def classify_message(message):
@@ -20,21 +53,44 @@ def classify_message(message):
 
 
 # Example: ingest('follow-up: include examples') returns a quoted HostInput result.
-def ingest(message):
+def ingest(message, transport=None):
     """Serialize frame checks and updates with Core dispatch; never evaluate text."""
     kind = classify_message(message)
     if kind == 'InvalidInput':
         return '(HostInput Held InvalidInput)'
     import janus
-    from host_dispatch_config import encode
+    from host_dispatch_config import encode, record
+    metadata = record('TransportInput', *(transport or ('host', '', message)))
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         sread(MessageSource, _Message), sread(KindSource, _Kind),
+        sread(TransportSource, _Transport),
+        eval(['get-state','&operation-context'], ['OperationContext',_Session,_,_]),
+        eval(['get-state','&host-transport-input'], _PreviousTransport),
         (memberchk(_Kind, ['NewTask','Replace']), mm_dispatch_busy
          -> _Decision=['HostInput','Held','OutstandingInvocation']
+         ; _Transport=['TransportInput',"irc",_Sender,_],
+           commitmentSnapshot(['CommitmentSnapshot',_,_OwnerFrame,_,'Open',_]),
+           _PreviousTransport=['HostTransportInput',_Session,_OwnerFrame,
+                               ['TransportInput',"irc",_PreviousSender,_],_],
+           string_lower(_Sender, _NormalizedSender),
+           string_lower(_PreviousSender, _NormalizedPreviousSender),
+           _NormalizedSender \\== _NormalizedPreviousSender
+         -> _Decision=['HostInput','Held','SenderMismatch']
          ; eval([hostIngressDecision, [quote,_Kind]], _Decision)),
         eval([hostIngressApply, [quote,_Decision], [quote,_Message]], _Result),
+        (_Result = ['HostInput',_Status|_], _Status \== 'Held'
+         -> eval(['get-state','&cfv2-current-frame-id'], _Frame),
+            _Input=['HostResponseInput',_Frame,_Kind,_Message],
+            _TransportInput=['HostTransportInput',_Session,_Frame,_Transport,_Message],
+            eval(['get-state','&host-response-input'], _Previous),
+            (_Previous == _Input, _PreviousTransport == _TransportInput -> true
+             ; oc_dispatch_mutate((
+                 eval(['change-state!','&host-response-input',[quote,_Input]], _),
+                 eval(['change-state!','&host-transport-input',[quote,_TransportInput]], _))))
+         ; true),
         swrite(_Result, Source)))''',
-        {'MessageSource': encode(message), 'KindSource': kind})
+        {'MessageSource': encode(message), 'KindSource': kind,
+         'TransportSource': encode(metadata)})
     if not result.get('truth', False):
         raise RuntimeError('host input routing failed')
     return result['Source']

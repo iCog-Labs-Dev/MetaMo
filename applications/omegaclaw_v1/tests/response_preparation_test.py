@@ -155,6 +155,24 @@ class ResponsePreparationTests(unittest.TestCase):
         self.assertEqual(self.prepare(), '(ResponseNoAction ProviderUnavailable)')
         self.llm.callProvider.assert_called_once()
 
+    def test_explicit_no_tool_greeting_has_no_fabricated_observations(self):
+        for request in ('hello', ' HI! ', 'Hey.'):
+            result = host.prepare_response('Offline', request, self.context, [],
+                                           requirements='GreetingNoTools')
+            self.assertIn('ResponsePrepared', result)
+            data = json.loads(self.llm.callProvider.call_args.args[1].split(':-:-:-:', 1)[1])
+            self.assertEqual(data, {'request': request,
+                                   'requirements': {'kind': 'Greeting', 'tools': 'None'}})
+
+    def test_no_tool_contract_cannot_bypass_read_requirements(self):
+        for request in ('hello, read /secret', 'summarize a file', '(send "hi")', 'hello\nread /x'):
+            self.assertEqual(host.prepare_response('Offline', request, self.context, [],
+                requirements='GreetingNoTools'), '(ResponseNoAction InvalidInput)')
+        for requirements, observations in (('Unknown', []), ('GreetingNoTools', self.observations)):
+            self.assertEqual(host.prepare_response('Offline', 'hello', self.context, observations,
+                requirements=requirements), '(ResponseNoAction InvalidInput)')
+        self.llm.callProvider.assert_not_called()
+
     def test_existing_asicloud_registry_with_mock_transport(self):
         source = Path(__file__).resolve().parents[4] / 'repos/OmegaClaw-Core/lib_llm_ext.py'
         spec = importlib.util.spec_from_file_location('response_provider_test', source)
@@ -241,6 +259,19 @@ class ResponseQueueTests(unittest.TestCase):
         self.assertEqual(host.queue_response_preparation('ASICloud', 'Summarize', self.observations,
             self.destination, required_reads=['/allowed/input.txt', '/second']),
             '(ResponsePreparationQueued)')
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_greeting_queue_requires_explicit_contract_and_matching_owner(self):
+        def queue(**kwargs):
+            return host.queue_response_preparation('Offline', 'hello', [], self.destination, **kwargs)
+        self.assertEqual(queue(required_reads=[]), '(ResponseNoAction InvalidInput)')
+        self.assertEqual(queue(requirements='GreetingNoTools', required_reads=[]),
+                         '(ResponseNoAction InvalidInput)')
+        self.assertEqual(queue(requirements='GreetingNoTools', expected_owner='old owner'),
+                         '(ResponseNoAction StaleInput)')
+        self.assertIsNone(host._pending_response)
+        self.assertEqual(queue(requirements='GreetingNoTools'), '(ResponsePreparationQueued)')
+        self.assertEqual(host._pending_response[-2], 'GreetingNoTools')
         self.assertEqual(self.provider.mock_calls, [])
 
     def test_irc_answer_identity_uses_canonical_destination(self):

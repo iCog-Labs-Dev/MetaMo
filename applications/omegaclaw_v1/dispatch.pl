@@ -40,7 +40,8 @@ mm_dispatch_intent(Intent) :-
     Intent=['AdmissionRequest','propose-candidate','current-frame',Candidate].
 
 mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
-    eval([frameStateForMetaMo],Bundle), Bundle=['FrameStateBundle'|_],
+    eval([frameStateForMetaMo],Current), Current=['FrameStateBundle'|_],
+    maplist(mm_dispatch_schedule_field, Current, Bundle),
     eval([constitutionalMode],Mode),
     (mm_dispatch_policies(Global,Frame) -> true; Global=[], Frame=[]),
     findall(K-V, (nb_current(K,V), atom(K), sub_atom(K,0,6,_,'&cfv2-')), Unsorted),
@@ -50,6 +51,16 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval(['get-state','&prepared-host-operation'], Prepared),
     eval(['get-state','&answered-operation-key'], Answered),
     Raw=[channel-Channel,route-Route,prepared-Prepared,answered-Answered|FrameRaw].
+
+% Example: Core updates next-wake-at after capture and before command generation.
+% This scheduling timestamp grants no authority. Preserve every other field,
+% including wake-loop budget, task identity and all native frame/policy state.
+mm_dispatch_schedule_field([runtime,['FrameStateRuntime'|Fields]],
+                           [runtime,['FrameStateRuntime'|Stable]]) :- !,
+    maplist(mm_dispatch_wake_field, Fields, Stable).
+mm_dispatch_schedule_field(Value, Value).
+mm_dispatch_wake_field(['next-wake-at',_], ['next-wake-at',0]) :- !.
+mm_dispatch_wake_field(Value, Value).
 
 mm_dispatch_route(irc, Route) :- !,
     py_call(host_operations:irc_route_snapshot(), Source), sread(Source, Parsed), Route=Parsed.

@@ -297,6 +297,12 @@ _startup_installed = False
 _startup_checked = False
 
 
+# Example: automatic preparation uses only the explicitly configured destination.
+def response_destination():
+    import copy
+    return copy.deepcopy((_startup_config or {}).get('destination'))
+
+
 def startup_channel_diagnostics(config, channel, route=None):
     """Check recorded configuration against Core; never grant or send anything.
 
@@ -332,7 +338,7 @@ def startup_channel_diagnostics(config, channel, route=None):
             diagnostics.append('MissingReplyPolicy: explicitly configure send skill, generic and destination-specific permissions, and exact egress in the ' + name + ' scope; no grants added')
     if not any(row['skill'] == 'send' and row.get('candidate', 'respond') == 'respond'
                for row in config['commands']):
-        diagnostics.append('MissingReplyBinding: configure an exact respond/send command or queue a trusted prepared reply; automatic incoming-message preparation remains F2.9')
+        diagnostics.append('MissingReplyBinding: configure an exact respond/send command or queue a trusted prepared reply; automatic preparation supports only bounded greetings')
     return diagnostics
 
 

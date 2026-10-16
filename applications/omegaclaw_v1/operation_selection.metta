@@ -11,6 +11,10 @@
 ;; One generated command, owned by its capture cycle and host commitment.
 ;; It is data, never a policy grant or a replacement dispatch ledger.
 !(bind! &prepared-host-operation (new-state ()))
+;; Exact admitted input, retained by trusted ingress for preparation ownership.
+!(bind! &host-response-input (new-state ()))
+;; Transport provenance stays host-owned and joins response preparation ownership.
+!(bind! &host-transport-input (new-state ()))
 ;; The selected key belongs to the retained decision. Only validated, consumed
 ;; respond success publishes the last accepted answer; it is not task completion.
 !(bind! &selected-answer-key (new-state ()))
@@ -33,15 +37,39 @@
 
 ;; Host-supplied required reads are checked before preparation. Readiness is
 ;; carried by that same cycle-owned command, never inferred from result text.
+;; Example: greeting readiness is explicit and never masquerades as read evidence.
+(= (preparedResponseTask $readiness)
+    (case $readiness
+        (
+            ((ReadEvidenceReady $task) $task)
+            ((NoToolEvidenceReady Greeting $task) $task)
+            ($_ "")
+        )
+    )
+)
+
+;; Example: only an owned, current prepared command makes this task ready.
 (= (preparedResponseReadyForBundle $bundle)
-   (case (get-state &prepared-host-operation) (
-      ((PreparedHostOperation (OperationContext $session $cycle $frame) $_ $_ $_ $_
-          (ReadEvidenceReady $task) $_key $_routing)
-       (and (!= (preparedHostBinding) ())
-            (and (== $frame (frameBundleCurrentId $bundle))
-                 (and (hostTaskValuePresent $task)
-                      (== (frameStateRuntimeSummary $task 500) (frameRuntimeActiveTask $bundle))))))
-      ($_ False))))
+    (case (get-state &prepared-host-operation)
+        (
+            ((PreparedHostOperation (OperationContext $session $cycle $frame) $_ $_ $_ $_
+                $readiness $_key $_routing)
+                (let $task (preparedResponseTask $readiness)
+                    (and (!= (preparedHostBinding) ())
+                        (and (== $frame (frameBundleCurrentId $bundle))
+                            (and (hostTaskValuePresent $task)
+                                (== (frameStateRuntimeSummary $task 500)
+                                    (frameRuntimeActiveTask $bundle)
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            ($_ False)
+        )
+    )
+)
 
 !(bind! &applied-operation-decision (new-state ()))
 !(bind! &operation-failure-streak (new-state 0))
@@ -60,6 +88,8 @@
           (change-state! &selected-operation-commitment ())
           (change-state! &last-operation-outcome ())
           (change-state! &prepared-host-operation ())
+          (change-state! &host-response-input ())
+          (change-state! &host-transport-input ())
           (change-state! &selected-answer-key ())
           (change-state! &answered-operation-key ())
           (change-state! &applied-operation-decision ())

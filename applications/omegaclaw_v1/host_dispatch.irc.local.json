@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "frame_id": "current-frame",
+  "allowed_files": [],
+  "destination": {
+    "channel": "irc",
+    "server": "irc.quakenet.org",
+    "port": 6667,
+    "recipient": "##omegaclaw"
+  },
+  "frame": {
+    "skills": [
+      "send"
+    ],
+    "permissions": [
+      "channels.send",
+      "channels.send:irc:irc.quakenet.org:6667:##omegaclaw"
+    ],
+    "egress": [
+      "irc:irc.quakenet.org:6667:##omegaclaw"
+    ],
+    "constraints": [
+      [
+        "DenySkill",
+        "shell"
+      ],
+      [
+        "DenySkill",
+        "write-file"
+      ],
+      [
+        "MaxCost",
+        "commands",
+        "units",
+        1
+      ]
+    ],
+    "budgets": [
+      {
+        "resource": "commands",
+        "unit": "units",
+        "available": 10,
+        "status": "Open"
+      }
+    ]
+  },
+  "commands": [],
+  "global": {
+    "skills": [
+      "send"
+    ],
+    "permissions": [
+      "channels.send",
+      "channels.send:irc:irc.quakenet.org:6667:##omegaclaw"
+    ],
+    "egress": [
+      "irc:irc.quakenet.org:6667:##omegaclaw"
+    ],
+    "constraints": [
+      [
+        "DenySkill",
+        "shell"
+      ],
+      [
+        "DenySkill",
+        "write-file"
+      ],
+      [
+        "MaxCost",
+        "commands",
+        "units",
+        1
+      ]
+    ],
+    "budgets": [
+      {
+        "resource": "commands",
+        "unit": "units",
+        "available": 10,
+        "status": "Open"
+      }
+    ]
+  }
+}

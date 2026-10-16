@@ -135,7 +135,7 @@
 
 ;; Example: the Core ingress callback retains its typed routing diagnostic.
 (= (ingestHostMessage $message)
-    (let $result (sread (py-call (host_ingress.ingest $message)))
+    (let $result (sread (py-call (host_ingress.ingest_transport $message (eval (commchannel)))))
         (progn
             (change-state! &last-host-input $result)
             $result

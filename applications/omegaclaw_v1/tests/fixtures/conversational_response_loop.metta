@@ -1,0 +1,37 @@
+;; Real Core polling loop; provider and IRC socket are the only external doubles.
+!(import! &self (library lib_import))
+!(import! &self full_loop.metta)
+!(import! &self (library MetaMo applications/omegaclaw_v1/runtime_support))
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_startup))
+!(import! &self (library OmegaClaw-Core channels/irc.py))
+!(import! &self irc_routing_fixture.py)
+!(import! &self conversational_response.py)
+!(import! &self (library OmegaClaw-Core src/channels))
+!(configure commchannel irc)
+(= (getPrompt) "Use only the selected host command.")
+(= (maxFeedback) 512)
+(= (addToHistory $message $response $commands $new) True)
+!(import! &self (library OmegaClaw-Core src/loop))
+!(py-call (host_config_fixture.setup))
+!(initContextFrame)
+!(fullLoopStartSession)
+!(py-call (conversational_response.install (conversationScenario)))
+!(initializeHostStartup)
+!(configure maxSessionCycles 4)
+!(configure maxNewInputLoops 3)
+!(configure maxWakeLoops 1)
+!(configure spamShield True)
+!(configure sleepInterval 0)
+!(configure reasoningMode medium)
+!(configure useFrames True)
+!(change-state! &loops 3)
+
+!(test (omegaclaw 2) True)
+
+!(test (py-call (conversational_response.verified)) 1)
+
+;; No-tool task completion is F2.10, not inferred from a submitted greeting.
+!(test (get-state &task-open) True)
+
+!(test (py-call (offline_guard.optional_modules_absent)) 1)
+!(py-call (host_config_fixture.cleanup))

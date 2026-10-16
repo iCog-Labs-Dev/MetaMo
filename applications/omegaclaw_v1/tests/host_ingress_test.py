@@ -10,6 +10,33 @@ spec.loader.exec_module(ingress)
 
 
 class HostIngressTests(unittest.TestCase):
+    def test_irc_envelope_preserves_body_and_sender(self):
+        for body in ('hello', 'follow-up: more: detail', 'https://example.org',
+                     'write a note: hello', '(send "quoted text")', '  hello  '):
+            self.assertEqual(ingress.normalize_transport('Nahom: ' + body, 'irc'),
+                             ('Nahom', body, ''))
+
+    def test_other_channels_preserve_colons_and_batch_text(self):
+        for channel in ('local', 'telegram', 'slack', 'mattermost'):
+            for body in ('Nahom: hello', 'follow-up: more', 'A: one | B: two'):
+                self.assertEqual(ingress.normalize_transport(body, channel), ('', body, ''))
+
+    def test_irc_batches_are_held_atomically(self):
+        for raw in ('Nahom: hello | Nahom: follow-up: more',
+                    'Nahom: hello | Other: cancel: stop',
+                    'Nahom: explain a | b'):
+            self.assertEqual(ingress.ingest_transport(raw, 'irc'),
+                             '(HostInput Held AmbiguousIrcBatch)')
+
+    def test_malformed_irc_never_enters_interpreter(self):
+        for raw in ('hello', ': hello', 'bad nick: hello', 'Nahom: hi\nOther: bye',
+                    'Nahom: hi\rbye'):
+            self.assertEqual(ingress.ingest_transport(raw, 'irc'),
+                             '(HostInput Held InvalidIrcEnvelope)')
+        for raw in ('Nahom: ', 'Nahom: follow-up: ', 'Nahom: \ud800', 'a' * 4097):
+            self.assertEqual(ingress.ingest_transport(raw, 'irc'),
+                             '(HostInput Held InvalidInput)')
+
     def test_explicit_replace(self):
         for message in ('replace: summarize B', ' REPLACE: changed task ',
                         'replace: (send "not executable")'):
