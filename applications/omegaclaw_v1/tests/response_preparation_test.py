@@ -199,7 +199,7 @@ class ResponseQueueTests(unittest.TestCase):
         self.janus = Mock()
         self.janus.query_once.return_value = {
             'truth': True, 'Context': ['OperationContext', 'session', 2, 'frame'],
-            'Owner': '("session" "frame" NoCommitment "task")'}
+            'Owner': '("session" "frame" NoCommitment "task")', 'RequiredWork': []}
         self.provider = Mock()
         self.destination = {'channel': 'local', 'recipient': 'stdout'}
         self.observations = [read_outcome()]
@@ -231,7 +231,8 @@ class ResponseQueueTests(unittest.TestCase):
         self.janus.query_once.return_value = {'truth': False}
         self.assertEqual(self.queue(), '(ResponseNoAction MissingSession)')
         self.janus.query_once.return_value = {
-            'truth': True, 'Context': ['OperationContext', 'other-session', 2, 'frame'], 'Owner': '()'}
+            'truth': True, 'Context': ['OperationContext', 'other-session', 2, 'frame'],
+            'Owner': '()', 'RequiredWork': []}
         self.assertEqual(self.queue(), '(ResponseNoAction InvalidInput)')
         self.assertIsNone(host._pending_response)
         self.assertEqual(self.provider.mock_calls, [])
@@ -272,6 +273,13 @@ class ResponseQueueTests(unittest.TestCase):
         self.assertIsNone(host._pending_response)
         self.assertEqual(queue(requirements='GreetingNoTools'), '(ResponsePreparationQueued)')
         self.assertEqual(host._pending_response[-2], 'GreetingNoTools')
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_greeting_queue_cannot_waive_host_required_work(self):
+        self.janus.query_once.return_value['RequiredWork'] = ['Files']
+        self.assertEqual(host.queue_response_preparation('Offline', 'hello', [], self.destination,
+            requirements='GreetingNoTools'), '(ResponseNoAction RequiresTools)')
+        self.assertIsNone(host._pending_response)
         self.assertEqual(self.provider.mock_calls, [])
 
     def test_irc_answer_identity_uses_canonical_destination(self):

@@ -15,6 +15,8 @@
 !(bind! &host-response-input (new-state ()))
 ;; Transport provenance stays host-owned and joins response preparation ownership.
 !(bind! &host-transport-input (new-state ()))
+;; Host assessment is advisory eligibility, never send readiness or execution authority.
+!(bind! &host-task-requirements (new-state ()))
 ;; The selected key belongs to the retained decision. Only validated, consumed
 ;; respond success publishes the last accepted answer; it is not task completion.
 !(bind! &selected-answer-key (new-state ()))
@@ -90,6 +92,7 @@
           (change-state! &prepared-host-operation ())
           (change-state! &host-response-input ())
           (change-state! &host-transport-input ())
+          (change-state! &host-task-requirements ())
           (change-state! &selected-answer-key ())
           (change-state! &answered-operation-key ())
           (change-state! &applied-operation-decision ())

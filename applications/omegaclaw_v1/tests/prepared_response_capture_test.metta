@@ -49,6 +49,13 @@
 !(test (py-call (prepared_response_fixture.retain_read)) 1)
 !(py-call (host_config_fixture.capture_local_output))
 !(test (sread (py-call (prepared_response_fixture.queue "answer"))) (ResponsePreparationQueued))
+
+;; An actual admitted read becomes a retained requirement, never a no-tool shortcut.
+!(test (case (get-state &host-task-requirements) (
+    ((HostTaskRequirements $_ $_ (RequiredWork (Files))
+        (RequirementAssessment RequiresTools HostReadRequirement)) True)
+    ($_ False))) True)
+
 !(test (py-call (prepared_response_fixture.calls)) 0)
 ;; The normal bridge invokes preparation/capture before real admission/scoring.
 !(test (policyOutputOperation (motivationContextBlock)) respond)
@@ -66,6 +73,11 @@
 !(test (coreLoopDispatchCommand (get-state &reply-ticket) (selectedHostCommand))
    (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
 !(test (py-call (host_config_fixture.local_send_count)) 1)
+
+;; Host-retained Files blocks a new no-tool claim after the actual read/send path.
+!(test (sread (py-call (prepared_response_fixture.greeting_shortcut)))
+    (ResponseNoAction RequiresTools))
+
 ;; The real dispatch callback preserves acceptance and classifies this operation.
 !(bind! &accepted-reply (new-state (get-state &last-operation-outcome)))
 !(test (get-state &accepted-reply)

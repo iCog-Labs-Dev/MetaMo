@@ -1166,6 +1166,89 @@ replacement, native identity preservation, non-IRC colons and session reset.
 Conversational polling fixtures now feed transport-prefixed messages through
 Core's queue; providers and sockets remain doubled. No live channel is started.
 
+### Host-owned conversational requirements (F2.9b)
+
+Before automatic response preparation, v1 establishes requirements for the
+admitted request under the provisioned open commitment. This runs during
+operation capture when an operator-configured reply destination exists; a
+read-only profile does not start conversational classification. No classification
+installs permissions, bindings, a read plan, answer readiness or completion.
+
+`host_requirements.py` validates bounded proposals and returns one of:
+
+| Assessment | Meaning |
+| --- | --- |
+| `Conversational` | Eligible for a future no-tool preparation contract. General answer preparation remains F2.9c. |
+| `RequiresTools` | Retained work includes `Files`, `Browsing`, `CurrentData`, `PrivateData`, `Execution` or `ExternalAction`. No automatic conversational answer is queued. |
+| `NoAction` | Classification is uncertain, unavailable or invalid. No answer is queued and the task stays open. |
+
+Existing host work always takes precedence. An installed continuation and a
+successfully queued read-backed response retain `Files`; read queuing requires
+the same validated observed outcomes as before. Requirements accumulate across
+follow-ups for the same commitment. Replacement uses its new commitment identity;
+session reset clears the assessment. A follow-up is assessed with the host task
+summary, so a short new message cannot discard the original task.
+
+The old exact greeting check needs no classifier call. For other requests,
+conservative lexical hints can add external requirements but cannot grant
+conversational eligibility. With no known external work, the existing provider
+may propose `Conversation`, `External` or `Uncertain` plus a bounded `needs` list.
+The host validates the exact JSON shape, enums, size, duplicates and consistency,
+and unions requirements rather than allowing a proposal to remove them. Output
+containing commands, permissions, observations, answer text or completion fields
+is rejected. Ambiguous context must produce `Uncertain` or explicit no-action.
+
+Classification is heuristic: lexical hints may conservatively hold a request
+that is actually conversational, and a valid model proposal is not proof of
+semantic correctness. This assessment grants no execution authority. It cannot
+replace the existing answer validation, policy checks or evidence requirements.
+General responses remain disabled until F2.9c supplies their readiness contract.
+
+The provider receives only bounded request/summary text and requirement
+categories, with at most 512 output tokens; proposals exceeding 2048 UTF-8 bytes
+are rejected. Requests are limited to 4096 characters/16384 UTF-8 bytes. Provider
+errors return `NoAction ProviderUnavailable` without exception details or retries.
+
+`host_operations.py` publishes the host record:
+
+```metta
+(HostTaskRequirements OWNER CONTINUATION
+    (RequiredWork (Files))
+    (RequirementAssessment RequiresTools RequiredWork))
+```
+
+`OWNER` is the existing native session/frame/commitment/task/admitted-input/
+transport-provenance tuple. Publication rechecks that owner, the previous
+requirements, continuation, dispatch epoch and complete dispatch snapshot after
+inference. Stale results are discarded. Unchanged input reuses its assessment,
+including failures and uncertainty, without repeated classification calls.
+The existing greeting queue also rejects retained external work. Read-backed
+preparation remains available through its existing evidence path.
+
+Offline reproduction from the application directory:
+
+```bash
+python3 tests/host_requirements_test.py
+python3 tests/response_preparation_test.py
+python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
+```
+
+`tests/task_requirements_test.metta` runs eleven isolated scenarios using the real Core polling loop, ingress,
+provisioning and capture with provider/socket doubles. They cover classification,
+mixed/external work, uncertainty, malformed proposals, provider failure and
+follow-up/replacement/session/policy/route invalidation. General classification
+has no tool/send/completion effects. The read-capture regression verifies that
+actual observed read work is retained in the requirements record.
+Each scenario launches the shared loop fixture in a fresh interpreter and
+requires all six original checks to pass. The single entry point replaces the
+eleven separate wrappers without sharing mutable state between scenarios.
+
+Verification on 16 October 2026: all 92 MeTTa files, 108 relevant Python tests
+and four boundary guards passed. The focused read-capture fixture was rerun
+with an additional real-state greeting-shortcut rejection. No live services
+were called. Local suite output is `/tmp/omegaclaw-f29b-suite.log`; the commands
+and fixtures above are the reproducible evidence.
+
 ### Bounded greeting preparation
 
 After host ingress admits input and F2.8 provisions its open commitment,

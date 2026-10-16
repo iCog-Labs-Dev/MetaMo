@@ -45,6 +45,13 @@ def calls():
     return _calls
 
 
+# Example: actual queued/read evidence cannot be replaced with greeting readiness.
+def greeting_shortcut():
+    import host_operations
+    return host_operations.queue_response_preparation('Offline', 'hello', [],
+        {'channel': 'local', 'recipient': 'stdout'}, requirements='GreetingNoTools')
+
+
 def revoke_reply():
     import janus
     return int(janus.query_once('mm_dispatch_revoke([send,"observed reply"])')['truth'])

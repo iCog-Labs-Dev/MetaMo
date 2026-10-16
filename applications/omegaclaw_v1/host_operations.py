@@ -10,9 +10,12 @@ import hashlib
 
 import sys
 
+import host_requirements
+
 
 _pending_response = None
 _automatic_attempt = None
+_requirements_attempt = None
 
 
 def _irc_transport():
@@ -60,6 +63,65 @@ eval(['get-state','&host-transport-input'], _TransportInput),
 _Owner=[_Session,_Frame,_Commitment,_Task,_Input,_ResponseInput,_TransportInput], swrite(_Owner, Owner)
 """
 
+# Follow-ups retain the same commitment's work; replacements have a different owner.
+_REQUIREMENTS_CONTEXT = r"""
+eval(['get-state','&host-task-requirements'], Prior),
+eval(['get-state','&host-continuation'], Continuation),
+(Prior=['HostTaskRequirements',[_Session,_Frame,_Commitment|_],_,['RequiredWork',Inherited],_]
+ -> true ; Inherited=[]),
+(Continuation == [] -> RequiredWork=Inherited ; sort(['Files'|Inherited], RequiredWork)),
+(Prior=['HostTaskRequirements',_Owner,Continuation,['RequiredWork',RequiredWork],_]
+ -> Cached=true ; Cached=false)
+"""
+
+
+# Example: successful read queuing preserves Files for later no-tool checks.
+def _retain_read_requirement(owner):
+    import janus
+    result = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + ',' +
+        _REQUIREMENTS_CONTEXT + r''', sread(ExpectedOwner, _Expected), _Owner == _Expected,
+        sort(['Files'|RequiredWork], _Work),
+        _Value=['HostTaskRequirements',_Owner,Continuation,['RequiredWork',_Work],
+                ['RequirementAssessment','RequiresTools','HostReadRequirement']],
+        oc_dispatch_mutate(eval(['change-state!','&host-task-requirements',[quote,_Value]],_))
+    ))''', {'ExpectedOwner': owner})
+    return result.get('truth', False)
+
+
+# Example: publication rejects a provider result after input, policy or route changes.
+def _publish_requirements(current, result):
+    import janus
+    from host_dispatch_config import encode, record, Symbol
+    assessment = record('RequirementAssessment', Symbol(result['status']), Symbol(result['reason']))
+    response = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + ',' +
+        _REQUIREMENTS_CONTEXT + r''', sread(ExpectedOwner, _Expected), _Owner == _Expected,
+        oc_dispatch_epoch(Epoch), mm_dispatch_snapshot(_Snapshot),
+        term_string(_ExpectedSnapshot, Snapshot), _Snapshot == _ExpectedSnapshot,
+        sread(PriorSource, _ExpectedPrior), Prior == _ExpectedPrior,
+        sread(ContinuationSource, _ExpectedContinuation), Continuation == _ExpectedContinuation,
+        sread(WorkSource, _Work), sread(AssessmentSource, _Assessment),
+        _Value=['HostTaskRequirements',_Owner,Continuation,['RequiredWork',_Work],_Assessment],
+        oc_dispatch_mutate(eval(['change-state!','&host-task-requirements',[quote,_Value]],_))
+    ))''', dict(ExpectedOwner=current['Owner'], Epoch=current['Epoch'], Snapshot=current['Snapshot'],
+                PriorSource=current['PriorSource'], ContinuationSource=current['ContinuationSource'],
+                WorkSource=encode([Symbol(item) for item in result['required_work']]),
+                AssessmentSource=encode(assessment)))
+    return response.get('truth', False)
+
+
+# Example: idle cycles reuse even an uncertain assessment without another provider call.
+def _refresh_requirements(current, request):
+    global _requirements_attempt
+    if current['Cached'] == 'true':
+        prior = current['Prior']
+        return dict(status=prior[4][1], reason=prior[4][2], required_work=prior[3][1])
+    attempt = (current['Owner'], current['ContinuationSource'], tuple(current['RequiredWork']))
+    if attempt == _requirements_attempt:
+        return None
+    _requirements_attempt = attempt
+    result = host_requirements.assess_requirements(current['Provider'], request, current['RequiredWork'])
+    return result if _publish_requirements(current, result) else None
+
 
 def queue_response_preparation(provider, request, observations, destination, required_reads=None,
                                *, requirements=None, expected_owner=None):
@@ -88,11 +150,14 @@ def queue_response_preparation(provider, request, observations, destination, req
         validate_send_text(request)
         destination_metadata(destination)
         import janus
-        current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + '))')
+        current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + ',' +
+                                   _REQUIREMENTS_CONTEXT + '))')
         if not current.get('truth', False):
             return '(ResponseNoAction MissingSession)'
         if expected_owner is not None and current['Owner'] != expected_owner:
             return '(ResponseNoAction StaleInput)'
+        if requirements is not None and current['RequiredWork']:
+            return '(ResponseNoAction RequiresTools)'
         evidence = _response_evidence(request, current['Context'], observations, requirements)
         if requirements is not None and required_reads is not None:
             raise ConfigError('conflicting task requirements')
@@ -106,6 +171,8 @@ def queue_response_preparation(provider, request, observations, destination, req
             if not set(required_reads) <= {row['path'] for row in evidence}:
                 return '(ResponseNoAction MissingRequiredReads)'
         readiness = requirements or ('ReadEvidence' if required_reads is not None else '')
+        if requirements is None and not _retain_read_requirement(current['Owner']):
+            return '(ResponseNoAction StaleInput)'
         _pending_response = copy.deepcopy((provider, request, observations, destination,
                                            current['Owner'], readiness,
                                            _answer_key(current['Owner'], request, evidence, destination)))
@@ -114,18 +181,13 @@ def queue_response_preparation(provider, request, observations, destination, req
         return '(ResponseNoAction InvalidInput)'
 
 
-# Example: "Hello!" is supported; "hello, read /secret" is unsupported.
-def greeting_request(request):
-    return (type(request) is str and
-            request.strip().casefold().rstrip('!.?') in {'hi', 'hello', 'hey'})
-
-
 # Example: no-tool readiness is a separate host contract, never required_reads=[].
 def _response_evidence(request, context, observations, requirements):
     from host_dispatch_config import ConfigError, identifier
     if requirements is None:
         return _read_observations(context, observations)
-    if requirements != 'GreetingNoTools' or not greeting_request(request) or observations != []:
+    if (requirements != 'GreetingNoTools' or not host_requirements.greeting_request(request)
+            or observations != []):
         raise ConfigError('unsupported conversational requirements')
     if (type(context) is not list or len(context) != 4 or context[0] != 'OperationContext'
             or not context[1] or not context[3] or type(context[2]) is not int or context[2] < 1):
@@ -143,21 +205,32 @@ def _queue_automatic_response():
     destination = response_destination()
     if destination is None or _pending_response is not None:
         return
-    current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + r""",
+    current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + ',' +
+        _REQUIREMENTS_CONTEXT + r""",
         mm_dispatch_task_owner(_Commitment), mm_dispatch_owner(_Commitment),
         \+ mm_dispatch_busy,
         _ResponseInput=['HostResponseInput',_Frame,Kind,Message],
-        memberchk(Kind,['NewTask','Replace']),
+        memberchk(Kind,['NewTask','Replace','FollowUp']),
         _Commitment=['CommitmentSnapshot',_,_,_,'Open',Summary],
-        eval([provider], Provider)
+        eval([provider], Provider),
+        oc_dispatch_epoch(Epoch), mm_dispatch_snapshot(_Snapshot), term_string(_Snapshot, Snapshot),
+        swrite(Prior, PriorSource), swrite(Continuation, ContinuationSource)
     ))""")
     if not current.get('truth', False):
         return
     request = current['Message']
     if current['Kind'] == 'Replace':
         request = request.strip().partition(':')[2].strip()
-    if not greeting_request(request) or not greeting_request(current['Summary']):
-        return
+    if current['Kind'] == 'FollowUp' or request != current['Summary']:
+        request = current['Summary'] + '\n' + request
+    result = _refresh_requirements(current, request)
+    if result is None:
+        return '(ResponseNoAction StaleInput)'
+    if result['status'] != 'Conversational':
+        return '(ResponseNoAction ' + result['reason'] + ')'
+    if (not host_requirements.greeting_request(request)
+            or not host_requirements.greeting_request(current['Summary'])):
+        return '(ResponseNoAction ConversationalPreparationPending)'
     attempt = _answer_key(current['Owner'], request, [], destination)
     if attempt == _automatic_attempt:
         return
