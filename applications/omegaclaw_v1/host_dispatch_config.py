@@ -338,7 +338,7 @@ def startup_channel_diagnostics(config, channel, route=None):
             diagnostics.append('MissingReplyPolicy: explicitly configure send skill, generic and destination-specific permissions, and exact egress in the ' + name + ' scope; no grants added')
     if not any(row['skill'] == 'send' and row.get('candidate', 'respond') == 'respond'
                for row in config['commands']):
-        diagnostics.append('MissingReplyBinding: configure an exact respond/send command or queue a trusted prepared reply; automatic preparation supports only bounded greetings')
+        diagnostics.append('MissingReplyBinding: configure an exact respond/send command or queue a trusted prepared reply; automatic preparation requires a validated conversational task')
     return diagnostics
 
 

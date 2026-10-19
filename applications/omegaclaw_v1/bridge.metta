@@ -169,7 +169,7 @@
       ($instruction
          (if (== (get-state &operation-provider) ())
              (candidateInstruction $selectedCandidate)
-             "REQUIRED: Output exactly SELECTED_HOST_COMMAND inside a one-command list. If it is empty, output (). Do not substitute commands or arguments."))
+             "REQUIRED: Output exactly SELECTED_HOST_COMMAND as a single command line, without an outer list. If it is empty, output (). Do not substitute commands or arguments."))
       ($activeTask (frameRuntimeActiveTask $bundle))
       ($autonomyPhase (autonomyPhaseForCandidate $selectedCandidate))
       ($nextAutonomyPhase (get-state &autonomy-phase))
@@ -181,12 +181,11 @@
       (eval (py-str (
          "PROMPT: " (eval (getPrompt))
          " SKILLS: " (eval (getSkills))
-         " OUTPUT_FORMAT: Output a single valid MeTTa s-expression list of commands."
+         " OUTPUT_FORMAT: Output one MeTTa command expression per line, without an outer list. Core wraps these lines into a command list."
          " Example - one command:"
-         " ((send \"message\"))"
-         " Example - multiple commands:"
-         " ((query \"topic\") (send \"message\"))"
-         " Do not output conversational text outside the expression."
+         " (send \"message\")"
+         " For no action, output ()."
+         " Do not output Markdown fences or conversational text outside the command."
          " IMPORTANT: For code passed as a string argument, prefer single-quoted Python strings inside the code. Avoid quote characters that can terminate the surrounding MeTTa string."
          " LAST_SKILL_USE_RESULTS: "
             (eval (last_chars (frameRuntimeResults $bundle) (maxFeedback)))
@@ -207,7 +206,7 @@
          " CONSTITUTIONAL_MODE: " (eval (constitutionalMode))
          " MOTIVATION_INSTRUCTION: " $instruction
          " SELECTED_HOST_COMMAND: " (eval (repr (selectedHostCommand)))
-         " When SELECTED_HOST_COMMAND is nonempty, output exactly that command in a one-command list. Other commands are rejected."
+         " When SELECTED_HOST_COMMAND is nonempty, output exactly that command on one line without an outer list. Other commands are rejected."
          " META_MO_POLICY_OUTPUT: "
             (eval (string-safe (repr (get-state &last-meta-mo-policy-output))))
          " FRAME_REVIEW_HINTS: " (eval (string-safe (repr (lastFrameReviews))))

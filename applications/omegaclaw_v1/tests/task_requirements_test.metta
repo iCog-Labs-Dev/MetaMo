@@ -23,3 +23,35 @@
 !(test (py-call (task_requirements.run_scenario "policy")) 1)
 
 !(test (py-call (task_requirements.run_scenario "route")) 1)
+
+!(test (py-call (task_requirements.run_scenario "factual")) 1)
+
+!(test (py-call (task_requirements.run_scenario "casual")) 1)
+
+!(test (py-call (task_requirements.run_scenario "writing")) 1)
+
+!(test (py-call (task_requirements.run_scenario "rewrite")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_followup")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_replacement")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_session")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_policy")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_route")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_requirements")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_no_action")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_invalid")) 1)
+
+!(test (py-call (task_requirements.run_scenario "prepared_failure")) 1)
+
+!(test (py-call (task_requirements.run_scenario "before_dispatch")) 1)
+
+!(test (py-call (task_requirements.run_scenario "denied")) 1)
+
+!(test (py-call (task_requirements.run_scenario "uncertain_delivery")) 1)

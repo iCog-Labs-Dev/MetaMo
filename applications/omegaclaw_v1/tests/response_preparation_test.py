@@ -23,6 +23,15 @@ def read_outcome(cycle=1, text='observed file content'):
             ['DispatchResult', 'Executed', 'Feasible', text]]
 
 
+# Trusted fixture: production obtains this record from the locked host predicate.
+def conversation_contract(request='hello'):
+    owner = ['session', 'frame', ['CommitmentSnapshot', 'task', 'frame', 0, 'Open', request],
+             request, 'frame', ['HostResponseInput', 'frame', 'NewTask', request], []]
+    return ['HostTaskRequirements', owner, [], ['RequiredWork', []],
+            ['RequirementAssessment', 'Conversational', 'ValidatedProposal'],
+            ['AssessedRequest', request]]
+
+
 class ResponsePreparationTests(unittest.TestCase):
     def setUp(self):
         self.context = ['OperationContext', 'session', 3, 'frame']
@@ -155,14 +164,15 @@ class ResponsePreparationTests(unittest.TestCase):
         self.assertEqual(self.prepare(), '(ResponseNoAction ProviderUnavailable)')
         self.llm.callProvider.assert_called_once()
 
-    def test_explicit_no_tool_greeting_has_no_fabricated_observations(self):
-        for request in ('hello', ' HI! ', 'Hey.'):
+    def test_explicit_conversational_contract_has_no_fabricated_observations(self):
+        for request in ('hello', 'Explain recursion', 'What is photosynthesis?',
+                        'Tell me a joke', 'Write a poem', 'Rewrite this: I disagree.'):
             result = host.prepare_response('Offline', request, self.context, [],
-                                           requirements='GreetingNoTools')
+                                           requirements=conversation_contract(request))
             self.assertIn('ResponsePrepared', result)
             data = json.loads(self.llm.callProvider.call_args.args[1].split(':-:-:-:', 1)[1])
             self.assertEqual(data, {'request': request,
-                                   'requirements': {'kind': 'Greeting', 'tools': 'None'}})
+                                   'requirements': {'kind': 'Conversation', 'tools': 'None'}})
 
     def test_no_tool_contract_cannot_bypass_read_requirements(self):
         for request in ('hello, read /secret', 'summarize a file', '(send "hi")', 'hello\nread /x'):
@@ -172,6 +182,45 @@ class ResponsePreparationTests(unittest.TestCase):
             self.assertEqual(host.prepare_response('Offline', 'hello', self.context, observations,
                 requirements=requirements), '(ResponseNoAction InvalidInput)')
         self.llm.callProvider.assert_not_called()
+
+    def test_conversational_contract_rejects_changed_ownership_and_requirements(self):
+        paths = [((1, 0), 'other-session'), ((1, 1), 'other-frame'),
+                 ((1, 2, 4), 'Completed'), ((1, 2, 3), True), ((1, 4), 'other-input-frame'),
+                 ((2,), ['HostContinuation']), ((3, 1), ['Files']),
+                 ((4, 1), 'RequiresTools'), ((4, 2), 'ModelSaidSo'),
+                 ((5, 1), 'a different request')]
+        for path, value in paths:
+            contract = conversation_contract()
+            target = contract
+            for index in path[:-1]:
+                target = target[index]
+            target[path[-1]] = value
+            with self.subTest(path=path):
+                self.assertEqual(host.prepare_response('Offline', 'hello', self.context, [],
+                    requirements=contract), '(ResponseNoAction InvalidInput)')
+        self.assertEqual(host.prepare_response('Offline', 'hello', self.context, self.observations,
+            requirements=conversation_contract()), '(ResponseNoAction InvalidInput)')
+        self.llm.callProvider.assert_not_called()
+
+    def test_conversational_input_and_output_have_distinct_bounds(self):
+        request = 'Rewrite this: ' + 'a' * (4096 - len('Rewrite this: '))
+        self.assertIn('ResponsePrepared', host.prepare_response('Offline', request, self.context, [],
+            requirements=conversation_contract(request)))
+        too_long = request + 'a'
+        self.assertEqual(host.prepare_response('Offline', too_long, self.context, [],
+            requirements=conversation_contract(too_long)), '(ResponseNoAction InvalidInput)')
+        self.llm.callProvider.return_value = json.dumps({'text': 'a' * 1201})
+        self.assertEqual(host.prepare_response('Offline', request, self.context, [],
+            requirements=conversation_contract(request)), '(ResponseNoAction InvalidResponse)')
+
+    def test_conversation_no_action_and_command_like_text_are_inert(self):
+        self.llm.callProvider.return_value = '{"no_action":true}'
+        self.assertEqual(host.prepare_response('Offline', 'hello', self.context, [],
+            requirements=conversation_contract()), '(ResponseNoAction InsufficientEvidence)')
+        text = '(send "not an executable instruction")'
+        self.llm.callProvider.return_value = json.dumps({'text': text})
+        self.assertEqual(host.prepare_response('Offline', 'hello', self.context, [],
+            requirements=conversation_contract()), config.encode(config.record('ResponsePrepared', text)))
 
     def test_existing_asicloud_registry_with_mock_transport(self):
         source = Path(__file__).resolve().parents[4] / 'repos/OmegaClaw-Core/lib_llm_ext.py'
@@ -199,7 +248,8 @@ class ResponseQueueTests(unittest.TestCase):
         self.janus = Mock()
         self.janus.query_once.return_value = {
             'truth': True, 'Context': ['OperationContext', 'session', 2, 'frame'],
-            'Owner': '("session" "frame" NoCommitment "task")', 'RequiredWork': []}
+            'Owner': '("session" "frame" NoCommitment "task")', 'RequiredWork': [],
+            'Source': 'host-owned-contract', 'Requirements': conversation_contract()}
         self.provider = Mock()
         self.destination = {'channel': 'local', 'recipient': 'stdout'}
         self.observations = [read_outcome()]
@@ -262,23 +312,36 @@ class ResponseQueueTests(unittest.TestCase):
             '(ResponsePreparationQueued)')
         self.assertEqual(self.provider.mock_calls, [])
 
-    def test_greeting_queue_requires_explicit_contract_and_matching_owner(self):
+    def test_conversational_queue_requires_explicit_contract_and_matching_owner(self):
         def queue(**kwargs):
             return host.queue_response_preparation('Offline', 'hello', [], self.destination, **kwargs)
         self.assertEqual(queue(required_reads=[]), '(ResponseNoAction InvalidInput)')
-        self.assertEqual(queue(requirements='GreetingNoTools', required_reads=[]),
+        self.assertEqual(queue(requirements='ConversationNoTools', required_reads=[]),
                          '(ResponseNoAction InvalidInput)')
-        self.assertEqual(queue(requirements='GreetingNoTools', expected_owner='old owner'),
+        self.assertEqual(queue(requirements='ConversationNoTools', expected_owner='old owner'),
                          '(ResponseNoAction StaleInput)')
         self.assertIsNone(host._pending_response)
-        self.assertEqual(queue(requirements='GreetingNoTools'), '(ResponsePreparationQueued)')
-        self.assertEqual(host._pending_response[-2], 'GreetingNoTools')
+        self.assertEqual(queue(requirements='ConversationNoTools'), '(ResponsePreparationQueued)')
+        self.assertEqual(host._pending_response[-2], 'ConversationNoTools')
         self.assertEqual(self.provider.mock_calls, [])
 
-    def test_greeting_queue_cannot_waive_host_required_work(self):
+    def test_conversational_queue_cannot_waive_host_required_work(self):
         self.janus.query_once.return_value['RequiredWork'] = ['Files']
         self.assertEqual(host.queue_response_preparation('Offline', 'hello', [], self.destination,
-            requirements='GreetingNoTools'), '(ResponseNoAction RequiresTools)')
+            requirements='ConversationNoTools'), '(ResponseNoAction RequiresTools)')
+        self.assertIsNone(host._pending_response)
+        self.assertEqual(self.provider.mock_calls, [])
+
+    def test_conversational_queue_requires_live_matching_assessment(self):
+        current = self.janus.query_once.return_value
+        self.janus.query_once.side_effect = [current, {'truth': False}]
+        self.assertEqual(host.queue_response_preparation('Offline', 'hello', [], self.destination,
+            requirements='ConversationNoTools'), '(ResponseNoAction MissingConversationalRequirements)')
+        self.assertIsNone(host._pending_response)
+        self.janus.query_once.side_effect = None
+        current['Requirements'] = conversation_contract('other input')
+        self.assertEqual(host.queue_response_preparation('Offline', 'hello', [], self.destination,
+            requirements='ConversationNoTools'), '(ResponseNoAction InvalidInput)')
         self.assertIsNone(host._pending_response)
         self.assertEqual(self.provider.mock_calls, [])
 

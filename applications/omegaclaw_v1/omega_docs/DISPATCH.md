@@ -1178,7 +1178,7 @@ installs permissions, bindings, a read plan, answer readiness or completion.
 
 | Assessment | Meaning |
 | --- | --- |
-| `Conversational` | Eligible for a future no-tool preparation contract. General answer preparation remains F2.9c. |
+| `Conversational` | Eligible for the host-owned no-tool preparation contract described in F2.9c below. |
 | `RequiresTools` | Retained work includes `Files`, `Browsing`, `CurrentData`, `PrivateData`, `Execution` or `ExternalAction`. No automatic conversational answer is queued. |
 | `NoAction` | Classification is uncertain, unavailable or invalid. No answer is queued and the task stays open. |
 
@@ -1202,7 +1202,7 @@ Classification is heuristic: lexical hints may conservatively hold a request
 that is actually conversational, and a valid model proposal is not proof of
 semantic correctness. This assessment grants no execution authority. It cannot
 replace the existing answer validation, policy checks or evidence requirements.
-General responses remain disabled until F2.9c supplies their readiness contract.
+F2.9c below supplies answer readiness from the exact current assessment.
 
 The provider receives only bounded request/summary text and requirement
 categories, with at most 512 output tokens; proposals exceeding 2048 UTF-8 bytes
@@ -1214,7 +1214,8 @@ errors return `NoAction ProviderUnavailable` without exception details or retrie
 ```metta
 (HostTaskRequirements OWNER CONTINUATION
     (RequiredWork (Files))
-    (RequirementAssessment RequiresTools RequiredWork))
+    (RequirementAssessment RequiresTools RequiredWork)
+    (AssessedRequest "Explain recursion and read /tmp/a"))
 ```
 
 `OWNER` is the existing native session/frame/commitment/task/admitted-input/
@@ -1222,7 +1223,7 @@ transport-provenance tuple. Publication rechecks that owner, the previous
 requirements, continuation, dispatch epoch and complete dispatch snapshot after
 inference. Stale results are discarded. Unchanged input reuses its assessment,
 including failures and uncertainty, without repeated classification calls.
-The existing greeting queue also rejects retained external work. Read-backed
+The conversational queue also rejects retained external work. Read-backed
 preparation remains available through its existing evidence path.
 
 Offline reproduction from the application directory:
@@ -1233,64 +1234,92 @@ python3 tests/response_preparation_test.py
 python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
 ```
 
-`tests/task_requirements_test.metta` runs eleven isolated scenarios using the real Core polling loop, ingress,
+`tests/task_requirements_test.metta` runs isolated scenarios using the real Core polling loop, ingress,
 provisioning and capture with provider/socket doubles. They cover classification,
 mixed/external work, uncertainty, malformed proposals, provider failure and
-follow-up/replacement/session/policy/route invalidation. General classification
-has no tool/send/completion effects. The read-capture regression verifies that
+follow-up/replacement/session/policy/route invalidation. Classification alone
+grants no tool/send/completion authority; the F2.9c scenarios also exercise preparation and sending. The read-capture regression verifies that
 actual observed read work is retained in the requirements record.
 Each scenario launches the shared loop fixture in a fresh interpreter and
 requires all six original checks to pass. The single entry point replaces the
 eleven separate wrappers without sharing mutable state between scenarios.
 
-Verification on 16 October 2026: all 92 MeTTa files, 108 relevant Python tests
+Historical F2.9b verification on 16 October 2026: all 92 MeTTa files, 108 relevant Python tests
 and four boundary guards passed. The focused read-capture fixture was rerun
 with an additional real-state greeting-shortcut rejection. No live services
 were called. Local suite output is `/tmp/omegaclaw-f29b-suite.log`; the commands
 and fixtures above are the reproducible evidence.
 
-### Bounded greeting preparation
+### General conversational preparation (F2.9c)
 
 After host ingress admits input and F2.8 provisions its open commitment,
-operation capture can prepare a greeting automatically. The host recognizes
-only `hi`, `hello`, or `hey` (case insensitive, surrounding whitespace and
-trailing `!`, `.`, or `?` allowed). Both the admitted input and commitment
-summary must satisfy that contract. Follow-ups and other work are not silently
-converted into greetings. Automatic file planning and read-backed answers remain
-F3.1–F3.7; recovery questions remain F4.2.
+operation capture prepares an answer when F2.9b's exact current requirements
+record says `Conversational`, has no required external work and no continuation.
+This includes greetings, explanations, stable general knowledge, casual
+conversation, and writing or rewriting supplied text. The greeting fast path
+only avoids a classifier call; it no longer restricts answer preparation.
+Automatic file planning and read-backed answers remain F3.1–F3.7; generated
+recovery questions remain F4.2.
 
 Configure an explicit local/IRC `destination` and grant the required send skill,
-permissions, egress and command budget in both scopes. For automatic greeting
-replies, omit fixed `respond`/`send` entries from `commands` (an empty list is
-valid). Multiple commands for the same candidate still fail as ambiguous;
-automatic preparation does not override the configured command catalog or grants.
-The existing configured `provider` prepares bounded JSON text or explicit
-no-action. Preparation uses the existing provider interface and never opens a channel.
+permissions, egress and command budget in both scopes. For automatic replies,
+omit fixed `respond`/`send` entries from `commands` (an empty list is valid).
+Multiple commands for the same candidate still fail as ambiguous; automatic
+preparation does not override the configured command catalog or grants.
 
-The trusted queue accepts `requirements="GreetingNoTools"` with no observations,
-separately from required-read readiness. It publishes
-`(NoToolEvidenceReady Greeting TASK)` on the prepared operation. There are no
-fabricated read outcomes, and `required_reads=[]` remains invalid. The model
-cannot select requirements, install permissions, or supply an executable command.
-Only the catalog builds the exact send operation around validated response text.
+The trusted queue accepts `requirements="ConversationNoTools"` with no
+observations. It resolves this selector to the live host record through
+`mm_response_conversation_source`, checking its owner and exact `AssessedRequest`.
+A string token alone, another request's assessment, a stale owner, an unprovisioned
+commitment or retained external requirements cannot establish readiness.
+`GreetingNoTools` is no longer accepted. `required_reads=[]` remains invalid,
+and no-tool preparation cannot be combined with read observations or required reads.
 
-Preparation retains session, native frame, commitment, task and admitted-input
-identity; publication rechecks them together with the dispatch epoch, policy and
-route snapshot after the provider returns. New follow-up/replacement input or a
-session reset invalidates earlier preparation. One automatic attempt is made per
-owned input/destination, including no-action or rejected attempts, so idle turns
-do not repeatedly call the preparation provider. F1.9 still records accepted
-answers and prevents reuse. Core's separate command-generation provider may
-continue to be called while its polling loop is active.
+The configured provider receives only bounded conversational request text and
+`{"kind":"Conversation","tools":"None"}`. It may answer from that text and
+stable model knowledge or return explicit no-action for missing/unsupported
+context. Requests retain the classification limit of 4096 characters/16384 UTF-8
+bytes; output remains JSON containing only `text` (nonblank, at most 1200
+characters) or `no_action: true`, with a 1024-token provider limit and an 8192-byte
+raw response bound. Provider failure, malformed output and uncertain answers
+produce no-action. No provider text is evaluated as a command or treated as
+read, execution, delivery or completion evidence.
 
-The dispatch snapshot normalizes only runtime `next-wake-at`: Core updates that
-scheduling deadline between ticket capture and command generation. All other
-runtime fields, wake-loop budget, native frame state, policy, channel route and
-mutation epoch remain checked. OmegaClaw-Core is unchanged.
+Validated text is wrapped by the existing send catalog and publishes
+`(NoToolEvidenceReady Conversation TASK)` on the cycle-owned operation. It
+passes through ordinary operation admission, selection and Core dispatch.
+This marker establishes response readiness only; F2.10 still owns task completion.
 
-`tests/conversational_*_test.metta` exercise the actual Core polling loop with
-provider/socket doubles: one greeting submission, idle suppression, unsupported
-work, denied egress, malformed/no-action responses, session reset, and input
-changes during preparation or before dispatch. They do not directly queue
-preparation or dispatch commands. Conversational task completion remains F2.10;
-a successful greeting submission alone leaves the commitment open.
+Response capture and publication are named predicates in the existing
+`dispatch.pl`: `mm_response_capture` and `mm_response_publish`. Python calls
+them through Janus with data. They hold Core's dispatch mutex only around state
+capture or publication, never across provider inference. They recheck native
+session/frame/commitment/input ownership, the exact retained requirements,
+continuation, dispatch epoch, policy and route. The dispatch snapshot also
+retains requirements and continuation, so changes before invocation invalidate
+the selected command. Stale generation cannot overwrite newer input or work.
+
+There is one automatic attempt per unchanged owned input/destination, including
+no-action, provider failure or denied attempts. F1.9's accepted-answer key
+suppresses reuse. Uncertain transport submission does not cause automatic
+regeneration or resend. Core's separate command-generation provider may still
+be called while its polling loop is active.
+
+The existing `tests/task_requirements_test.metta` now includes 27 isolated
+classification/preparation scenarios with six underlying checks each. These
+exercise permitted explanation/factual/casual/writing/rewriting replies, mixed
+requests, malformed/no-action/failed providers, denied send policy, uncertain
+submission and changes during generation or before dispatch. Existing
+`tests/conversational_*_test.metta` retain the greeting regressions, and
+`tests/response_preparation_test.py` covers exact contracts, bounds and inert
+command-like output. No new test files were added for F2.9c.
+
+All scenarios use the actual Core loop and host boundary with provider/socket
+doubles. Successful conversational submissions leave commitments open pending
+F2.10; this is not a live-channel or task-completion acceptance claim.
+
+F2.9c verification on 16 October 2026: all 82 MeTTa test files (including the
+27 consolidated scenarios), 112 relevant Python tests and four boundary guards
+passed. The reduced file count reflects the earlier consolidation of eleven
+requirement wrappers into one entry point. Local suite output is
+`/tmp/omegaclaw-f29c-suite.log`. No live provider or IRC calls were made.

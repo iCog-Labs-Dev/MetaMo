@@ -53,7 +53,7 @@
 ;; An actual admitted read becomes a retained requirement, never a no-tool shortcut.
 !(test (case (get-state &host-task-requirements) (
     ((HostTaskRequirements $_ $_ (RequiredWork (Files))
-        (RequirementAssessment RequiresTools HostReadRequirement)) True)
+        (RequirementAssessment RequiresTools HostReadRequirement) (AssessedRequest "")) True)
     ($_ False))) True)
 
 !(test (py-call (prepared_response_fixture.calls)) 0)

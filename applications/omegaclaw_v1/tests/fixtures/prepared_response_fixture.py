@@ -49,7 +49,7 @@ def calls():
 def greeting_shortcut():
     import host_operations
     return host_operations.queue_response_preparation('Offline', 'hello', [],
-        {'channel': 'local', 'recipient': 'stdout'}, requirements='GreetingNoTools')
+        {'channel': 'local', 'recipient': 'stdout'}, requirements='ConversationNoTools')
 
 
 def revoke_reply():

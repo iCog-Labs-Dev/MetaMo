@@ -56,7 +56,7 @@ def provider(name, prompt, max_tokens, *args):
     if max_tokens == 1024:
         _calls += 1
         data = json.loads(prompt.split(':-:-:-:', 1)[1])
-        assert data == {'request': 'hello', 'requirements': {'kind': 'Greeting', 'tools': 'None'}}
+        assert data == {'request': 'hello', 'requirements': {'kind': 'Conversation', 'tools': 'None'}}
         provenance = janus.query_once('''
             eval(['get-state','&host-transport-input'], Transport),
             eval(['get-state','&operation-context'], ['OperationContext',Session,_,Frame]),
@@ -84,7 +84,7 @@ def provider(name, prompt, max_tokens, *args):
     result = janus.query_once('''eval([selectedHostCommand], Command), swrite(Command, Source),
         eval(['get-state','&prepared-host-operation'], Prepared)''')
     if result['Command']:
-        assert result['Prepared'][6] == ['NoToolEvidenceReady', 'Greeting', 'hello']
+        assert result['Prepared'][6] == ['NoToolEvidenceReady', 'Conversation', 'hello']
     return result['Source'] if result['Command'] else '()'
 
 

@@ -24,6 +24,41 @@ def greeting_request(request):
             request.strip().casefold().rstrip('!.?') in {'hi', 'hello', 'hey'})
 
 
+# Example: supplied prose can exceed send limits; generated answers remain bounded separately.
+def validate_request(request):
+    if (type(request) is not str or not request.strip() or len(request) > 4096
+            or '\x00' in request or len(request.encode('utf-8')) > 16384):
+        raise ValueError('invalid request')
+    return request
+
+
+# Example: a conversation needs its exact host assessment, never an empty read list alone.
+def conversation_evidence(request, context, observations, requirements):
+    validate_request(request)
+    if (type(requirements) is not list or len(requirements) != 6
+            or requirements[0] != 'HostTaskRequirements' or observations != []):
+        raise ValueError('missing conversational contract')
+    _, owner, continuation, work, result, assessed = requirements
+    if (type(context) is not list or len(context) != 4 or context[0] != 'OperationContext'
+            or type(context[2]) is not int or context[2] < 1
+            or type(owner) is not list or len(owner) != 7
+            or not context[1] or not context[3] or owner[:2] != [context[1], context[3]]):
+        raise ValueError('wrong conversational owner')
+    commitment = owner[2]
+    if (type(commitment) is not list or len(commitment) != 6
+            or commitment[0] != 'CommitmentSnapshot' or not commitment[1]
+            or commitment[2] != context[3] or type(commitment[3]) is not int or commitment[3] < 0
+            or commitment[4] != 'Open' or commitment[5] != owner[3]
+            or owner[4] != context[3]):
+        raise ValueError('invalid conversational commitment')
+    if (continuation != [] or work != ['RequiredWork', []]
+            or result not in (['RequirementAssessment', 'Conversational', 'BoundedGreeting'],
+                              ['RequirementAssessment', 'Conversational', 'ValidatedProposal'])
+            or assessed != ['AssessedRequest', request]):
+        raise ValueError('unapproved conversational request')
+    return []
+
+
 # Example: malformed requirements cannot become an empty/no-tool requirement set.
 def validate_work(work):
     if (type(work) is not list or len(work) > len(WORK_KINDS)
@@ -93,9 +128,7 @@ def assess_requirements(provider, request, existing_work):
     try:
         work = validate_work(existing_work)
         identifier(provider)
-        if (type(request) is not str or not request.strip() or len(request) > 4096
-                or '\x00' in request or len(request.encode('utf-8')) > 16384):
-            raise ValueError('invalid request')
+        validate_request(request)
     except (ConfigError, ValueError, TypeError, RecursionError):
         return assessment('NoAction', work, 'InvalidInput')
     work = sorted(set(work) | {kind for kind, pattern in _WORK_HINTS.items()

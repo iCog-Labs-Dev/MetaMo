@@ -39,12 +39,12 @@
 
 ;; Host-supplied required reads are checked before preparation. Readiness is
 ;; carried by that same cycle-owned command, never inferred from result text.
-;; Example: greeting readiness is explicit and never masquerades as read evidence.
+;; Example: conversational readiness is explicit and never masquerades as read evidence.
 (= (preparedResponseTask $readiness)
     (case $readiness
         (
             ((ReadEvidenceReady $task) $task)
-            ((NoToolEvidenceReady Greeting $task) $task)
+            ((NoToolEvidenceReady Conversation $task) $task)
             ($_ "")
         )
     )
