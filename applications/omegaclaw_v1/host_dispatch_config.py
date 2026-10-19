@@ -215,7 +215,7 @@ def binding(command, frame_id, allowed_files, destination=None):
 def build_config(value):
     """Build typed data only. No policy is inferred from model text or defaults."""
     keys(value, ("version", "frame_id", "allowed_files", "global", "frame", "commands"),
-         optional=("destination",))
+         optional=("destination", "completion_criterion"))
     if type(value["version"]) is not int or value["version"] != 1:
         raise ConfigError("unsupported host configuration version")
     # Optional for existing read-only configurations, but never default a
@@ -223,6 +223,7 @@ def build_config(value):
     # Declaring a destination alone must not add grants or executable work.
     if "destination" in value:
         destination_metadata(value["destination"])
+    completion_policy(value)
     frame_id = identifier(value["frame_id"])
     files = [allowed_file(path) for path in identifiers(value["allowed_files"])]
     global_scope = scope(value["global"], Symbol("Global"))
@@ -233,6 +234,24 @@ def build_config(value):
     if len(set(encoded_commands)) != len(encoded_commands):
         raise ConfigError("duplicate command binding")
     return encode(record("HostDispatchConfig", global_scope, frame_scope, bindings))
+
+
+# Example: older profiles remain open; IRC submission must be explicitly accepted.
+def completion_policy(value):
+    criterion = value.get('completion_criterion', 'Disabled')
+    allowed = ('Disabled', 'LocalAccepted', 'TransportSubmission', 'RecipientAcknowledged')
+    if criterion not in allowed:
+        raise ConfigError('unsupported completion_criterion')
+    if criterion == 'Disabled':
+        return encode(record('CompletionPolicy', Symbol(criterion), ''))
+    destination = value.get('destination')
+    if not destination:
+        raise ConfigError('completion requires an explicit destination')
+    metadata = dict(destination_metadata(destination)[1:])
+    if ((criterion == 'LocalAccepted' and metadata['channel'] != 'local')
+            or (criterion == 'TransportSubmission' and metadata['channel'] != 'irc')):
+        raise ConfigError('completion criterion does not match destination channel')
+    return encode(record('CompletionPolicy', Symbol(criterion), metadata['egress'][0]))
 
 
 def unique_object(pairs):
@@ -268,6 +287,7 @@ forall(member(['HostCommandBinding', _Command, _Request, _Operation], _Bindings)
        (ground(_Command-_Request-_Operation), eval([tpOperationValid, [quote, _Operation]], true))),
 oc_dispatch_mutate(transaction((
     mm_dispatch_set_policies(_Global, _Frame),
+    mm_completion_install(CompletionSource),
     retractall(mm_dispatch_binding(_, _, _)),
     forall(member(['HostCommandBinding', _Command, _Request, _Operation], _Bindings),
            mm_dispatch_register(_Command, _Request, _Operation)),
@@ -286,7 +306,7 @@ def provision(path):
     config = read_config(path)
     source = build_config(config)
     import janus
-    result = janus.query_once(_INSTALL, {"Source": source})
+    result = janus.query_once(_INSTALL, {"Source": source, "CompletionSource": completion_policy(config)})
     if not result.get("truth", False):
         raise ConfigError("host configuration rejected; load composition and initialize dispatch first")
     return encode(record("HostDispatchConfigured", config["frame_id"], len(config["commands"])))
@@ -505,7 +525,7 @@ def provision_startup(expected_owner=None):
                       ['PolicyScope', [target, ['FrameTarget', Expected]]|_], _],
         eval(['cfv2-root-current-frame-id'], Actual), Actual == Expected,
     ''' + owner_guard + _INSTALL + '))'
-    inputs = {'Source': source}
+    inputs = {'Source': source, 'CompletionSource': completion_policy(config)}
     if expected_owner is not None:
         inputs['OwnerSource'] = expected_owner
     if not janus.query_once(query, inputs).get('truth', False):

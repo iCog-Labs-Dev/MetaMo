@@ -26,6 +26,21 @@ class HostDispatchConfigTests(unittest.TestCase):
         for name in ("global", "frame"):
             self.value[name]["permissions"] = ["files.read", "files.read:" + str(self.file), "frames.read"]
 
+    def test_explicit_completion_criteria(self):
+        self.assertIn('Disabled', config.completion_policy(self.value))
+        local = dict(self.value, destination={'channel': 'local', 'recipient': 'stdout'})
+        self.assertEqual(config.completion_policy(dict(local, completion_criterion='LocalAccepted')),
+                         '(CompletionPolicy LocalAccepted "local:stdout")')
+        for criterion in (None, True, [], 'Success', 'TransportSubmission'):
+            with self.subTest(criterion=criterion), self.assertRaises(config.ConfigError):
+                config.build_config(dict(local, completion_criterion=criterion))
+        with self.assertRaises(config.ConfigError):
+            config.build_config(dict(self.value, completion_criterion='LocalAccepted'))
+        irc = dict(local, destination=dict(channel='irc', server='irc.example.org',
+                                          port=6667, recipient='#room'))
+        for criterion in ('TransportSubmission', 'RecipientAcknowledged'):
+            self.assertIn(criterion, config.completion_policy(dict(irc, completion_criterion=criterion)))
+
     def test_destination_derives_exact_requirements(self):
         destination = {"channel": "local", "recipient": "stdout"}
         self.assertEqual(config.destination_metadata(destination),

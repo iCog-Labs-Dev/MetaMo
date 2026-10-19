@@ -13,6 +13,7 @@ def configure(variant='allowed'):
         config['destination']['recipient'] = '#other'
     elif variant == 'read-only':
         config.pop('destination')
+        config.pop('completion_criterion', None)
         config['commands'] = []
         for name in ('global', 'frame'):
             config[name]['skills'] = []

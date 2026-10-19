@@ -1,4 +1,4 @@
-;; Pure F2.5 check. Inputs come from trusted host retention, never model output.
+;; Pure F2.5/F2.10 checks. Inputs come from trusted host retention, never model output.
 ;; Read/answer decisions are the exact required invocations, not just skill names.
 ;; Evidence pairs retain (owner-snapshot OperationOutcome) at admission time.
 
@@ -132,7 +132,7 @@
     )
 )
 
-;; Example: no reads is incomplete; conversational no-tool requirements belong to F2.10.
+;; Example: an empty read list remains incomplete; no-tool tasks use an explicit contract.
 (= (completionInputsReady $owner $context $reads $answer $evidence)
     (if (tpAllTrue ((== (get-metatype $reads) Expression)
                     (== (get-metatype $evidence) Expression)))
@@ -162,12 +162,57 @@
         (
             (((CommitmentSnapshot $id $frame $revision Open $summary)
               (OperationContext $session $cycle $frame)
+              (CompletionRequirements $current
+                (NoToolRequirements
+                  (HostTaskRequirements ($session $frame $current $task $frame $_input $_transport)
+                    () (RequiredWork ()) (RequirementAssessment Conversational $reason)
+                    (AssessedRequest $request)) $criterion) $answer))
+                (if (and (is-ground ($current $context $requirements $evidence))
+                         (completionOwnerValid $id $frame $revision $summary $session $cycle))
+                    (tpAllTrue ((tpContains (BoundedGreeting ValidatedProposal) $reason)
+                        (tpId $task) (tpId $request)
+                        (completionConversationObserved $current $context $criterion $answer $evidence)))
+                    False))
+            (((CommitmentSnapshot $id $frame $revision Open $summary)
+              (OperationContext $session $cycle $frame)
               (CompletionRequirements $current $reads $answer))
                 (if (and (is-ground ($current $context $requirements $evidence))
                          (completionOwnerValid $id $frame $revision $summary $session $cycle))
                     (completionInputsReady $current $context $reads $answer $evidence)
                     False
                 ))
+            ($_ False)
+        )
+    )
+)
+
+
+;; Example: an exact successful final answer is sufficient only for explicit no-tool work.
+(= (completionConversationObserved $owner $context $criterion $answer $evidence)
+    (case ($answer $evidence)
+        (
+            (((RequiredAnswer (OperationDecision $origin respond $command $ticket) $destination)
+              (($owner (OperationOutcome (OperationDecision $origin respond $command $ticket)
+                (attempted-command $command) Success
+                (DispatchResult Executed Feasible (SendObservation $destination $observation))))))
+                (tpAllTrue (
+                    (completionDecisionValid $context (OperationDecision $origin respond $command $ticket))
+                    (completionCommandValid send $command)
+                    (completionSendCriterion $criterion $destination $observation))))
+            ($_ False)
+        )
+    )
+)
+
+;; Example: transport submission is sufficient only when the host explicitly chooses it.
+;; No recipient acknowledgement contract exists yet; that criterion stays incomplete.
+(= (completionSendCriterion $criterion $destination $observation)
+    (case ($criterion $destination $observation)
+        (
+            ((LocalAccepted "local:stdout" Accepted) True)
+            ((TransportSubmission $destination (TransportSubmission Submitted Complete $done $total))
+                (and (== (py-call (host_operations.supported_irc_destination $destination)) 1)
+                     (completeSubmissionCounts $done $total)))
             ($_ False)
         )
     )

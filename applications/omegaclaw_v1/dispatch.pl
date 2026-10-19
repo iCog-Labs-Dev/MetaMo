@@ -2,6 +2,7 @@
 % setters or registration functions are exported to MeTTa. Provision exact
 % command/metadata bindings and typed policies from host configuration.
 :- dynamic mm_dispatch_binding/3, mm_dispatch_policies/2, mm_dispatch_owner/1.
+:- dynamic mm_completion_policy/2.
 
 % Example: an invoked command with unresolved effects prevents task handoff.
 mm_dispatch_busy :-
@@ -52,7 +53,9 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval(['get-state','&answered-operation-key'], Answered),
     eval(['get-state','&host-task-requirements'], Requirements),
     eval(['get-state','&host-continuation'], Continuation),
-    Raw=[channel-Channel,route-Route,prepared-Prepared,answered-Answered,
+    (mm_completion_policy(Criterion,Destination) -> Completion=[Criterion,Destination]
+     ; Completion=['Disabled',""]),
+    Raw=[completion-policy-Completion,channel-Channel,route-Route,prepared-Prepared,answered-Answered,
          requirements-Requirements,continuation-Continuation|FrameRaw].
 
 % Example: native identity stays data across the Python provider boundary.
@@ -186,6 +189,44 @@ mm_dispatch_gate(Intent, ['DispatchContext',Bundle,Global,Frame,_,_], Operation,
 mm_dispatch_execute(_, Command, Result) :- eval(Command,Result).
 
 initMetaMoDispatch(true) :-
+    retractall(mm_completion_policy(_,_)),
     oc_dispatch_configure(mm_dispatch_snapshot,mm_dispatch_resolve,mm_dispatch_gate,mm_dispatch_execute),
     oc_dispatch_configure_guard(mm_dispatch_enter_route,mm_dispatch_leave_route),
     retractall(oc_dispatch_intent(_)), assertz(oc_dispatch_intent(mm_dispatch_intent)).
+
+% Example: policy is installed atomically with the task's dispatch configuration.
+mm_completion_install(Source) :-
+    sread(Source, Policy), Policy=['CompletionPolicy',Criterion,Destination],
+    retractall(mm_completion_policy(_,_)),
+    assertz(mm_completion_policy(Criterion,Destination)).
+
+% Example: only a real selected, prepared, no-tool answer can publish completion.
+% Reuse Core's immutable ticket/result and F2.6 replay/transaction handling.
+completeHostConversation(Result) :-
+    with_mutex(omegaclaw_dispatch,
+      (mm_conversation_completion(Requirements,Evidence,Ticket)
+       -> term_string(Ticket,Key),
+          string_concat("conversation-outcome:",Key,Outcome),
+          string_concat("conversation-event:",Key,Event),
+          mm_commitment_complete(Outcome,Event,Requirements,Evidence,Result)
+       ; Result=['CompletionSkipped','NoMatchingConversation'])).
+
+% Example: classification alone, a clarification, or a predecessor ticket cannot close work.
+mm_conversation_completion(Requirements,[[Commitment,Outcome]],Ticket) :-
+    mm_completion_policy(Criterion,Destination), Criterion \== 'Disabled',
+    mm_response_context(Context,Owner), mm_response_conversation(Owner,Assessment),
+    Owner=[_,_,Commitment,Task|_],
+    eval(['get-state','&prepared-host-operation'],
+         ['PreparedHostOperation',Context,Commitment,Command,_,_,
+          ['NoToolEvidenceReady','Conversation',Task],_,_]),
+    eval(['get-state','&selected-operation-decision'],Decision),
+    Decision=['OperationDecision',Context,respond,Command,Ticket],
+    eval(['get-state','&last-operation-outcome'],Outcome),
+    Outcome=['OperationOutcome',Decision,['attempted-command',Command],'Success',Result],
+    eval([validateOperationOutcome,[quote,Outcome]],'OutcomeValid'),
+    oc_dispatch_result(Ticket,Command,Result),
+    oc_dispatch_ticket(Ticket,_,_,['DispatchContext',_,_,_,_,Raw]),
+    memberchk(requirements-Captured,Raw), Captured == Assessment,
+    memberchk(completion-policy-[Criterion,Destination],Raw),
+    Requirements=['CompletionRequirements',Commitment,
+        ['NoToolRequirements',Assessment,Criterion],['RequiredAnswer',Decision,Destination]].

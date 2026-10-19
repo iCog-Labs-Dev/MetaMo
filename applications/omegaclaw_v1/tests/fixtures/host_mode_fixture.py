@@ -33,7 +33,7 @@ def provision_variant(frame, variant):
         'HostDispatchConfig', host.scope(config['global'], host.Symbol('Global')),
         host.scope(config['frame'], host.record('FrameTarget', frame)),
         [] if variant == 'empty' else [row]))
-    return int(janus.query_once(host._INSTALL, {'Source': source}).get('truth', False))
+    return int(janus.query_once(host._INSTALL, {'Source': source, 'CompletionSource': host.completion_policy(config)}).get('truth', False))
 
 
 def revoke_failure_handler():

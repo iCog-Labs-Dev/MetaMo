@@ -1323,3 +1323,15 @@ F2.9c verification on 16 October 2026: all 82 MeTTa test files (including the
 passed. The reduced file count reflects the earlier consolidation of eleven
 requirement wrappers into one entry point. Local suite output is
 `/tmp/omegaclaw-f29c-suite.log`. No live provider or IRC calls were made.
+
+
+### Conversational completion configuration (F2.10)
+
+To close eligible IRC conversational tasks after complete socket submission, add
+`"completion_criterion": "TransportSubmission"` to the trusted host JSON profile.
+The IRC example includes this setting. Omission defaults to `Disabled`, preserving
+existing profiles. `LocalAccepted` is available for local stdout;
+`RecipientAcknowledged` keeps a task open because submission does not establish
+recipient acknowledgement. See [explicit conversational completion](COMMITMENTS.md#explicit-conversational-completion-f210)
+for evidence and lifecycle checks. Read requirements and clarification remain
+nonterminal under this no-tool rule.

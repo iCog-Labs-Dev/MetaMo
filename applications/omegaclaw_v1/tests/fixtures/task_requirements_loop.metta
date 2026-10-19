@@ -20,7 +20,7 @@
 !(fullLoopStartSession)
 !(py-call (task_requirements.install (requirementsScenario)))
 !(initializeHostStartup)
-!(configure maxSessionCycles 4)
+!(configure maxSessionCycles 6)
 !(configure maxNewInputLoops 3)
 !(configure maxWakeLoops 1)
 !(configure spamShield True)
@@ -33,7 +33,7 @@
 
 !(test (py-call (task_requirements.verified)) 1)
 
-!(test (get-state &task-open) True)
+!(test (py-call (task_requirements.verified_lifecycle)) 1)
 
 !(test (py-call (offline_guard.optional_modules_absent)) 1)
 

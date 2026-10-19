@@ -60,6 +60,8 @@ def ingest(message, transport=None):
         return '(HostInput Held InvalidInput)'
     import janus
     from host_dispatch_config import encode, record
+    # Core may queue a new frame before selecting it after a completed task.
+    # Correlate new input with the admitted identity, not the still-empty current slot.
     metadata = record('TransportInput', *(transport or ('host', '', message)))
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         sread(MessageSource, _Message), sread(KindSource, _Kind),
@@ -79,7 +81,9 @@ def ingest(message, transport=None):
          ; eval([hostIngressDecision, [quote,_Kind]], _Decision)),
         eval([hostIngressApply, [quote,_Decision], [quote,_Message]], _Result),
         (_Result = ['HostInput',_Status|_], _Status \== 'Held'
-         -> eval(['get-state','&cfv2-current-frame-id'], _Frame),
+         -> (_Kind == 'NewTask'
+             -> eval(['get-state','&cfv2-last-admitted-frame-id'], _Frame)
+             ; eval(['get-state','&cfv2-current-frame-id'], _Frame)),
             _Input=['HostResponseInput',_Frame,_Kind,_Message],
             _TransportInput=['HostTransportInput',_Session,_Frame,_Transport,_Message],
             eval(['get-state','&host-response-input'], _Previous),

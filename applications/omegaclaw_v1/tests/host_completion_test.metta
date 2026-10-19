@@ -90,3 +90,58 @@
 !(test (boundedCheck (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)) True)
 !(test (boundedCheck (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)) False)
 !(test (boundedCheck (1 1)) False)
+
+;; Explicit no-tool completion never treats an empty read set as sufficient.
+
+!(test (conversationReady LocalAccepted "local:stdout" Accepted) True)
+
+!(test (conversationReady TransportSubmission "irc:irc.example.org:6667:#room"
+    (TransportSubmission Submitted Complete 1 1)) True)
+
+!(test (conversationReady RecipientAcknowledged "irc:irc.example.org:6667:#room"
+    (TransportSubmission Submitted Complete 1 1)) False)
+
+!(test (conversationReady TransportSubmission "irc:irc.example.org:6667:#room"
+    (TransportSubmission Uncertain WriteUncertain 1 2)) False)
+
+!(test (conversationReady TransportSubmission "irc:irc.example.org:6667:#room"
+    (TransportSubmission Submitted Complete 0 0)) False)
+
+!(test (conversationReady TransportSubmission "irc:irc.example.org:6667:#room"
+    (TransportSubmission Submitted Complete 1 2)) False)
+
+!(test (conversationReady TransportSubmission "local:stdout"
+    (TransportSubmission Submitted Complete 1 1)) False)
+
+!(test (hostCompletionReady (completionOwner) (OperationContext "other" 3 frame)
+    (conversationRequirements LocalAccepted "local:stdout") ((ackEvidence))) False)
+
+!(test (hostCompletionReady (completionOwner) (completionContext)
+    (conversationRequirements LocalAccepted "local:stdout") ((ackEvidence) (ackEvidence))) False)
+
+!(test (hostCompletionReady (completionOwner) (completionContext)
+    (conversationRequirements LocalAccepted "local:stdout")
+    ((answerEvidence Unobserved "local:stdout" Accepted))) False)
+
+
+;; Retained tool work or continuation cannot become a no-tool completion contract.
+(= (blockedConversationRequirements $work $continuation)
+    (CompletionRequirements (completionOwner)
+        (NoToolRequirements
+            (HostTaskRequirements ("session" frame (completionOwner) "hello" frame () ())
+                $continuation (RequiredWork $work) (RequirementAssessment Conversational ValidatedProposal)
+                (AssessedRequest "hello")) LocalAccepted)
+        (requiredAnswer)))
+
+!(test (hostCompletionReady (completionOwner) (completionContext)
+    (blockedConversationRequirements (Files) ()) ((ackEvidence))) False)
+
+!(test (hostCompletionReady (completionOwner) (completionContext)
+    (blockedConversationRequirements () (PendingRead "/a")) ((ackEvidence))) False)
+
+!(test (completionConversationObserved (completionOwner) (completionContext) LocalAccepted
+    (RequiredAnswer (OperationDecision (OperationContext "session" 3 frame)
+        ask-clarification (send "A and B") (DispatchTicket "t3")) "local:stdout")
+    ((readEvidence (completionOwner) (OperationDecision (OperationContext "session" 3 frame)
+        ask-clarification (send "A and B") (DispatchTicket "t3")) Success
+        (SendObservation "local:stdout" Accepted)))) False)

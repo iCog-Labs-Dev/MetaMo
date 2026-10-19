@@ -20,7 +20,7 @@ def provision():
         'HostDispatchConfig', host.scope(config['global'], host.Symbol('Global')),
         host.scope(config['frame'], host.record('FrameTarget', config['frame_id'])),
         bindings))
-    result = janus.query_once(host._INSTALL, {'Source': source})
+    result = janus.query_once(host._INSTALL, {'Source': source, 'CompletionSource': host.completion_policy(config)})
     if not result.get('truth', False):
         raise RuntimeError('test host bindings rejected')
     return 1

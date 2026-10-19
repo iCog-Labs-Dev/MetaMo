@@ -344,4 +344,4 @@
               (ingestOperationOutcome
                  (OperationOutcome $decision (attempted-command $selectedCommand)
                     (operationOutcomeStatus $command $result) $result)) True)))
-      $result))
+      (progn (eval (completeHostConversation)) $result)))

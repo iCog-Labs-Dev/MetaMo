@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "completion_criterion": "TransportSubmission",
   "frame_id": "current-frame",
   "allowed_files": [],
   "destination": {

@@ -78,3 +78,31 @@
 !(test (commitmentSnapshot) (completionOwner))
 !(test (commitmentEvents) ())
 !(test (commitmentFixtureOutcomes) ((CompletionOutcome "completion-outcome" "task" 0 Failed)))
+
+
+;; No-tool publication uses the same atomic completion and replay boundary.
+!(commitmentFixtureReset)
+!(commitmentFixtureOpen "task" frame "Read A and B")
+!(change-state! &operation-context (completionContext))
+
+!(test (commitmentFixtureComplete "no-tool-outcome" "no-tool-event"
+    (conversationRequirements RecipientAcknowledged "local:stdout") ((ackEvidence)))
+    (CommitmentRejected IncompleteEvidence))
+
+!(test (commitmentFixtureComplete "no-tool-outcome" "no-tool-event"
+    (conversationRequirements LocalAccepted "local:stdout") ((ackEvidence)))
+    (CommitmentApplied "no-tool-event" "task" Completed 1))
+
+!(test (commitmentFixtureComplete "no-tool-outcome" "no-tool-event"
+    (conversationRequirements LocalAccepted "local:stdout") ((ackEvidence)))
+    (CommitmentApplied "no-tool-event" "task" Completed 1))
+
+!(test (size-atom (commitmentEvents)) 1)
+
+!(commitmentFixtureOpen "successor" frame "Another conversation")
+
+!(test (commitmentFixtureComplete "no-tool-outcome" "no-tool-event"
+    (conversationRequirements LocalAccepted "local:stdout") ((ackEvidence)))
+    (CommitmentApplied "no-tool-event" "task" Completed 1))
+
+!(test (commitmentSnapshot) (CommitmentSnapshot "successor" frame 0 Open "Another conversation"))

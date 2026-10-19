@@ -260,8 +260,8 @@ and answer, without extra records.
 
 F2.5 supports the acknowledged local read-and-answer slice. IRC transport
 submission is not recipient acknowledgement and remains incomplete here.
-Explicit transport-specific completion criteria and declared no-tool tasks are
-F2.10; empty required reads cannot bypass this predicate. Registering an outcome
+Explicit transport-specific completion criteria for declared no-tool tasks use
+the F2.10 contract below; empty required reads cannot bypass this predicate. Registering an outcome
 and publishing `Completed` use F2.6 below; the prepare hook completes the matching
 Core frame through F2.7.
 
@@ -306,10 +306,10 @@ It may return an old receipt after another task becomes current, but cannot muta
 that successor. A new event attempting to complete a cancelled, superseded or
 already completed owner is stale.
 
-This implements trusted publication from supplied retained evidence. It does not
-yet automatically collect evidence or invoke publication from the polling loop;
-production read-evidence gathering remains F3.7. Core frame completion uses
-F2.7 below, and IRC/no-tool completion criteria remain F2.10. The normal existing
+This implements trusted publication from supplied retained evidence. Production
+read-evidence gathering remains F3.7. F2.10 automatically publishes eligible
+no-tool conversational completion after dispatch. Core frame completion uses
+F2.7 below. The normal existing
 `refreshTaskCommitment` mirrors a published terminal record into task state.
 
 `host_completion_publication_test.metta` runs the real pure predicate and store
@@ -457,3 +457,49 @@ Host tests cover the three terminal events, missing reasons/evidence, uncertain
 outcomes, stale revisions, replay conflicts, atomic replacement, old completion
 events, and dispatch invalidation. Adapter tests exercise real decay/writeback,
 homeostasis, Sleep, result text, and publication without implicit termination.
+
+
+## Explicit conversational completion (F2.10)
+
+Host configuration may declare `completion_criterion` alongside `destination`:
+
+- `Disabled` (default): retain existing reply-without-completion behavior.
+- `LocalAccepted`: require `SendObservation "local:stdout" Accepted`.
+- `TransportSubmission`: require a canonical IRC destination and a complete,
+  positive-count `TransportSubmission Submitted Complete N N` observation.
+- `RecipientAcknowledged`: transport submission is insufficient. No recipient
+  acknowledgement adapter exists yet, so the task remains open.
+
+The IRC example profile explicitly selects `TransportSubmission`. Existing local
+configuration files are not migrated automatically. This setting grants no send
+permission and cannot waive file/tool work. Destination/channel mismatches or
+unknown criteria are rejected during configuration validation.
+
+The pure `hostCompletionReady` predicate accepts a separate explicit contract:
+
+```metta
+(CompletionRequirements $openOwner
+    (NoToolRequirements $hostTaskRequirements $criterion)
+    (RequiredAnswer $respondDecision $destination))
+```
+
+The host assessment must belong to the same session, native frame and exact open
+commitment revision, with no required work or continuation and a validated
+conversational assessment. Exactly one matching successful final answer is
+required. Clarification, denied/uncertain sends, wrong destinations, stale owners,
+and duplicate evidence remain incomplete. The original nonempty read contract
+and its local-answer criterion are unchanged.
+
+After dispatch outcome ingestion, `completeHostConversation` in `dispatch.pl`
+checks the current prepared no-tool operation, current assessment, selected
+respond decision, and Core's immutable ticket/result. The assessment and completion
+policy must match those captured in the ticket before dispatch. Publication uses
+`mm_commitment_complete/5` (F2.6), with stable event/outcome IDs derived from that
+ticket. It does not generate another answer or invoke a channel. F2.7 archives the
+matching completed frame on the next prepare step; ordinary task-state projection
+then allows idle Sleep. Replay cannot close another commitment.
+
+Existing completion/publication tests cover the pure contract and replay; the
+consolidated task-requirements fixture exercises automatic completion, a second
+request in the same session, acknowledgement-required holding, stale input,
+denied sends, uncertain transport and retained tool requirements through Core.

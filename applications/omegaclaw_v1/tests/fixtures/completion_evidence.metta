@@ -16,3 +16,17 @@
 (= (ackEvidence) (answerEvidence Success "local:stdout" Accepted))
 (= (allEvidence) ((aEvidence) (bEvidence) (ackEvidence)))
 (= (ready $evidence) (hostCompletionReady (completionOwner) (completionContext) (requirements) $evidence))
+
+;; Explicit host no-tool contract shared by pure and publication checks.
+(= (conversationRequirements $criterion $destination)
+    (CompletionRequirements (completionOwner)
+        (NoToolRequirements
+            (HostTaskRequirements ("session" frame (completionOwner) "hello" frame () ())
+                () (RequiredWork ()) (RequirementAssessment Conversational ValidatedProposal)
+                (AssessedRequest "hello")) $criterion)
+        (RequiredAnswer (answerDecision) $destination)))
+
+(= (conversationReady $criterion $destination $observation)
+    (hostCompletionReady (completionOwner) (completionContext)
+        (conversationRequirements $criterion $destination)
+        ((answerEvidence Success $destination $observation))))

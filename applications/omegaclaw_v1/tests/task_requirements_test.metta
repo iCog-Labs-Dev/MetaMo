@@ -55,3 +55,18 @@
 !(test (py-call (task_requirements.run_scenario "denied")) 1)
 
 !(test (py-call (task_requirements.run_scenario "uncertain_delivery")) 1)
+
+
+!(test (py-call (task_requirements.run_scenario "completion")) 1)
+
+!(test (py-call (task_requirements.run_scenario "acknowledgement")) 1)
+
+!(test (py-call (task_requirements.run_scenario "completion_second")) 1)
+
+!(test (py-call (task_requirements.run_scenario "completion_uncertain")) 1)
+
+!(test (py-call (task_requirements.run_scenario "completion_denied")) 1)
+
+!(test (py-call (task_requirements.run_scenario "completion_mixed")) 1)
+
+!(test (py-call (task_requirements.run_scenario "completion_stale")) 1)
