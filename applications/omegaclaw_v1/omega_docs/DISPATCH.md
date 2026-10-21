@@ -1189,18 +1189,19 @@ follow-ups for the same commitment. Replacement uses its new commitment identity
 session reset clears the assessment. A follow-up is assessed with the host task
 summary, so a short new message cannot discard the original task.
 
-The old exact greeting check needs no classifier call. For other requests,
-conservative lexical hints can add external requirements but cannot grant
-conversational eligibility. With no known external work, the existing provider
-may propose `Conversation`, `External` or `Uncertain` plus a bounded `needs` list.
+The exact greeting check needs no classifier call. For other requests with no
+known external work, the provider classifies the meaning of the request rather
+than applying keyword vetoes. For example, explaining search engines or asking
+“How are you today?” can be conversational, while requesting a web search or
+current weather requires external work. The provider may propose `Conversation`, `External` or `Uncertain` plus a bounded `needs` list.
 The host validates the exact JSON shape, enums, size, duplicates and consistency,
 and unions requirements rather than allowing a proposal to remove them. Output
 containing commands, permissions, observations, answer text or completion fields
 is rejected. Ambiguous context must produce `Uncertain` or explicit no-action.
 
-Classification is heuristic: lexical hints may conservatively hold a request
-that is actually conversational, and a valid model proposal is not proof of
-semantic correctness. This assessment grants no execution authority. It cannot
+Classification is heuristic: a valid model proposal is not proof of semantic
+correctness. New external requirements depend on the model assessment; existing
+host requirements remain binding regardless of the wording of a follow-up. This assessment grants no execution authority. It cannot
 replace the existing answer validation, policy checks or evidence requirements.
 F2.9c below supplies answer readiness from the exact current assessment.
 

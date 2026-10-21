@@ -70,3 +70,9 @@
 !(test (py-call (task_requirements.run_scenario "completion_mixed")) 1)
 
 !(test (py-call (task_requirements.run_scenario "completion_stale")) 1)
+
+!(test (py-call (task_requirements.run_scenario "today")) 1)
+
+!(test (py-call (task_requirements.run_scenario "search")) 1)
+
+!(test (py-call (task_requirements.run_scenario "run")) 1)

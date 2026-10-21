@@ -53,6 +53,10 @@ def provider(name, prompt, max_tokens, *args):
     import janus
     global _calls
     assert name == 'Offline'
+    if max_tokens == 512:
+        data = json.loads(prompt.split(':-:-:-:', 1)[1])
+        assert 'read /secret' in data['request']
+        return '{"kind":"External","needs":["Files"]}'
     if max_tokens == 1024:
         _calls += 1
         data = json.loads(prompt.split(':-:-:-:', 1)[1])

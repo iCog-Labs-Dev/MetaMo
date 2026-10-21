@@ -4,11 +4,15 @@ import json
 _scenario = ''
 _calls = 0
 _preparations = 0
+_changed_request_calls = 0
 _request = ''
 _changed = False
 _completion_scenario = ''
 _REQUESTS = {
     'conversation': 'Explain recursion',
+    'today': 'How are you today?',
+    'search': 'Explain how search engines work.',
+    'run': 'Why do people run marathons?',
     'factual': 'What is photosynthesis?',
     'casual': 'Tell me a joke',
     'writing': 'Write a short poem about rain',
@@ -17,6 +21,9 @@ _REQUESTS = {
 }
 _ANSWERS = {
     'conversation': 'Recursion solves a problem by calling itself on smaller instances.',
+    'today': 'I am ready to help. How are you?',
+    'search': 'Search engines index pages and rank relevant results for a query.',
+    'run': 'People run marathons for fitness, personal challenges, and community.',
     'factual': 'Photosynthesis converts light energy into chemical energy.',
     'casual': 'Why did the bicycle fall over? It was two-tired.',
     'writing': 'Rain taps softly on the pane, a quiet song returns again.',
@@ -75,10 +82,11 @@ def run_scenario(scenario):
 def install(scenario):
     import conversational_response as conversation
     import lib_llm_ext
-    global _scenario, _calls, _preparations, _request, _changed, _completion_scenario
+    global _scenario, _calls, _preparations, _request, _changed, _completion_scenario, _changed_request_calls
     _completion_scenario = scenario if scenario in _COMPLETION_CASES else ""
     scenario = _COMPLETION_CASES.get(scenario, scenario)
     _scenario, _calls, _preparations, _changed = scenario, 0, 0, False
+    _changed_request_calls = 0
     conversation.install('denied' if scenario == 'denied' else 'unsupported')
     if _completion_scenario:
         import os
@@ -126,7 +134,7 @@ def mutate_during_classification(scenario):
 # Example: proposals and answers use distinct bounded provider contracts.
 def provider(name, prompt, max_tokens, *args):
     import janus
-    global _calls, _changed, _request
+    global _calls, _changed, _request, _changed_request_calls
     assert name == 'Offline'
     if max_tokens == 1024:
         return prepare_answer(prompt)
@@ -136,13 +144,19 @@ def provider(name, prompt, max_tokens, *args):
             mutate_during_classification('followup')
         result = janus.query_once('eval([selectedHostCommand], Command), swrite(Command,Source)')
         return result['Source'] if result['Command'] else '()'
+    data = json.loads(prompt.split(':-:-:-:', 1)[1])
+    if data['request'] != _request and 'read /secret' in data['request']:
+        _changed_request_calls += 1
+        assert _changed_request_calls == 1, 'idle cycles retried changed-request classification'
+        return '{"kind":"External","needs":["Files"]}'
     _calls += 1
     assert _calls <= (2 if _completion_scenario == 'completion_second' else 1), 'idle cycles retried classification'
-    data = json.loads(prompt.split(':-:-:-:', 1)[1])
     if _completion_scenario == 'completion_second' and _calls == 2:
         _request = 'Explain recursion again'
     assert data == {'request': _request, 'existing_requirements': []}
     mutate_during_classification(_scenario)
+    if _scenario == 'mixed':
+        return '{"kind":"External","needs":["Files"]}'
     if _scenario == 'uncertain':
         return '{"kind":"Uncertain","needs":[]}'
     if _scenario == 'invalid':
@@ -179,7 +193,7 @@ def verified():
     import janus
     import irc_routing_fixture
     count = 2 if _completion_scenario == 'completion_second' else 1
-    assert _calls == (0 if _scenario == 'mixed' else count), _calls
+    assert _calls == count, _calls
     prepared = _scenario in _ANSWERS or _scenario.startswith('prepared_') or _scenario in (
         'before_dispatch', 'denied', 'uncertain_delivery')
     assert _preparations == int(prepared) * count, (_scenario, _preparations)

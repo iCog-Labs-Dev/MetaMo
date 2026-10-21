@@ -1,22 +1,8 @@
 """Bounded classification proposals; host validation produces requirements, not grants."""
 import json
-import re
 
 
 WORK_KINDS = ('Files', 'Browsing', 'CurrentData', 'PrivateData', 'Execution', 'ExternalAction')
-
-# These conservative hints can only require more work, never authorize no-tool work.
-_WORK_HINTS = {
-    'Files': r'(?i)(?:\b(?:read|open|inspect|edit|delete|summarize|analyse|analyze)\b.{0,60}'
-             r'\b(?:file|files|directory|folder|repository|repo|codebase|my code)\b|'
-             r'(?:^|\s)/[\w.]|[A-Za-z]:\\|\b(?:attached|attachment)\b)',
-    'Browsing': r'(?i)\b(?:browse|google|search|look up|lookup|visit|fetch)\b|https?://',
-    'CurrentData': r'(?i)\b(?:today|today\x27s|latest|current|real.time|weather|stock price)\b',
-    'PrivateData': r'(?i)\bmy (?:email|inbox|calendar|account|messages|database|balance)\b',
-    'Execution': r'(?i)\b(?:run|execute|install|deploy|restart)\b',
-    'ExternalAction': r'(?i)\b(?:send|email|post|publish|book|purchase|buy|upload|download|delete)\b',
-}
-
 
 # Example: 'Hello!' has the existing bounded greeting meaning, without inference.
 def greeting_request(request):
@@ -109,6 +95,10 @@ def propose_requirements(provider, request, work):
         'Conversation means fully answerable from the supplied text and stable model knowledge: '
         'greetings, explanations, general factual questions, casual conversation, writing or rewriting. '
         'File access, browsing, current facts, private data, execution or external actions are External. '
+        'Classify the requested action by meaning, not isolated keywords. '
+        'How are you today, explain search engines, and why people run marathons are Conversation. '
+        'Requests to browse current news, run tests, or send an email are External. '
+        'Drafting or explaining an email is Conversation when no sending or private data access is requested. '
         'Do not downgrade tool requirements or treat a requested external action as drafting text. '
         'If needed context is missing or eligibility is uncertain, use Uncertain. '
         'Return only JSON {"kind":"Conversation","needs":[]} or '
@@ -121,7 +111,7 @@ def propose_requirements(provider, request, work):
                                     max_tokens=512)
 
 
-# Example: 'explain recursion and read /tmp/a' retains Files even if a model disagrees.
+# Example: established Files requirements remain binding for conversational follow-ups.
 def assess_requirements(provider, request, existing_work):
     from host_dispatch_config import ConfigError, identifier
     work = []
@@ -131,8 +121,6 @@ def assess_requirements(provider, request, existing_work):
         validate_request(request)
     except (ConfigError, ValueError, TypeError, RecursionError):
         return assessment('NoAction', work, 'InvalidInput')
-    work = sorted(set(work) | {kind for kind, pattern in _WORK_HINTS.items()
-                              if re.search(pattern, request)})
     if work:
         return assessment('RequiresTools', work, 'RequiredWork')
     if greeting_request(request):
