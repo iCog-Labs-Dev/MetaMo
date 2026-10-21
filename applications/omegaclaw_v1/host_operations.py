@@ -411,6 +411,71 @@ def new_session():
     return '"' + str(uuid4()) + '"'  # Preserve String type through PeTTa's Python bridge.
 
 
+# Example: ./notes.txt resolves against Core's working directory, never by basename search.
+def resolve_read_reference(reference):
+    import os
+    from host_dispatch_config import ConfigError, encode, identifier
+    try:
+        identifier(reference)
+        path = os.path.abspath(reference)
+        identifier(path)
+        path.encode('utf-8')
+        return encode(path)
+    except (ConfigError, ValueError, TypeError, OSError):
+        return '""'
+
+
+# Locked access to the existing Prolog-backed host catalog. Internal variables
+# stay private to Janus; only the serialized admission result crosses the boundary.
+_READ_PLAN_ADMISSION = r'''
+with_mutex(omegaclaw_dispatch, (
+    catch((sread(PlanIdSource, _PlanId), sread(StepsSource, _Steps)), _, fail),
+    eval([hostPrepareContinuation, [quote,_PlanId], [quote,_Steps]], _Prepared),
+    (_Prepared = ['ContinuationPrepared',_PlanId,_Steps]
+     -> (oc_dispatch_hooks(mm_dispatch_snapshot, mm_dispatch_resolve,
+                           mm_dispatch_gate, mm_dispatch_execute),
+         mm_dispatch_owner_current,
+         commitmentSnapshot(['CommitmentSnapshot',_,_OwnerFrame,_,'Open',_]),
+         eval(['get-state','&cfv2-current-frame-id'], _OwnerFrame),
+         mm_dispatch_policies(_Global, _Frame),
+         eval([frameStateForMetaMo], _Bundle), _Bundle=['FrameStateBundle'|_]
+         -> findall(['HostCommandBinding',_Command,_Request,_Operation],
+                    mm_dispatch_binding(_Command,_Request,_Operation), _Bindings),
+            length(_Bindings, _Count),
+            (_Count =< 128
+             -> eval([continuationAdmitReads, [quote,_PlanId], [quote,_Steps],
+                      [quote,_Bindings], [quote,_Bundle], [quote,_Global], [quote,_Frame]], _Result)
+             ; _Result=['ContinuationRejected','InvalidCatalog'])
+         ; _Result=['ContinuationRejected','MissingAdmissionContext'])
+     ; _Result=['ContinuationRejected','InvalidPlan']),
+    swrite(_Result, Text)
+))
+'''
+
+
+# Example: admission checks all proposed reads without installing a continuation or ticket.
+def admit_read_plan(plan_id, steps_source):
+    """Trusted F3.3 bridge; serialized admission is advisory until installation.
+
+    Relative references use the host cwd. No tilde/glob expansion or symlink
+    following is performed; only an exact installed canonical binding can match.
+    Future installation and dispatch must revalidate current policy/ownership.
+    """
+    import janus
+    from host_dispatch_config import ConfigError, encode, identifier
+    try:
+        identifier(plan_id)
+        if type(steps_source) is not str or len(steps_source.encode('utf-8')) > 32768:
+            return '(ContinuationRejected InvalidPlan)'
+        # The existing Prolog-backed catalog requires this locked bridge. All
+        # plan traversal and policy decisions remain in MeTTa, not Python code.
+        result = janus.query_once(_READ_PLAN_ADMISSION,
+                                  {'PlanIdSource': encode(plan_id), 'StepsSource': steps_source})
+        return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidPlan)'
+    except (ConfigError, ValueError, TypeError, RecursionError):
+        return '(ContinuationRejected InvalidPlan)'
+
+
 def capture():
     import janus
     _queue_automatic_response()

@@ -38,6 +38,53 @@ def inert_steps():
     return host_requirements.construct_read_steps(proposal)
 
 
+# Example: cwd-relative references resolve to the exact catalog command, retaining order.
+def relative_steps():
+    import os
+    paths = [os.path.relpath(command[1]) for command in reversed(_commands)]
+    proposal = host_requirements.read_request_result('Proposed', paths, 'ValidatedProposal')
+    return host_requirements.construct_read_steps(proposal)
+
+
+# Example: different spellings of the same file must not create duplicate reads.
+def aliased_steps():
+    from pathlib import Path
+    path = Path(_commands[0][1])
+    paths = [str(path), str(path.parent) + '/./' + path.name]
+    return host_requirements.construct_read_steps(
+        host_requirements.read_request_result('Proposed', paths, 'ValidatedProposal'))
+
+
+# Example: an unconfigured symlink cannot borrow its target's catalog binding.
+def symlink_steps():
+    from pathlib import Path
+    link = Path(_commands[0][1]).with_name('alias.txt')
+    link.symlink_to(_commands[0][1])
+    return host_requirements.construct_read_steps(
+        host_requirements.read_request_result('Proposed', [str(link)], 'ValidatedProposal'))
+
+
+# Example: each denial is installed through the real configuration API, then restored.
+def admission_config(scope, variant):
+    data = host.read_config(_config_path)
+    if variant == 'permission':
+        data[scope]['permissions'].remove('files.read:' + _commands[1][1])
+    elif variant == 'skill':
+        data[scope]['skills'].remove('read-file')
+    elif variant == 'budget':
+        data[scope]['budgets'][0]['available'] = 0
+    elif variant == 'constraint':
+        data[scope]['constraints'].append(['DenySkill', 'read-file'])
+    elif variant == 'unsupported':
+        data['commands'] = [row for row in data['commands'] if row['arguments'] != [_commands[1][1]]]
+    else:
+        raise ValueError('unknown admission variant')
+    path = _config_path + '.admission.json'
+    with open(path, 'w', encoding='utf-8') as stream:
+        json.dump(data, stream)
+    return path
+
+
 def command(index):
     return host.encode(_commands[index])
 

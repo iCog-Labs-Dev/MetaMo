@@ -57,6 +57,24 @@ class ResponsePreparationTests(unittest.TestCase):
         return host.prepare_response('ASICloud', request, self.context,
                                      self.observations if observations is None else observations)
 
+    # Example: F3.3 resolves relative paths lexically, without discovering or opening files.
+    def test_read_reference_resolution_is_bounded_and_cwd_relative(self):
+        with patch('os.getcwd', return_value='/workspace'):
+            self.assertEqual(host.resolve_read_reference('docs/../a.txt'), '"/workspace/a.txt"')
+            self.assertEqual(host.resolve_read_reference('/allowed/a.txt'), '"/allowed/a.txt"')
+            self.assertEqual(host.resolve_read_reference('~/a.txt'), '"/workspace/~/a.txt"')
+            self.assertEqual(host.resolve_read_reference('*.txt'), '"/workspace/*.txt"')
+        for value in ('', None, [], 'bad\x00', 'a' * 257, '\ud800'):
+            self.assertEqual(host.resolve_read_reference(value), '""')
+        self.llm.callProvider.assert_not_called()
+
+    # Example: malformed host inputs never reach the catalog or interpreter.
+    def test_read_admission_input_bounds(self):
+        for plan_id, steps in (('', '()'), ('plan', None), ('plan', []),
+                               ('plan', 'x' * 32769), ('plan', '\ud800')):
+            self.assertEqual(host.admit_read_plan(plan_id, steps), '(ContinuationRejected InvalidPlan)')
+        self.llm.callProvider.assert_not_called()
+
     def test_uses_existing_provider_and_exact_observed_content(self):
         self.observations.append(read_outcome(2, 'second file\n"quoted" content'))
         before = copy.deepcopy((self.context, self.observations))
