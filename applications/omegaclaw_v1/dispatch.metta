@@ -21,9 +21,15 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_operations.py))
 
 ;; Example: (hostAdmitContinuation "plan" proposed-steps) checks the live host catalog.
-;; This does not install a plan; resolved steps remain data until F3.5.
+;; Resolved steps remain data until hostInstallAdmittedContinuation installs them.
 (= (hostAdmitContinuation $id $steps)
    (sread (py-call (host_operations.admit_read_plan $id (repr $steps)))))
+
+;; Example: install F3.3's result only for the context/commitment that requested it.
+;; Admission is rechecked under the same lock as F3.4 installation and invalidation.
+(= (hostInstallAdmittedContinuation $context $commitment $admission)
+   (sread (py-call (host_operations.install_admitted_continuation
+      (repr $context) (repr $commitment) (repr $admission)))))
 
 ;; Example: relative file references become cwd-relative absolute command arguments.
 (= (continuationResolveRead $step)

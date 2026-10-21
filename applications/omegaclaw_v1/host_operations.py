@@ -478,7 +478,7 @@ def admit_read_plan(plan_id, steps_source):
 
 # Example: cycle-zero and later installation share the same serialized guard.
 def begin_continuation(plan_id, steps_source):
-    """Trusted F3.4 safe point; admission/startup wiring remains F3.5."""
+    """Trusted safe point used by the admitted-installation transaction."""
     import janus
     from host_dispatch_config import ConfigError, encode, identifier
     try:
@@ -500,6 +500,50 @@ with_mutex(omegaclaw_dispatch, (
 ))
 ''', {'IdSource': encode(plan_id), 'StepsSource': steps_source})
     return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidPlan)'
+
+
+# The host lock spans nested F3.3/F3.4 calls. Their locks are reentrant on this
+# serialized interpreter; no provider or handler is invoked during installation.
+_INSTALL_ADMITTED_CONTINUATION = r'''
+with_mutex(omegaclaw_dispatch, (
+    catch((sread(ContextSource, _ExpectedContext), sread(CommitmentSource, _ExpectedOwner),
+           sread(AdmissionSource, _Admission)), _, fail),
+    (ground(_ExpectedContext-_ExpectedOwner-_Admission),
+     _Admission=['ContinuationAdmitted',_Id,_Steps]
+     -> (eval(['get-state','&operation-context'], _CurrentContext),
+         commitmentSnapshot(_CurrentOwner),
+         _CurrentContext == _ExpectedContext, _CurrentOwner == _ExpectedOwner
+         -> eval([hostAdmitContinuation, [quote,_Id], [quote,_Steps]], _Rechecked),
+            (_Rechecked=['ContinuationAdmitted',_Id,_Resolved]
+             -> eval([hostBeginContinuation, [quote,_Id], [quote,_Resolved]], _Result),
+                (_Result=['ContinuationStarted',_Id] -> oc_dispatch_mutate(true) ; true)
+             ; _Result=_Rechecked)
+         ; _Result=['ContinuationRejected','StaleOwnership'])
+     ; _Result=['ContinuationRejected','InvalidAdmission']),
+    swrite(_Result, Text)
+))
+'''
+
+
+# Example: an old admission cannot install after task replacement or permission revocation.
+def install_admitted_continuation(context_source, commitment_source, admission_source):
+    """Install exact admitted steps for an expected host owner, with fresh policy checks.
+
+    Capture context/commitment before proposal preparation. Rejection preserves
+    the current plan and epoch; success invalidates prior tickets once. This
+    trusted API does not extract requests, select work, or execute handlers.
+    """
+    import janus
+    try:
+        sources = (context_source, commitment_source, admission_source)
+        if any(type(value) is not str or len(value.encode('utf-8')) > 32768 for value in sources):
+            return '(ContinuationRejected InvalidAdmission)'
+    except (ValueError, TypeError):
+        return '(ContinuationRejected InvalidAdmission)'
+    result = janus.query_once(_INSTALL_ADMITTED_CONTINUATION, {
+        'ContextSource': context_source, 'CommitmentSource': commitment_source,
+        'AdmissionSource': admission_source})
+    return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidAdmission)'
 
 
 def capture():

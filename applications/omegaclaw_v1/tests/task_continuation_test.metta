@@ -22,7 +22,7 @@
 !(import! &self fixtures/host_config_fixture.py)
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/commitments.pl)
-   (commitmentFixtureReset commitmentFixtureOpen commitmentFixtureOutcome commitmentFixtureApply))
+   (commitmentFixtureReset commitmentFixtureOpen commitmentFixtureOutcome commitmentFixtureApply commitmentFixtureEpoch))
 !(commitmentFixtureReset)
 !(bind! &prevmsg (new-state ""))
 !(bind! &lastresults (new-state ""))
@@ -355,5 +355,69 @@
 !(test (hostBeginContinuation "fourth-plan" (get-state &read-plan)) (ContinuationStarted "fourth-plan"))
 !(test (index-atom (get-state &host-continuation) 2) "fourth-task")
 !(test (index-atom (get-state &operation-context) 1) (get-state &later-session))
+
+;; F3.5: installation joins fresh admission and safe-point mutation under one lock.
+!(py-call (host_config_fixture.write "ambiguous"))
+!(py-call (host_dispatch_config.provision (get-state &config-path)))
+!(bind! &install-context (new-state (get-state &operation-context)))
+!(bind! &install-owner (new-state (commitmentSnapshot)))
+!(bind! &install-admission (new-state (hostAdmitContinuation "installed-plan" (get-state &read-plan))))
+!(bind! &install-before (new-state (get-state &host-continuation)))
+!(bind! &install-epoch (new-state (commitmentFixtureEpoch)))
+
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (ContinuationRejected InvalidPlan)) (ContinuationRejected InvalidAdmission))
+!(test (sread (py-call (host_operations.install_admitted_continuation "(" "()" "()")))
+   (ContinuationRejected InvalidAdmission))
+!(test (hostInstallAdmittedContinuation (OperationContext "stale-session" 9 "configured-frame")
+   (get-state &install-owner) (get-state &install-admission)) (ContinuationRejected StaleOwnership))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
+
+;; An admission captured before replacement cannot install for the replacement owner.
+!(commitmentFixtureApply (quote (CommitmentEvent "f35-replace" "fourth-task" 0
+   (Superseded "install-task" "Installation task" "explicit replacement"))))
+!(change-state! &install-epoch (commitmentFixtureEpoch))
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &install-admission)) (ContinuationRejected StaleOwnership))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
+!(change-state! &install-owner (commitmentSnapshot))
+!(change-state! &install-admission (hostAdmitContinuation "installed-plan" (get-state &read-plan)))
+
+;; Revocation after admission fails atomically without replacing the predecessor.
+!(py-call (host_dispatch_config.provision (py-call (continuation_fixture.admission_config "frame" "permission"))))
+!(change-state! &install-epoch (commitmentFixtureEpoch))
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &install-admission)) (ContinuationRejected PermissionDenied))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
+!(test (get-state &host-continuation) (get-state &install-before))
+!(py-call (host_dispatch_config.provision (get-state &config-path)))
+!(change-state! &install-epoch (commitmentFixtureEpoch))
+
+;; Both ordinary selection and uncertain execution block installation without mutation.
+!(change-state! &selected-host-operation SelectedInvocation)
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &install-admission)) (ContinuationRejected AlreadyStarted))
+!(change-state! &selected-host-operation ())
+!(py-call (continuation_fixture.uncertain_invocation 1))
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &install-admission)) (ContinuationRejected OutstandingInvocation))
+!(py-call (continuation_fixture.uncertain_invocation 0))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
+!(test (get-state &host-continuation) (get-state &install-before))
+
+;; Successful installation preserves order and invalidates a previously captured ticket.
+!(bind! &pre-install-ticket (new-state
+   (coreDispatchCapture (AdmissionRequest propose-candidate current-frame execute-skill))))
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &install-admission)) (ContinuationStarted "installed-plan"))
+!(test (commitmentFixtureEpoch) (+ (get-state &install-epoch) 1))
+!(test (index-atom (get-state &host-continuation) 2) "install-task")
+!(test (index-atom (get-state &host-continuation) 7) (get-state &read-plan))
+!(test (coreDispatchCommand (get-state &pre-install-ticket) (sread (py-call (continuation_fixture.command 0))))
+   (DispatchResult Blocked StaleSnapshot none))
+!(change-state! &install-epoch (commitmentFixtureEpoch))
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &install-admission)) (ContinuationRejected AlreadyStarted))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
 
 !(test (py-call (host_config_fixture.cleanup)) 1)

@@ -82,6 +82,16 @@ class ResponsePreparationTests(unittest.TestCase):
             self.assertEqual(host.begin_continuation(plan_id, steps), '(ContinuationRejected InvalidPlan)')
         self.llm.callProvider.assert_not_called()
 
+    # Example: malformed ownership or admission sources never enter the interpreter.
+    def test_admitted_installation_input_bounds(self):
+        for index in range(3):
+            for invalid in (None, [], 'x' * 32769, '\ud800'):
+                sources = ['()', '()', '()']
+                sources[index] = invalid
+                self.assertEqual(host.install_admitted_continuation(*sources),
+                                 '(ContinuationRejected InvalidAdmission)')
+        self.llm.callProvider.assert_not_called()
+
     def test_uses_existing_provider_and_exact_observed_content(self):
         self.observations.append(read_outcome(2, 'second file\n"quoted" content'))
         before = copy.deepcopy((self.context, self.observations))
