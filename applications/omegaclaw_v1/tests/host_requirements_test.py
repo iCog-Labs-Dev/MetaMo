@@ -129,6 +129,43 @@ class ReadRequestTests(unittest.TestCase):
     setUp = RequirementsTests.setUp
     tearDown = RequirementsTests.tearDown
 
+    # Example: construction preserves order and quotes command-shaped filenames as data.
+    def test_construct_read_steps_preserves_data_and_input(self):
+        import copy
+        from host_dispatch_config import encode, record
+        files = ['b.txt', '../a.txt', 'quoted "name" \\ naïve.txt', '(send "hello")']
+        proposal = requirements.read_request_result('Proposed', files, 'ValidatedProposal')
+        before = copy.deepcopy(proposal)
+        expected = [record('ExecutionStep', str(i), record('read-file', path))
+                    for i, path in enumerate(files, 1)]
+        self.assertEqual(requirements.construct_read_steps(proposal), encode(expected))
+        self.assertEqual(proposal, before)
+        self.provider.assert_not_called()
+
+    # Example: rejected extraction cannot become a partially valid plan.
+    def test_construct_rejects_unsupported_or_malformed_proposals(self):
+        invalid = [None, [], {}, {'status': 'Proposed', 'files': ['a']},
+                   requirements.read_request_result('Unsupported', [], 'UnsupportedRequest'),
+                   requirements.read_request_result('Proposed', ['a'], 'Other')]
+        for files in ([], ['a'] * 2, ['a'] + [None], ['a' * 257], ['\ud800'],
+                      [f'f{i}' for i in range(17)], [' a'], ['bad\x00']):
+            invalid.append(requirements.read_request_result('Proposed', files, 'ValidatedProposal'))
+        invalid.append(dict(requirements.read_request_result('Proposed', ['a'], 'ValidatedProposal'),
+                            permissions=['all']))
+        for proposal in invalid:
+            with self.subTest(proposal=proposal):
+                self.assertEqual(requirements.construct_read_steps(proposal), '()')
+        self.provider.assert_not_called()
+
+    # Example: extraction feeds construction directly without a second provider request.
+    def test_extract_then_construct(self):
+        self.provider.return_value = '{"files":["b.txt","a.txt"]}'
+        proposal = requirements.extract_read_request('Offline', 'Compare b.txt and a.txt')
+        self.assertEqual(requirements.construct_read_steps(proposal),
+                         '((ExecutionStep "1" (read-file "b.txt")) '
+                         '(ExecutionStep "2" (read-file "a.txt")))')
+        self.provider.assert_called_once()
+
     # Example: explicit execution order can differ from order of mention.
     def test_extracts_ordered_literal_references_with_existing_provider(self):
         request = 'Compare a.txt and docs/b file.txt; read docs/b file.txt first.'

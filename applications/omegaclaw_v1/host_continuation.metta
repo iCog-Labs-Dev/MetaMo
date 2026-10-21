@@ -36,6 +36,13 @@
        (tpAllTrue ((continuationId $id) (!= $steps ())
                    (continuationStepsValid $steps 16 ()))) False))
 
+;; Example: (hostPrepareContinuation "plan" (quote ((ExecutionStep "1" (read-file "a.txt")))))
+;; validates data only; the prepared result grants no catalog or dispatch authority.
+(= (hostPrepareContinuation $id $steps)
+   (case (continuationPlanValid $id $steps) (
+      (True (ContinuationPrepared $id $steps))
+      ($_ (ContinuationRejected InvalidPlan)))))
+
 (= (continuationInstall $session $id $steps $commitment)
    (case $commitment (
       ((CommitmentSnapshot $owner $frame $revision Open $_)

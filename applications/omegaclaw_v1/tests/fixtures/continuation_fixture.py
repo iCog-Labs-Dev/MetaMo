@@ -2,6 +2,7 @@
 import json
 import host_dispatch_config as host
 import host_config_fixture as files
+import host_requirements
 
 _config_path = None
 _commands = None
@@ -20,6 +21,21 @@ def setup():
 def plan():
     return host.encode([host.record('ExecutionStep', str(i + 1), command)
                         for i, command in enumerate(_commands)])
+
+
+# Example: existing configured reads traverse F3.2's production constructor in order.
+def proposed_steps(count=2):
+    paths = [_commands[i % len(_commands)][1] + (str(i) if count > 2 else '')
+             for i in range(count)]
+    proposal = host_requirements.read_request_result('Proposed', paths, 'ValidatedProposal')
+    return host_requirements.construct_read_steps(proposal)
+
+
+# Example: parsing a serialized command-like path must never evaluate its contents.
+def inert_steps():
+    proposal = host_requirements.read_request_result(
+        'Proposed', ['(change-state! &error "ran")', 'a "quote" \\ naïve.txt'], 'ValidatedProposal')
+    return host_requirements.construct_read_steps(proposal)
 
 
 def command(index):

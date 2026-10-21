@@ -142,7 +142,7 @@ def read_request_result(status, files, reason):
 
 # Example: {"files":["b.txt","a.txt"]} preserves the proposed read order.
 def validate_read_proposal(raw, request):
-    from host_dispatch_config import identifier, unique_object
+    from host_dispatch_config import unique_object
     if type(raw) is not str or len(raw.encode('utf-8')) > 32768:
         raise ValueError('invalid read proposal size')
     value = json.loads(raw, object_pairs_hook=unique_object)
@@ -152,7 +152,15 @@ def validate_read_proposal(raw, request):
         return read_request_result('Unsupported', [], 'UnsupportedRequest')
     if set(value) != {'files'}:
         raise ValueError('invalid read proposal fields')
-    files = value['files']
+    files = validate_read_files(value['files'])
+    if any(path not in request for path in files):
+        raise ValueError('file reference must occur literally in the request')
+    return read_request_result('Proposed', files, 'ValidatedProposal')
+
+
+# Example: shared reference checks preserve order without resolving catalog paths.
+def validate_read_files(files):
+    from host_dispatch_config import identifier
     if type(files) is not list or not 1 <= len(files) <= 16:
         raise ValueError('expected 1-16 file references')
     for path in files:
@@ -160,11 +168,32 @@ def validate_read_proposal(raw, request):
             raise ValueError('invalid file reference')
         identifier(path)
         path.encode('utf-8')
-        if path != path.strip() or path not in request:
-            raise ValueError('file reference must occur literally in the request')
+        if path != path.strip():
+            raise ValueError('file reference has surrounding whitespace')
     if len(set(files)) != len(files):
         raise ValueError('duplicate file references')
-    return read_request_result('Proposed', files, 'ValidatedProposal')
+    return files
+
+
+# Example: Proposed ["a.txt"] becomes ((ExecutionStep "1" (read-file "a.txt"))).
+def construct_read_steps(proposal):
+    """Encode F3.1 data for hostPrepareContinuation; () is always an invalid plan.
+
+    Step IDs are positional and unique within this proposed plan. The host
+    supplies its plan ID separately. No admission, evaluation or state writes
+    occur here; the MeTTa preparation entry point performs plan validation.
+    """
+    from host_dispatch_config import ConfigError, encode, record
+    try:
+        if (type(proposal) is not dict or set(proposal) != {'status', 'files', 'reason'}
+                or proposal['status'] != 'Proposed' or proposal['reason'] != 'ValidatedProposal'):
+            return '()'
+        files = validate_read_files(proposal['files'])
+        steps = [record('ExecutionStep', str(index), record('read-file', path))
+                 for index, path in enumerate(files, start=1)]
+        return encode(steps)
+    except (ConfigError, ValueError, TypeError, RecursionError):
+        return '()'
 
 
 # Example: a comparison request proposes literal references without reading their contents.
