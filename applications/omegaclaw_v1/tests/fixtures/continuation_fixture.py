@@ -95,3 +95,15 @@ def deny_second():
     with open(_config_path, 'w', encoding='utf-8') as stream:
         json.dump(data, stream)
     return _config_path
+
+
+# Example: an uncertain Core ledger entry still blocks installation after selection clears.
+def uncertain_invocation(enabled):
+    import janus
+    if enabled:
+        query = '''assertz(oc_dispatch_result(['DispatchTicket',"f34-uncertain"],
+                   ['read-file',"fixture"],
+                   ['DispatchResult','Unobserved','ExecutionUncertain',none]))'''
+    else:
+        query = 'retractall(oc_dispatch_result([\'DispatchTicket\',"f34-uncertain"],_,_))'
+    return int(janus.query_once(query)['truth'])

@@ -75,6 +75,13 @@ class ResponsePreparationTests(unittest.TestCase):
             self.assertEqual(host.admit_read_plan(plan_id, steps), '(ContinuationRejected InvalidPlan)')
         self.llm.callProvider.assert_not_called()
 
+    # Example: invalid installation arguments cannot mutate the host interpreter.
+    def test_continuation_installation_input_bounds(self):
+        for plan_id, steps in (('', '()'), ('plan', None), ('plan', []),
+                               ('plan', 'x' * 32769), ('plan', '\ud800')):
+            self.assertEqual(host.begin_continuation(plan_id, steps), '(ContinuationRejected InvalidPlan)')
+        self.llm.callProvider.assert_not_called()
+
     def test_uses_existing_provider_and_exact_observed_content(self):
         self.observations.append(read_outcome(2, 'second file\n"quoted" content'))
         before = copy.deepcopy((self.context, self.observations))

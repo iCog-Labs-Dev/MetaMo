@@ -1,5 +1,5 @@
 ;; Trusted host lifecycle, not motivational planning or a model skill.
-;; One bounded read plan per session, installed before the first selection.
+;; One bounded read plan at a time, installed only at a guarded host safe point.
 ;; Failed, blocked, uncertain or displaced work stays held for host review.
 (= (continuationId $id)
    (if (tpId $id) (<= (string_length $id) 256) False))
@@ -50,24 +50,59 @@
            (progn
               (change-state! &host-continuation
                  (HostContinuation $session $owner $frame $revision $id Ready $steps))
+              ;; Fence the previous task's retained observation without deleting its evidence.
+              (change-state! &continuation-applied-decision
+                 (case (get-state &last-operation-outcome) (
+                    ((OperationOutcome $decision $_ $_ $_) $decision)
+                    ($_ ()))))
+              (change-state! &task-continuation-view NoContinuation)
               (ContinuationStarted $id))
            (ContinuationRejected WrongFrame)))
       ($_ (ContinuationRejected MissingCommitment)))))
 
 (= (continuationStartInSession $id $steps)
    (case (get-state &operation-context) (
-      ((OperationContext $session 0 $_)
-       (continuationInstall $session $id $steps (commitmentSnapshot)))
+      ((OperationContext $session $cycle $frame)
+       (if (tpAllTrue ((continuationId $session) (tpQuantity $cycle)
+                      (or (== $cycle 0) (== $frame (get-state &cfv2-current-frame-id)))))
+           (continuationInstallAtSafePoint $session $id $steps (commitmentSnapshot))
+           (ContinuationRejected SessionAlreadyActive)))
       ($_ (ContinuationRejected SessionAlreadyActive)))))
 
+;; Example: only the host's accepted terminal event releases a predecessor plan.
+(= (continuationTerminalEvent $owner $revision $event)
+   (case $event (
+      ((CommitmentEvent $_ $eventOwner $eventRevision $change)
+       (tpAllTrue ((== $owner $eventOwner) (== $revision $eventRevision)
+          (tpContains (Completed Abandoned Superseded) (car-atom $change)))))
+      ($_ False))))
+
+;; Example: a Held plan with an open owner remains live; a terminal predecessor can retire.
+(= (continuationSlotAvailable $session $commitment)
+   (case (get-state &host-continuation) (
+      (() True)
+      ((HostContinuation $oldSession $owner $_ $revision $_ $_ $_)
+       (case $commitment (
+          ((CommitmentSnapshot $current $_ $_ Open $_)
+           (tpAllTrue ((== $session $oldSession) (!= $owner $current)
+              (!= (filter-atom (commitmentEvents) $event
+                     (continuationTerminalEvent $owner $revision $event)) ()))))
+          ($_ False))))
+      ($_ False))))
+
+;; Example: a later task installs only after selection clears and its predecessor terminates.
+(= (continuationInstallAtSafePoint $session $id $steps $commitment)
+   (if (tpAllTrue ((== (get-state &selected-operation-decision) ())
+                  (== (get-state &selected-host-operation) ())
+                  (continuationSlotAvailable $session $commitment)))
+       (continuationInstall $session $id $steps $commitment)
+       (ContinuationRejected AlreadyStarted)))
+
+;; Example: guard and installation run together under the existing Core dispatch lock.
 (= (hostBeginContinuation $id $steps)
    (case (continuationPlanValid $id $steps) (
       (False (ContinuationRejected InvalidPlan))
-      (True
-       (if (and (== (get-state &host-continuation) ())
-                (== (get-state &selected-operation-decision) ()))
-           (continuationStartInSession $id $steps)
-           (ContinuationRejected AlreadyStarted))))))
+      (True (sread (py-call (host_operations.begin_continuation $id (repr $steps))))))))
 
 (= (continuationSessionMatches $session)
    (case (get-state &operation-context) (

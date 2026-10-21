@@ -476,6 +476,32 @@ def admit_read_plan(plan_id, steps_source):
         return '(ContinuationRejected InvalidPlan)'
 
 
+# Example: cycle-zero and later installation share the same serialized guard.
+def begin_continuation(plan_id, steps_source):
+    """Trusted F3.4 safe point; admission/startup wiring remains F3.5."""
+    import janus
+    from host_dispatch_config import ConfigError, encode, identifier
+    try:
+        identifier(plan_id)
+        if type(steps_source) is not str or len(steps_source.encode('utf-8')) > 32768:
+            return '(ContinuationRejected InvalidPlan)'
+    except (ConfigError, ValueError, TypeError):
+        return '(ContinuationRejected InvalidPlan)'
+    result = janus.query_once(r'''
+with_mutex(omegaclaw_dispatch, (
+    catch((sread(IdSource, _Id), sread(StepsSource, _Steps)), _, fail),
+    eval([hostPrepareContinuation, [quote,_Id], [quote,_Steps]], _Prepared),
+    (_Prepared \= ['ContinuationPrepared',_Id,_Steps]
+     -> _Result=['ContinuationRejected','InvalidPlan']
+     ; mm_dispatch_busy
+     -> _Result=['ContinuationRejected','OutstandingInvocation']
+     ; eval([continuationStartInSession, [quote,_Id], [quote,_Steps]], _Result)),
+    swrite(_Result, Text)
+))
+''', {'IdSource': encode(plan_id), 'StepsSource': steps_source})
+    return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidPlan)'
+
+
 def capture():
     import janus
     _queue_automatic_response()

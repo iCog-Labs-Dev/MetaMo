@@ -274,4 +274,86 @@
 !(test (get-state &host-continuation) ())
 !(test (get-state &task-continuation-view) NoContinuation)
 !(test (ingestOperationOutcome (get-state &first-outcome)) (OutcomeRejected WrongSession))
+
+;; F3.4: install at a later safe point without resetting the session between tasks.
+!(bind! &later-session (new-state (index-atom (get-state &operation-context) 1)))
+!(change-state! &operation-context (OperationContext (get-state &later-session) 7 "configured-frame"))
+!(test (hostBeginContinuation "late-plan" (get-state &read-plan)) (ContinuationStarted "late-plan"))
+!(bind! &late-plan (new-state (get-state &host-continuation)))
+
+;; Held and read-finished plans still belong to a live commitment.
+(= (continuationTestStatus $status)
+   (let (HostContinuation $session $owner $frame $revision $id $_ $steps)
+      (get-state &host-continuation)
+      (change-state! &host-continuation
+         (HostContinuation $session $owner $frame $revision $id $status $steps))))
+
+!(continuationTestStatus Held)
+!(test (hostBeginContinuation "overwrite-held" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+!(continuationTestStatus AwaitingCompletion)
+!(test (hostBeginContinuation "overwrite-waiting" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+!(change-state! &host-continuation (get-state &late-plan))
+!(test (hostBeginContinuation "bad" ()) (ContinuationRejected InvalidPlan))
+!(test (get-state &host-continuation) (get-state &late-plan))
+
+;; Only a recorded terminal event releases the old task's plan slot.
+!(test (commitmentFixtureApply (quote (CommitmentEvent "f34-abandon" "two-reads" 0 (Abandoned "done with task"))))
+   (CommitmentApplied "f34-abandon" "two-reads" Abandoned 1))
+!(test (commitmentFixtureOpen "later-task" "configured-frame" "A later admitted task")
+   (CommitmentOpened "later-task"))
+!(change-state! &operation-context (OperationContext (get-state &later-session) 8 "configured-frame"))
+!(change-state! &selected-operation-decision (get-state &failure-decision))
+!(test (hostBeginContinuation "later-plan" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+!(change-state! &selected-operation-decision ())
+!(change-state! &selected-host-operation SelectedInvocation)
+!(test (hostBeginContinuation "later-plan" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+!(change-state! &selected-host-operation ())
+!(test (py-call (continuation_fixture.uncertain_invocation 1)) 1)
+!(test (hostBeginContinuation "later-plan" (get-state &read-plan)) (ContinuationRejected OutstandingInvocation))
+!(test (py-call (continuation_fixture.uncertain_invocation 0)) 1)
+!(test (get-state &host-continuation) (get-state &late-plan))
+
+;; A changed session or mismatched operation frame cannot take over the predecessor.
+!(change-state! &operation-context (OperationContext "wrong-session" 8 "configured-frame"))
+!(test (hostBeginContinuation "later-plan" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+!(change-state! &operation-context (OperationContext (get-state &later-session) 8 "wrong-frame"))
+!(test (hostBeginContinuation "later-plan" (get-state &read-plan)) (ContinuationRejected SessionAlreadyActive))
+!(change-state! &operation-context (OperationContext (get-state &later-session) 8 "configured-frame"))
+
+;; An accepted event must match the exact predecessor revision, not just its name.
+!(let (HostContinuation $session $owner $frame $revision $id $status $steps)
+   (get-state &late-plan)
+   (change-state! &host-continuation
+      (HostContinuation $session $owner $frame (+ $revision 1) $id $status $steps)))
+!(test (hostBeginContinuation "stale-predecessor" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+!(change-state! &host-continuation (get-state &late-plan))
+
+;; Previously retained feedback is fenced when the new plan is installed.
+!(change-state! &last-operation-outcome (get-state &first-outcome))
+!(test (hostBeginContinuation "later-plan" (get-state &read-plan)) (ContinuationStarted "later-plan"))
+!(test (get-state &continuation-applied-decision) (index-atom (get-state &first-outcome) 1))
+!(test (get-state &last-operation-outcome) (get-state &first-outcome))
+!(test (index-atom (get-state &host-continuation) 1) (get-state &later-session))
+!(test (index-atom (get-state &host-continuation) 2) "later-task")
+!(test (hostBeginContinuation "duplicate" (get-state &read-plan)) (ContinuationRejected AlreadyStarted))
+
+;; Completed and superseded predecessors also release the slot through host events.
+!(commitmentFixtureOutcome "f34-done" "later-task" 0 Completed)
+!(test (commitmentFixtureApply (quote (CommitmentEvent "f34-complete" "later-task" 0 (Completed "f34-done"))))
+   (CommitmentApplied "f34-complete" "later-task" Completed 1))
+!(commitmentFixtureOpen "third-task" "configured-frame" "Third admitted task")
+!(test (hostBeginContinuation "third-plan" (get-state &read-plan)) (ContinuationStarted "third-plan"))
+!(test (commitmentFixtureApply (quote (CommitmentEvent "f34-replace" "third-task" 0
+   (Superseded "fourth-task" "Fourth admitted task" "explicit replacement"))))
+   (CommitmentApplied "f34-replace" "third-task" Superseded 1))
+!(change-state! &cfv2-current-frame-id "other-frame")
+!(change-state! &operation-context (OperationContext (get-state &later-session) 9 "other-frame"))
+!(test (hostBeginContinuation "wrong-frame" (get-state &read-plan)) (ContinuationRejected WrongFrame))
+!(test (index-atom (get-state &host-continuation) 2) "third-task")
+!(change-state! &cfv2-current-frame-id "configured-frame")
+!(change-state! &operation-context (OperationContext (get-state &later-session) 9 "configured-frame"))
+!(test (hostBeginContinuation "fourth-plan" (get-state &read-plan)) (ContinuationStarted "fourth-plan"))
+!(test (index-atom (get-state &host-continuation) 2) "fourth-task")
+!(test (index-atom (get-state &operation-context) 1) (get-state &later-session))
+
 !(test (py-call (host_config_fixture.cleanup)) 1)
