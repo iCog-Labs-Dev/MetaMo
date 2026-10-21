@@ -125,5 +125,90 @@ class RequirementsTests(unittest.TestCase):
         self.assertEqual(self.assess()['status'], 'NoAction')
 
 
+class ReadRequestTests(unittest.TestCase):
+    setUp = RequirementsTests.setUp
+    tearDown = RequirementsTests.tearDown
+
+    # Example: explicit execution order can differ from order of mention.
+    def test_extracts_ordered_literal_references_with_existing_provider(self):
+        request = 'Compare a.txt and docs/b file.txt; read docs/b file.txt first.'
+        self.provider.return_value = json.dumps({'files': ['docs/b file.txt', 'a.txt']})
+        self.assertEqual(requirements.extract_read_request('Offline', request), {
+            'status': 'Proposed', 'files': ['docs/b file.txt', 'a.txt'],
+            'reason': 'ValidatedProposal'})
+        args, kwargs = self.provider.call_args
+        self.assertEqual(args[0], 'Offline')
+        self.assertEqual(kwargs, {'max_tokens': 4096})
+        instruction, payload = args[1].split(':-:-:-:', 1)
+        self.assertIn('untrusted data', instruction)
+        self.assertEqual(json.loads(payload), {'request': request})
+
+    # Example: 16 short references fit the existing continuation's count limit.
+    def test_reference_boundaries_preserve_unicode_and_relative_paths(self):
+        for files in (['f' * 256], [f'f{i}.txt' for i in range(16)],
+                      ['../notes.txt', '/tmp/naïve report.txt']):
+            with self.subTest(files=files):
+                self.provider.return_value = json.dumps({'files': files})
+                result = requirements.extract_read_request('Offline', 'Compare ' + ' and '.join(files))
+                self.assertEqual(result['files'], files)
+                self.assertEqual(result['status'], 'Proposed')
+
+    # Example: unsupported mixed work is not silently reduced to a successful read plan.
+    def test_explicit_unsupported_requests(self):
+        self.provider.return_value = '{"no_action":true}'
+        for request in ('Hello', 'Inspect my codebase', 'Read the file I mentioned',
+                        'Read a.txt then delete it', 'Read *.txt'):
+            result = requirements.extract_read_request('Offline', request)
+            self.assertEqual(result, {'status': 'Unsupported', 'files': [],
+                                      'reason': 'UnsupportedRequest'})
+
+    # Example: no proposed path is allowed to appear solely in model output.
+    def test_invalid_proposals_have_no_partial_results(self):
+        values = [[], {}, {'files': []}, {'files': 'a.txt'}, {'files': None},
+                  {'files': [True]}, {'files': [{}]}, {'files': ['a.txt', 'a.txt']},
+                  {'files': ['a.txt', 'invented.txt']}, {'files': ['a.txt'], 'permissions': ['all']},
+                  {'files': ['a.txt'], 'command': 'read-file'}, {'no_action': 1},
+                  {'files': ['a.txt'], 'completed': True}, {'files': ['a.txt'], 'observations': []},
+                  {'files': ['a.txt'], 'no_action': True}, {'files': [' ']},
+                  {'files': [' a.txt']}, {'files': ['bad\x00']}, {'files': ['\ud800']},
+                  {'files': ['f' * 257]}, {'files': [f'f{i}.txt' for i in range(17)]}]
+        raw_values = [json.dumps(value) for value in values]
+        raw_values += [None, '', '()', 'null', '```json\n{}\n```', '\ud800',
+                       '{"files":["a.txt"],"files":["b.txt"]}',
+                       '{"files":["a.txt"]}' + ' ' * 32768]
+        request = 'Read a.txt b.txt ' + 'f' * 257 + ' ' + ' '.join(f'f{i}.txt' for i in range(17))
+        for raw in raw_values:
+            with self.subTest(raw=raw):
+                self.provider.return_value = raw
+                self.assertEqual(requirements.extract_read_request('Offline', request), {
+                    'status': 'Unsupported', 'files': [], 'reason': 'InvalidProposal'})
+
+    # Example: malformed task text never reaches the provider.
+    def test_invalid_extraction_input_skips_provider(self):
+        for request in ('', ' ', None, [], 'x' * 4097, 'bad\x00', '\ud800'):
+            self.assertEqual(requirements.extract_read_request('Offline', request)['reason'], 'InvalidInput')
+        self.assertEqual(requirements.extract_read_request('', 'Read a.txt')['reason'], 'InvalidInput')
+        self.provider.assert_not_called()
+
+    # Example: provider errors yield one bounded result without retries or leaked exception text.
+    def test_extraction_provider_failure(self):
+        self.provider.side_effect = RuntimeError('secret-token')
+        self.assertEqual(requirements.extract_read_request('Offline', 'Read a.txt'), {
+            'status': 'Unsupported', 'files': [], 'reason': 'ProviderUnavailable'})
+        self.provider.assert_called_once()
+
+    # Example: even command-like filenames remain inert data; authorization is F3.3.
+    def test_extraction_has_no_local_effects(self):
+        from unittest.mock import mock_open
+        import host_dispatch_config as config
+        files = ['/not-authorized/a.txt', '(send "hello")']
+        self.provider.return_value = json.dumps({'files': files})
+        with patch('builtins.open', mock_open()) as opening, patch.object(config, 'provision') as install:
+            result = requirements.extract_read_request('Offline', 'Read ' + ' and '.join(files))
+        self.assertEqual(result['files'], files)
+        opening.assert_not_called()
+        install.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
