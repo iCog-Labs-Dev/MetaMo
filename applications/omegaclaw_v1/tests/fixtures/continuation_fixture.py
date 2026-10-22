@@ -107,3 +107,18 @@ def uncertain_invocation(enabled):
     else:
         query = 'retractall(oc_dispatch_result([\'DispatchTicket\',"f34-uncertain"],_,_))'
     return int(janus.query_once(query)['truth'])
+
+
+# Example: an allowed but unrequested file must never displace a pending plan read.
+def with_unrequested_read():
+    from pathlib import Path
+    data = host.read_config(_config_path)
+    extra = Path(_config_path).with_name('unrequested.txt')
+    extra.write_text('unrequested content', encoding='utf-8')
+    data['allowed_files'].append(str(extra))
+    data['commands'].insert(0, {'skill': 'read-file', 'arguments': [str(extra)]})
+    for scope in ('global', 'frame'):
+        data[scope]['permissions'].append('files.read:' + str(extra))
+    path = _config_path + '.unrequested.json'
+    Path(path).write_text(json.dumps(data), encoding='utf-8')
+    return path

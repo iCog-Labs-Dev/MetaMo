@@ -272,6 +272,34 @@
    (GateDecision Rejected AmbiguousOperation))
 !(test (hostOperationGate (get-state &bundle) search-knowledge (get-state &rows))
    (GateDecision Admitted Feasible))
+
+;; F3.6: exact filtering preserves other candidates and never hides duplicate matches.
+!(bind! &pending-row (new-state (car-atom (hostRowsForCandidate execute-skill (get-state &rows)))))
+!(change-state! &task-continuation-view
+   (ContinuationView "filter-plan" "1" Ready (repr (index-atom (get-state &pending-row) 2))))
+!(bind! &pending-bundle (new-state (frameStateForMetaMo)))
+!(bind! &pending-rows (new-state (continuationOperationRows (get-state &pending-bundle) (get-state &rows))))
+!(test (hostRowsForCandidate execute-skill (get-state &pending-rows))
+   (cons-atom (get-state &pending-row) ()))
+!(test (hostOperationGate (get-state &pending-bundle) execute-skill (get-state &pending-rows))
+   (GateDecision Admitted Feasible))
+!(test (hostRowsForCandidate search-knowledge (get-state &pending-rows))
+   (hostRowsForCandidate search-knowledge (get-state &rows)))
+!(test (hostOperationGate (get-state &pending-bundle) execute-skill
+   (continuationOperationRows (get-state &pending-bundle)
+      (cons-atom (get-state &pending-row) (get-state &rows))))
+   (GateDecision Rejected AmbiguousOperation))
+
+;; A missing exact match, Held plan or completed read plan cannot fall back to another read.
+!(change-state! &task-continuation-view (ContinuationView "filter-plan" "1" Ready "(read-file missing)"))
+!(test (hostRowsForCandidate execute-skill (continuationOperationRows (frameStateForMetaMo) (get-state &rows))) ())
+!(change-state! &task-continuation-view (ContinuationView "filter-plan" None Held ()))
+!(test (hostRowsForCandidate execute-skill (continuationOperationRows (frameStateForMetaMo) (get-state &rows))) ())
+!(change-state! &task-continuation-view (ContinuationView "filter-plan" None AwaitingCompletion ()))
+!(test (hostRowsForCandidate execute-skill (continuationOperationRows (frameStateForMetaMo) (get-state &rows))) ())
+!(change-state! &task-continuation-view NoContinuation)
+!(test (continuationOperationRows (frameStateForMetaMo) (get-state &rows)) (get-state &rows))
+
 ;; A distinct invocation returning identical error text still counts once.
 !(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
 !(test (py-call (host_config_fixture.install_failure_handler)) 1)

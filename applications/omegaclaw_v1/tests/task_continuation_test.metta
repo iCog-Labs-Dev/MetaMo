@@ -420,4 +420,45 @@
    (get-state &install-admission)) (ContinuationRejected AlreadyStarted))
 !(test (commitmentFixtureEpoch) (get-state &install-epoch))
 
+;; F3.6: F3.5 installation reaches ordinary selection without a manual view refresh.
+;; Catalog order is unrequested, first, second; the admitted request is second, first.
+!(commitmentFixtureApply (quote (CommitmentEvent "f36-replace" "install-task" 0
+   (Superseded "selection-task" "Read the second file then the first" "explicit replacement"))))
+!(py-call (host_dispatch_config.provision (py-call (continuation_fixture.with_unrequested_read))))
+!(bind! &selection-admission (new-state
+   (hostAdmitContinuation "selection-plan" (sread (py-call (continuation_fixture.relative_steps))))))
+!(test (hostInstallAdmittedContinuation (get-state &operation-context) (commitmentSnapshot)
+   (get-state &selection-admission)) (ContinuationStarted "selection-plan"))
+!(test (get-state &task-continuation-view) NoContinuation)
+!(test (policyOutputOperation (motivationContextBlock)) execute-skill)
+!(test (selectedHostCommand) (sread (py-call (continuation_fixture.command 1))))
+!(test (frameRuntimeNewMessage (activeFrameBundle)) False)
+!(bind! &selection-rows (new-state (captureCandidateOperations (activeFrameBundle))))
+!(test (size-atom (hostRowsForCandidate execute-skill (get-state &selection-rows))) 1)
+!(test (hostOperationGate (activeFrameBundle) search-knowledge (get-state &selection-rows))
+   (GateDecision Admitted Feasible))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible "other content"))
+!(bind! &selection-outcome (new-state (get-state &last-operation-outcome)))
+!(test (ingestOperationOutcome (get-state &selection-outcome)) OutcomeDuplicate)
+!(test (policyOutputOperation (motivationContextBlock)) execute-skill)
+!(test (selectedHostCommand) (sread (py-call (continuation_fixture.command 0))))
+!(test (frameRuntimeContinuation (activeFrameBundle))
+   (ContinuationView "selection-plan" "2" Ready (repr (selectedHostCommand))))
+!(test (ingestOperationOutcome (get-state &selection-outcome)) (OutcomeRejected StaleCycle))
+
+;; A further ordinary cycle cannot consume that observation a second time.
+!(test (policyOutputOperation (motivationContextBlock)) execute-skill)
+!(test (selectedHostCommand) (sread (py-call (continuation_fixture.command 0))))
+!(test (size-atom (hostRowsForCandidate execute-skill (captureCandidateOperations (activeFrameBundle)))) 1)
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible "changed after invocation"))
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (frameRuntimeContinuation (activeFrameBundle))
+   (ContinuationView "selection-plan" None AwaitingCompletion ()))
+!(test (hostRowsForCandidate execute-skill (captureCandidateOperations (activeFrameBundle))) ())
+!(test (frameRuntimeNewMessage (activeFrameBundle)) False)
+!(test (commitmentSnapshot)
+   (CommitmentSnapshot "selection-task" "configured-frame" 0 Open "Read the second file then the first"))
+
 !(test (py-call (host_config_fixture.cleanup)) 1)

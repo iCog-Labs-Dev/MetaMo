@@ -232,6 +232,7 @@
       ($_ (refreshTaskExecutionObserved))
       ($_ (refreshTaskCommitment))
       ($_ (eval (applyOperationOutcome (get-state &cfv2-current-frame-id))))
+      ;; Publish F3.5's installed pending step before captureCandidateOperations filters rows.
       ($_ (hostRefreshContinuation))
       ($_ (eval (refreshHostRecovery)))
       ($bundle (frameStateForMetaMo))

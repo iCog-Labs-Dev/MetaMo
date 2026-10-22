@@ -116,6 +116,8 @@
              (change-state! &operation-context
                 (OperationContext $session (+ $cycle 1) (frameBundleCurrentId $bundle)))))))
 
+;; Example: an installed B-then-A plan admits only B's exact command on its first cycle.
+;; Filter the published view, preserving duplicates for hostOperationGate to reject.
 (= (continuationOperationRows $bundle $rows)
    (case (frameRuntimeContinuation $bundle) (
       (NoContinuation $rows)
