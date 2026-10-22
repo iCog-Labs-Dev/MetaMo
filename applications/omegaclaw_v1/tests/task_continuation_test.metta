@@ -29,6 +29,9 @@
 !(bind! &error (new-state ""))
 !(bind! &loops (new-state 1))
 !(bind! &nextWakeAt (new-state 0))
+(= (commchannel) local)
+!(import! &self (library OmegaClaw-Core channels/local_channel.py))
+!(import! &self (library OmegaClaw-Core src/channels))
 !(initContextFrame)
 !(initOmegaClawMotivation)
 !(ctx-ingest-user-message "Inspect the project context")
@@ -365,6 +368,26 @@
 !(bind! &install-before (new-state (get-state &host-continuation)))
 !(bind! &install-epoch (new-state (commitmentFixtureEpoch)))
 
+;; F3.A3/A5: rejection is atomic across plan, evidence, epoch and Core invocation results.
+!(bind! &acceptance-evidence (new-state (get-state &continuation-evidence)))
+!(bind! &acceptance-results (new-state (py-call (continuation_fixture.dispatch_result_count))))
+!(bind! &unallowed-admission (new-state
+   (hostAdmitContinuation "unallowed-plan" (sread (py-call (continuation_fixture.unallowed_steps))))))
+!(test (get-state &unallowed-admission) (ContinuationRejected UnsupportedOperation))
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (get-state &unallowed-admission)) (ContinuationRejected InvalidAdmission))
+!(test (get-state &host-continuation) (get-state &install-before))
+!(test (get-state &continuation-evidence) (get-state &acceptance-evidence))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
+!(test (py-call (continuation_fixture.dispatch_result_count)) (get-state &acceptance-results))
+
+!(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
+   (ContinuationAdmitted "invalid-replacement" ())) (ContinuationRejected InvalidPlan))
+!(test (get-state &host-continuation) (get-state &install-before))
+!(test (get-state &continuation-evidence) (get-state &acceptance-evidence))
+!(test (commitmentFixtureEpoch) (get-state &install-epoch))
+!(test (py-call (continuation_fixture.dispatch_result_count)) (get-state &acceptance-results))
+
 !(test (hostInstallAdmittedContinuation (get-state &install-context) (get-state &install-owner)
    (ContinuationRejected InvalidPlan)) (ContinuationRejected InvalidAdmission))
 !(test (sread (py-call (host_operations.install_admitted_continuation "(" "()" "()")))
@@ -460,5 +483,91 @@
 !(test (frameRuntimeNewMessage (activeFrameBundle)) False)
 !(test (commitmentSnapshot)
    (CommitmentSnapshot "selection-task" "configured-frame" 0 Open "Read the second file then the first"))
+
+;; F3.7 retains both successful outcomes and automatically prepares their grounded answer.
+!(bind! &answer-evidence (new-state (get-state &continuation-evidence)))
+!(test (size-atom (index-atom (get-state &answer-evidence) 5)) 2)
+!(test (py-call (continuation_fixture.enable_answers "answer")) 1)
+!(test (py-call (host_config_fixture.capture_local_output)) 1)
+
+;; Incomplete retained evidence cannot cause preparation, even when the cursor says finished.
+!(let (ContinuationEvidence $session $owner $id $steps $outcomes) (get-state &answer-evidence)
+   (change-state! &continuation-evidence
+      (ContinuationEvidence $session $owner $id $steps (cdr-atom $outcomes))))
+!(motivationContextBlock)
+!(test (py-call (continuation_fixture.response_calls)) 0)
+!(test (preparedHostBinding) ())
+!(change-state! &continuation-evidence (get-state &answer-evidence))
+!(continuationTestStatus Held)
+!(motivationContextBlock)
+!(test (py-call (continuation_fixture.response_calls)) 0)
+!(continuationTestStatus AwaitingCompletion)
+
+!(test (policyOutputOperation (motivationContextBlock)) respond)
+!(test (selectedHostCommand) (quote (send "Both files: other content; changed after invocation.")))
+!(test (py-call (continuation_fixture.response_calls)) 1)
+!(test (commitmentSnapshot)
+   (CommitmentSnapshot "selection-task" "configured-frame" 0 Open "Read the second file then the first"))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted)))
+!(test (commitmentSnapshot)
+   (CommitmentSnapshot "selection-task" "configured-frame" 1 Completed "Read the second file then the first"))
+!(motivationContextBlock)
+!(motivationContextBlock)
+!(test (py-call (continuation_fixture.response_calls)) 1)
+!(test (py-call (host_config_fixture.local_send_count "Both files: other content; changed after invocation.")) 1)
+;; Later tasks reuse the same session, but start with empty evidence and fresh ownership.
+(= (continuationAnswerTask $id $mode)
+   (progn
+      (commitmentFixtureOpen $id "configured-frame" "Read the second file then the first")
+      (change-state! &host-response-input ())
+      (py-call (continuation_fixture.enable_answers $mode))
+      (prepareTaskStateForMetaMo)
+      (hostInstallAdmittedContinuation (get-state &operation-context) (commitmentSnapshot)
+         (hostAdmitContinuation $id (sread (py-call (continuation_fixture.relative_steps)))))))
+
+(= (continuationAnswerReads)
+   (progn
+      (motivationContextBlock)
+      (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+      (motivationContextBlock)
+      (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))))
+
+!(test (continuationAnswerTask "no-answer-task" "no-action") (ContinuationStarted "no-answer-task"))
+!(test (index-atom (get-state &continuation-evidence) 5) ())
+!(test (continuationAnswerReads) (DispatchResult Executed Feasible "changed after invocation"))
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (get-state &prepared-host-operation) (ResponseNoAction InsufficientEvidence))
+!(test (py-call (continuation_fixture.response_calls)) 2)
+!(motivationContextBlock)
+!(test (py-call (continuation_fixture.response_calls)) 2)
+!(test (commitmentSnapshot)
+   (CommitmentSnapshot "no-answer-task" "configured-frame" 0 Open "Read the second file then the first"))
+!(commitmentFixtureApply (quote (CommitmentEvent "f37-no-answer" "no-answer-task" 0 (Abandoned "no supported answer"))))
+
+;; A newer input during inference invalidates publication, even with complete read evidence.
+!(test (continuationAnswerTask "stale-answer-task" "stale") (ContinuationStarted "stale-answer-task"))
+!(test (continuationAnswerReads) (DispatchResult Executed Feasible "changed after invocation"))
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (preparedHostBinding) ())
+!(test (py-call (continuation_fixture.response_calls)) 3)
+!(test (commitmentSnapshot)
+   (CommitmentSnapshot "stale-answer-task" "configured-frame" 0 Open "Read the second file then the first"))
+!(commitmentFixtureApply (quote (CommitmentEvent "f37-stale-answer" "stale-answer-task" 0 (Abandoned "input changed"))))
+
+;; Complete evidence and a prepared answer still cannot bypass denied egress.
+!(test (continuationAnswerTask "denied-answer-task" "denied") (ContinuationStarted "denied-answer-task"))
+!(test (continuationAnswerReads) (DispatchResult Executed Feasible "changed after invocation"))
+!(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (hostOperationGate (activeFrameBundle) respond (captureCandidateOperations (activeFrameBundle)))
+   (GateDecision Rejected EgressDenied))
+!(test (py-call (continuation_fixture.response_calls)) 4)
+!(test (commitmentSnapshot)
+   (CommitmentSnapshot "denied-answer-task" "configured-frame" 0 Open "Read the second file then the first"))
+!(test (py-call (host_config_fixture.local_send_count "Both files: other content; changed after invocation.")) 1)
+!(test (initOperationSession) True)
+!(test (get-state &continuation-evidence) ())
+
+!(test (py-call (host_config_fixture.finish_local_capture)) 1)
 
 !(test (py-call (host_config_fixture.cleanup)) 1)

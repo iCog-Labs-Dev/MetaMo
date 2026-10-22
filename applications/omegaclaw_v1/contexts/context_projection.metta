@@ -11,6 +11,8 @@
 !(bind! &host-recovery (new-state NoRecovery))
 !(bind! &recovery-view (new-state NoRecovery))
 !(bind! &host-continuation (new-state ()))
+;; Bounded, owner-scoped outcomes for the installed plan; never model evidence.
+!(bind! &continuation-evidence (new-state ()))
 !(bind! &continuation-applied-decision (new-state ()))
 !(bind! &task-continuation-view (new-state NoContinuation))
 

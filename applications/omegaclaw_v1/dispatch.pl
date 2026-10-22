@@ -53,10 +53,11 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval(['get-state','&answered-operation-key'], Answered),
     eval(['get-state','&host-task-requirements'], Requirements),
     eval(['get-state','&host-continuation'], Continuation),
+    eval(['get-state','&continuation-evidence'], Evidence),
     (mm_completion_policy(Criterion,Destination) -> Completion=[Criterion,Destination]
      ; Completion=['Disabled',""]),
     Raw=[completion-policy-Completion,channel-Channel,route-Route,prepared-Prepared,answered-Answered,
-         requirements-Requirements,continuation-Continuation|FrameRaw].
+         requirements-Requirements,continuation-Continuation,continuation-evidence-Evidence|FrameRaw].
 
 % Example: native identity stays data across the Python provider boundary.
 mm_response_context(Context, [Session,Frame,Commitment,Task,Input,ResponseInput,Transport]) :-
@@ -83,7 +84,58 @@ mm_response_conversation(Owner, Requirements) :-
 % Example: an exact retained contract is rechecked both before and after inference.
 mm_response_contract('', _) :- !.
 mm_response_contract(Source, Owner) :-
-    sread(Source, Expected), mm_response_conversation(Owner, Current), Current == Expected.
+    sread(Source, Expected), mm_response_proof(Expected, Owner).
+
+% Example: the retained read proof cannot be replaced while inference is running.
+mm_response_proof(Expected, Owner) :-
+    Expected=['ContinuationEvidence'|_], !,
+    mm_response_continuation(Owner, Current, _, _, _), Current == Expected.
+mm_response_proof(Expected, Owner) :-
+    mm_response_conversation(Owner, Current), Current == Expected.
+
+% Example: a completed B-then-A plan supplies B and A's actual Core results in that order.
+% This collector is read-specific; retention and response publication remain separate.
+mm_response_continuation(Owner, Proof, Paths, Observations, Pairs) :-
+    Owner=[Session,Frame,Commitment|_],
+    Commitment=['CommitmentSnapshot',Id,Frame,Revision,'Open',_],
+    commitmentSnapshot(Current), Current == Commitment, mm_dispatch_owner_current,
+    \+ mm_dispatch_busy,
+    eval(['get-state','&host-continuation'],
+         ['HostContinuation',Session,Id,Frame,Revision,Plan,'AwaitingCompletion',[]]),
+    eval(['get-state','&continuation-evidence'], Proof),
+    Proof=['ContinuationEvidence',Session,Commitment,Plan,Steps,Reversed],
+    is_list(Steps), length(Steps,Count), between(1,16,Count),
+    reverse(Reversed,Observations), same_length(Steps,Observations),
+    maplist(mm_plan_read_evidence(Session,Frame,Commitment),Steps,Observations,Paths,Pairs).
+
+% Example: forged text, failed reads and results from a different session cannot be evidence.
+mm_plan_read_evidence(Session,Frame,Owner,['ExecutionStep',_,Command],Outcome,Path,[Owner,Outcome]) :-
+    Command=['read-file',Path],
+    Outcome=['OperationOutcome',Decision,['attempted-command',Command],'Success',Result],
+    Decision=['OperationDecision',['OperationContext',Session,_,Frame],'execute-skill',Command,Ticket],
+    Result=['DispatchResult','Executed','Feasible',Text], string(Text),
+    oc_dispatch_result(Ticket,Command,Recorded), Recorded == Result.
+
+% Example: queueing binds the completed-plan proof to the current response owner.
+mm_response_plan_contract(ExpectedOwner, Source) :-
+    with_mutex(omegaclaw_dispatch, (
+        sread(ExpectedOwner,Owner), mm_response_context(_,Current), Current == Owner,
+        sread(Source,Expected), Expected=['ContinuationEvidence'|_],
+        mm_response_proof(Expected,Owner))).
+
+% Example: obtain bounded evidence from host state, never a model-supplied history.
+mm_continuation_response_input(OwnerSource, ProofSource, Request, Paths, Observations, Provider) :-
+    with_mutex(omegaclaw_dispatch, (
+        mm_response_context(_,Owner),
+        mm_response_continuation(Owner,Proof,Paths,Observations,_),
+        Owner=[_,_,['CommitmentSnapshot',_,_,_,'Open',Summary],_,_,Input,_],
+        mm_continuation_request(Input,Summary,Request),
+        eval([provider],Provider), swrite(Owner,OwnerSource), swrite(Proof,ProofSource))).
+
+% Example: a follow-up stays attached to the current task's summary.
+mm_continuation_request(['HostResponseInput',_,'FollowUp',Message],Summary,Request) :- !,
+    atomics_to_string([Summary,Message],"\n",Request).
+mm_continuation_request(_,Summary,Summary).
 
 % Example: queuing a conversational request cannot borrow another task's eligibility.
 mm_response_conversation_source(ExpectedOwner, RequestSource, Requirements, Source) :-
@@ -109,7 +161,8 @@ mm_response_capture(ExpectedOwner, Contract, Context, ContextSource, Snapshot, E
 mm_response_readiness('ConversationNoTools', Contract, Owner, Task,
                       ['NoToolEvidenceReady','Conversation',Task]) :-
     Contract \== '', mm_response_contract(Contract,Owner).
-mm_response_readiness('ReadEvidence', '', _, Task, ['ReadEvidenceReady',Task]).
+mm_response_readiness('ReadEvidence', Contract, Owner, Task, ['ReadEvidenceReady',Task]) :-
+    mm_response_contract(Contract,Owner).
 mm_response_readiness('', '', _, _, 'NoReadReadiness').
 
 % Example: validated response text is wrapped by the existing fixed send catalog.
@@ -200,11 +253,13 @@ mm_completion_install(Source) :-
     retractall(mm_completion_policy(_,_)),
     assertz(mm_completion_policy(Criterion,Destination)).
 
-% Example: only a real selected, prepared, no-tool answer can publish completion.
+% Example: only a real selected, prepared answer can publish completion.
+% Preserve the existing hook name for callers; read plans use the F2.5 read contract.
 % Reuse Core's immutable ticket/result and F2.6 replay/transaction handling.
 completeHostConversation(Result) :-
     with_mutex(omegaclaw_dispatch,
-      (mm_conversation_completion(Requirements,Evidence,Ticket)
+      ((mm_conversation_completion(Requirements,Evidence,Ticket);
+        mm_read_completion(Requirements,Evidence,Ticket))
        -> term_string(Ticket,Key),
           string_concat("conversation-outcome:",Key,Outcome),
           string_concat("conversation-event:",Key,Event),
@@ -230,3 +285,29 @@ mm_conversation_completion(Requirements,[[Commitment,Outcome]],Ticket) :-
     memberchk(completion-policy-[Criterion,Destination],Raw),
     Requirements=['CompletionRequirements',Commitment,
         ['NoToolRequirements',Assessment,Criterion],['RequiredAnswer',Decision,Destination]].
+
+
+% Example: only a successful prepared answer plus all retained reads can close a read plan.
+% F2.5's read-answer contract currently supports LocalAccepted, not IRC acknowledgement.
+mm_read_completion(Requirements,Evidence,Ticket) :-
+    mm_completion_policy('LocalAccepted',"local:stdout"),
+    mm_response_context(Context,Owner), Owner=[_,_,Commitment,Task|_],
+    mm_response_continuation(Owner,Proof,_,Observations,ReadPairs),
+    eval(['get-state','&prepared-host-operation'],
+         ['PreparedHostOperation',Context,Commitment,Command,_,_,['ReadEvidenceReady',Task],_,_]),
+    eval(['get-state','&selected-operation-decision'],Decision),
+    Decision=['OperationDecision',Context,respond,Command,Ticket],
+    eval(['get-state','&last-operation-outcome'],Outcome),
+    Outcome=['OperationOutcome',Decision,['attempted-command',Command],'Success',Result],
+    eval([validateOperationOutcome,[quote,Outcome]],'OutcomeValid'),
+    oc_dispatch_result(Ticket,Command,Result),
+    oc_dispatch_ticket(Ticket,_,_,['DispatchContext',_,_,_,_,Raw]),
+    memberchk(continuation-evidence-Captured,Raw), Captured == Proof,
+    memberchk(completion-policy-['LocalAccepted',"local:stdout"],Raw),
+    maplist(mm_read_decision,Observations,Reads),
+    append(ReadPairs,[[Commitment,Outcome]],Evidence),
+    Requirements=['CompletionRequirements',Commitment,Reads,
+                  ['RequiredAnswer',Decision,"local:stdout"]].
+
+% Example: completion requires the exact read decisions, including their original tickets.
+mm_read_decision(['OperationOutcome',Decision,_,_,_],Decision).

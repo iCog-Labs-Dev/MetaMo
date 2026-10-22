@@ -1336,3 +1336,31 @@ existing profiles. `LocalAccepted` is available for local stdout;
 recipient acknowledgement. See [explicit conversational completion](COMMITMENTS.md#explicit-conversational-completion-f210)
 for evidence and lifecycle checks. Read requirements and clarification remain
 nonterminal under this no-tool rule.
+
+
+## Completed read-plan answers (F3.7)
+
+An installed read continuation retains its original steps and accepted successful
+outcomes in `ContinuationEvidence`, owned by its session, commitment and plan.
+The cursor still advances only through consumed feedback. New installations and
+session resets clear the retained evidence; Held plans cannot supply an answer.
+
+At ordinary operation capture, the host collects evidence only for a complete
+`AwaitingCompletion` plan. The read-specific collector verifies ordered coverage
+and each immutable Core result, then the existing response queue prepares an
+answer using the actual contents. Collection is separate from preparation so
+future skill-specific evidence adapters need not replace the provider/send path.
+This implementation still accepts only read steps.
+
+The retained proof is rechecked before and after inference. Policy, route,
+input, ownership or evidence changes invalidate publication. No-action and stale
+results do not send or complete work; unchanged idle cycles do not retry the same
+automatic preparation. An explicit configured destination and send permissions
+remain necessary.
+
+After a separately admitted answer is accepted at `local:stdout`, the existing
+completion hook checks the exact read decisions and answer through F2.5/F2.6.
+It requires the explicit `LocalAccepted` completion policy. F2.7 retains frame
+reconciliation; read completion does not reinterpret IRC submission as recipient
+acknowledgement. Automatic user-request extraction/installation is separate from
+this completed-plan handoff.

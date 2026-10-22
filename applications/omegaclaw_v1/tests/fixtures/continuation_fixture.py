@@ -122,3 +122,67 @@ def with_unrequested_read():
     path = _config_path + '.unrequested.json'
     Path(path).write_text(json.dumps(data), encoding='utf-8')
     return path
+
+
+_response_calls = 0
+_response_mode = 'answer'
+
+
+# Example: configure a local answer destination, retaining the real read catalog.
+def enable_answers(mode='answer'):
+    import lib_llm_ext
+    global _response_mode
+    _response_mode = mode
+    data = host.read_config(_config_path)
+    data['destination'] = {'channel': 'local', 'recipient': 'stdout'}
+    data['completion_criterion'] = 'LocalAccepted'
+    for scope in ('global', 'frame'):
+        data[scope]['skills'].append('send')
+        data[scope]['permissions'].extend(['channels.send', 'channels.send:local:stdout'])
+        data[scope]['egress'] = ['local:stdout']
+    if mode == 'denied':
+        data['frame']['egress'] = []
+    path = _config_path + '.answers.json'
+    from pathlib import Path
+    Path(path).write_text(json.dumps(data), encoding='utf-8')
+    host.configure_startup(path)
+    host.provision_startup()
+    lib_llm_ext.PROMPT_DELIMITER = ':-:-:-:'
+    lib_llm_ext.callProvider = answer_provider
+    return 1
+
+
+# Example: verify both actual observations reached preparation; never synthesize read evidence.
+def answer_provider(provider, prompt, max_tokens):
+    global _response_calls
+    _response_calls += 1
+    assert provider == 'Offline' and max_tokens == 1024
+    payload = json.loads(prompt.split(':-:-:-:', 1)[1])
+    assert payload['observations'] == [
+        {'path': _commands[1][1], 'content': 'other content'},
+        {'path': _commands[0][1], 'content': 'changed after invocation'}]
+    if _response_mode == 'no-action':
+        return '{"no_action":true}'
+    if _response_mode == 'stale':
+        import janus
+        janus.query_once("oc_dispatch_mutate(eval(['change-state!','&host-response-input',"
+                         "['HostResponseInput',\"configured-frame\",'FollowUp',\"new question\"]],_))")
+    return '{"text":"Both files: other content; changed after invocation."}'
+
+
+# Example: idle cycles and incomplete evidence never invoke preparation again.
+def response_calls():
+    return _response_calls
+
+
+# Example: one allowed prefix cannot authorize a plan containing an unconfigured file.
+def unallowed_steps():
+    paths = [_commands[0][1], _commands[1][1] + '.unallowed']
+    return host_requirements.construct_read_steps(
+        host_requirements.read_request_result('Proposed', paths, 'ValidatedProposal'))
+
+
+# Example: rejected admission/installation must not create any Core invocation result.
+def dispatch_result_count():
+    import janus
+    return janus.query_once('aggregate_all(count, oc_dispatch_result(_,_,_), Count)')['Count']

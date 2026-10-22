@@ -50,6 +50,8 @@
            (progn
               (change-state! &host-continuation
                  (HostContinuation $session $owner $frame $revision $id Ready $steps))
+              (change-state! &continuation-evidence
+                 (ContinuationEvidence $session $commitment $id $steps ()))
               ;; Fence the previous task's retained observation without deleting its evidence.
               (change-state! &continuation-applied-decision
                  (case (get-state &last-operation-outcome) (
@@ -133,11 +135,21 @@
           (== ($session $frame $expected) ($originSession $originFrame $command))))
       ($_ False))))
 
+;; Example: consume each successful read once, retaining its actual outcome for an answer.
+;; Keep original steps separate from the shrinking cursor; later collectors can interpret outcomes.
+(= (continuationRetainOutcome)
+   (case (get-state &continuation-evidence) (
+      ((ContinuationEvidence $session $owner $id $steps $outcomes)
+       (change-state! &continuation-evidence
+          (ContinuationEvidence $session $owner $id $steps
+             (cons-atom (get-state &last-operation-outcome) $outcomes))))
+      ($_ False))))
+
 (= (continuationApplyStatus $decision $outcome $steps)
    (let $_ (change-state! &continuation-applied-decision $decision)
       (case $outcome (
          (Success
-          (let $tail (cdr-atom $steps)
+          (let* (($_ (continuationRetainOutcome)) ($tail (cdr-atom $steps)))
              ((if (== $tail ()) AwaitingCompletion Ready) $tail)))
          ($_ (Held $steps))))))
 

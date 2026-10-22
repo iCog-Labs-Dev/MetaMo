@@ -119,7 +119,7 @@ def _refresh_requirements(current, request):
 
 
 def queue_response_preparation(provider, request, observations, destination, required_reads=None,
-                               *, requirements=None, expected_owner=None):
+                               *, requirements=None, expected_owner=None, continuation_source=None):
     """Queue one trusted preparation for the next operation capture.
 
     Call after session/task admission. Observations must already have passed
@@ -133,6 +133,8 @@ def queue_response_preparation(provider, request, observations, destination, req
     requirements='ConversationNoTools' requests the exact live host assessment
     for this input. It requires no observations and cannot accompany required_reads.
     expected_owner protects automatic admission-to-queue handoff.
+    continuation_source is the host-retained completed-plan proof; the dispatcher
+    rechecks it at queue, capture and publication. It is never model input.
     Capture suppresses an answer already accepted and consumed for the same
     task/input/evidence. Queuing alone never retries or sends a command.
     """
@@ -156,7 +158,14 @@ def queue_response_preparation(provider, request, observations, destination, req
             return '(ResponseNoAction RequiresTools)'
         if requirements is not None and required_reads is not None:
             raise ConfigError('conflicting task requirements')
-        contract = {'source': '', 'value': None}
+        contract = {'source': continuation_source or '', 'value': None}
+        if continuation_source is not None:
+            if requirements is not None or required_reads is None:
+                raise ConfigError('continuation requires read evidence')
+            proof = janus.query_once('mm_response_plan_contract(Owner, Source)',
+                {'Owner': current['Owner'], 'Source': continuation_source})
+            if not proof.get('truth', False):
+                return '(ResponseNoAction StaleInput)'
         if requirements is not None:
             if requirements != 'ConversationNoTools':
                 raise ConfigError('unsupported readiness contract')
@@ -193,6 +202,24 @@ def _response_evidence(request, context, observations, requirements):
     return host_requirements.conversation_evidence(request, context, observations, requirements)
 
 
+# Example: a finished plan queues its complete read evidence without selecting or sending.
+def _queue_continuation_response(destination):
+    import janus
+    global _automatic_attempt
+    current = janus.query_once(
+        'mm_continuation_response_input(Owner, Proof, Request, Paths, Observations, Provider)')
+    if not current.get('truth', False):
+        return False
+    attempt = ('continuation', current['Owner'], current['Proof'], json.dumps(destination, sort_keys=True))
+    if attempt == _automatic_attempt:
+        return True
+    _automatic_attempt = attempt
+    queue_response_preparation(current['Provider'], current['Request'], current['Observations'],
+        destination, required_reads=current['Paths'], expected_owner=current['Owner'],
+        continuation_source=current['Proof'])
+    return True
+
+
 # Example: an admitted explanation request queues once; idle capture does not retry.
 def _queue_automatic_response():
     import janus
@@ -200,6 +227,8 @@ def _queue_automatic_response():
     global _automatic_attempt
     destination = response_destination()
     if destination is None or _pending_response is not None:
+        return
+    if _queue_continuation_response(destination):
         return
     current = janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + ',' +
         _REQUIREMENTS_CONTEXT + r""",

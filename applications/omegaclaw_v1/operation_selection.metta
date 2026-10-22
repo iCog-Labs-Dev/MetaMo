@@ -102,6 +102,7 @@
           (change-state! &operation-feedback (OperationFeedback NoOutcome 0))
           (change-state! &task-execution-observed "")
           (change-state! &host-continuation ())
+          (change-state! &continuation-evidence ())
           (change-state! &continuation-applied-decision ())
           (change-state! &task-continuation-view NoContinuation) True)))
 
