@@ -167,14 +167,15 @@
    (case $proposal (
       ((ReasonerMotivationalProposal $id $source $kind $target $candidate
          $claim $support $confidence $evidence $prediction)
-       (and (reasonerProposalIdValid $id)
-         (and (reasonerProposalSourceValid $source)
-           (and (reasonerProposalKindValid $kind)
-             (and (reasonerProposalTargetValid $kind $target)
-               (and (reasonerProposalCandidateValid $candidate)
-                 (and (reasonerProposalConfidenceValid $confidence)
-                   (and (not (== $claim ()))
-                        (not (== $prediction ()))))))))))
+       (tpAllTrue (
+          (reasonerProposalIdValid $id)
+          (reasonerProposalSourceValid $source)
+          (reasonerProposalKindValid $kind)
+          (reasonerProposalTargetValid $kind $target)
+          (reasonerProposalCandidateValid $candidate)
+          (reasonerProposalConfidenceValid $confidence)
+          (not (== $claim ()))
+          (not (== $prediction ())))))
       ($_ False))))
 
 (= (legacyReasonerProposalGate $bundle $proposal)
