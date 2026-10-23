@@ -30,7 +30,8 @@
 !(bind! &error (new-state ""))
 !(bind! &loops (new-state 1))
 !(bind! &nextWakeAt (new-state 0))
-(= (commchannel) local)
+!(bind! &continuation-test-channel (new-state local))
+(= (commchannel) (get-state &continuation-test-channel))
 !(import! &self (library OmegaClaw-Core channels/local_channel.py))
 !(import! &self (library OmegaClaw-Core src/channels))
 !(initContextFrame)
@@ -639,8 +640,8 @@
 (= (maxFeedback) 512)
 (= (addToHistory $message $response $commands $new) True)
 !(import! &self (library OmegaClaw-Core src/loop))
-!(configure maxSessionCycles 6)
-!(configure maxNewInputLoops 5)
+!(configure maxSessionCycles 8)
+!(configure maxNewInputLoops 7)
 !(configure maxWakeLoops 1)
 !(configure spamShield True)
 !(configure sleepInterval 0)
@@ -660,7 +661,7 @@
       (change-state! &lastsend "")
       (change-state! &lastresults "")
       (change-state! &error "")
-      (change-state! &loops 5)
+      (change-state! &loops 7)
       (if (== $scenario "sleep") (setConstitutionalMode Sleep) True)
       (omegaclaw 2)))
 
@@ -693,4 +694,52 @@
 ;; Sleeping hosts must wake before admission, without consuming the one planning attempt.
 !(test (runAutomaticReadScenario "sleep") True)
 !(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; F4.2: ordinary Core ingress, automatic plan, native missing read and one bound question.
+!(test (runAutomaticReadScenario "missing") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(test (candidateIsAvailableRaw (activeFrameBundle) respond) False)
+!(test (candidateIsAvailableRaw (activeFrameBundle) ask-clarification) False)
+!(test (clarificationObservedForRecovery (hostContinuationRecovery)) True)
+!(test (clarificationObservedForRecovery NoContinuationRecovery) False)
+!(test (initOperationSession) True)
+!(test (get-state &continuation-clarification) NoClarificationObservation)
+!(py-call (host_config_fixture.cleanup))
+
+;; Selection without a send is not delivery and does not suppress a later valid question.
+!(test (runAutomaticReadScenario "missing-no-action") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; Both-scope egress policy and exact binding cardinality still govern the question.
+!(test (runAutomaticReadScenario "missing-denied") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "missing-unbound") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "missing-ambiguous") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; A rejected selected question is observed as held, never delivered or retried while idle.
+!(test (runAutomaticReadScenario "missing-stale") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; An uncertain send callback stays held without claiming delivery or retrying.
+!(test (runAutomaticReadScenario "missing-uncertain") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; The same recovery selection uses the real IRC handler with a socket double.
+!(import! &self (library OmegaClaw-Core channels/irc.py))
+!(import! &self fixtures/irc_routing_fixture.py)
+!(change-state! &continuation-test-channel irc)
+!(test (runAutomaticReadScenario "missing-irc") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (irc_routing_fixture.disconnect))
 !(py-call (host_config_fixture.cleanup))

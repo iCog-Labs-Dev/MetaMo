@@ -16,6 +16,7 @@
 !(bind! &continuation-applied-decision (new-state ()))
 ;; Exact held-read observation stays host-side; it grants no repair authority.
 !(bind! &continuation-recovery (new-state NoContinuationRecovery))
+!(bind! &continuation-clarification (new-state NoClarificationObservation))
 !(bind! &task-continuation-view (new-state NoContinuation))
 
 (= (frameStateGoalSummary)

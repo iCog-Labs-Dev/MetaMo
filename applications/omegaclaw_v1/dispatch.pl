@@ -54,10 +54,13 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval(['get-state','&host-task-requirements'], Requirements),
     eval(['get-state','&host-continuation'], Continuation),
     eval(['get-state','&continuation-evidence'], Evidence),
+    eval(['get-state','&continuation-recovery'], Recovery),
+    eval(['get-state','&continuation-clarification'], Clarification),
     (mm_completion_policy(Criterion,Destination) -> Completion=[Criterion,Destination]
      ; Completion=['Disabled',""]),
     Raw=[completion-policy-Completion,channel-Channel,route-Route,prepared-Prepared,answered-Answered,
-         requirements-Requirements,continuation-Continuation,continuation-evidence-Evidence|FrameRaw].
+         requirements-Requirements,continuation-Continuation,continuation-evidence-Evidence,
+         continuation-recovery-Recovery,continuation-clarification-Clarification|FrameRaw].
 
 % Example: native identity stays data across the Python provider boundary.
 mm_response_context(Context, [Session,Frame,Commitment,Task,Input,ResponseInput,Transport]) :-

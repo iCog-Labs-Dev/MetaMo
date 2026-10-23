@@ -21,6 +21,8 @@
 ;; respond success publishes the last accepted answer; it is not task completion.
 !(bind! &selected-answer-key (new-state ()))
 !(bind! &answered-operation-key (new-state ()))
+;; Selection association is not part of a ticket snapshot and grants no authority.
+!(bind! &selected-clarification-recovery (new-state NoClarificationSelection))
 
 (= (preparedHostBinding)
    (case (get-state &prepared-host-operation) (
@@ -103,6 +105,8 @@
           (change-state! &continuation-evidence ())
           (change-state! &continuation-applied-decision ())
           (change-state! &continuation-recovery NoContinuationRecovery)
+          (change-state! &continuation-clarification NoClarificationObservation)
+          (change-state! &selected-clarification-recovery NoClarificationSelection)
           (change-state! &task-continuation-view NoContinuation) True)))
 
 (= (beginOperationCycle $bundle)
@@ -117,6 +121,7 @@
           (progn
              (change-state! &selected-host-operation ())
              (change-state! &selected-operation-decision ())
+             (change-state! &selected-clarification-recovery NoClarificationSelection)
              (change-state! &operation-context
                 (OperationContext $session (+ $cycle 1) $frame))))))
 
@@ -200,7 +205,9 @@
       (change-state! &selected-operation-decision
          (if (== (get-state &operation-context) ()) ()
              (OperationDecision (get-state &operation-context) $candidate
-                (selectedHostCommand) (selectedHostTicket)))))))
+                (selectedHostCommand) (selectedHostTicket))))
+      (retainClarificationSelection $candidate (get-state &active-frame-bundle))
+      (get-state &selected-operation-decision))))
 
 ;; Only documented handler observations establish success; invocation alone
 ;; does not. Keep the raw result, including error/rejection reasons, untouched.
@@ -296,7 +303,9 @@
        (if (== (get-state &selected-operation-commitment) (get-state &task-commitment-id))
            (change-state! &host-recovery (HostRecovery (operationRecoveryOwner $frame)))
            False))
-      (Success (change-state! &host-recovery NoRecovery))
+      ;; A delivered question does not resolve the held read that caused it.
+      (Success (if (== (hostContinuationRecovery) NoContinuationRecovery)
+                   (change-state! &host-recovery NoRecovery) True))
       ($_ True))))
 
 ;; Consume the preceding serialized cycle before publishing another snapshot.
@@ -320,6 +329,7 @@
                                (!= $decision (get-state &applied-operation-decision))))
                      (progn
                         (change-state! &applied-operation-decision $decision)
+                        (recordContinuationClarification $outcome)
                         (if (and (== $action respond) (and (== $status Success)
                                  (!= (get-state &selected-answer-key) ())))
                             (change-state! &answered-operation-key (get-state &selected-answer-key)) True)

@@ -66,9 +66,11 @@
 ;; Availability follows an ordered decision chain. Each stage either decides
 ;; or delegates, preserving precedence without evaluating later branches early.
 (= (candidateIsAvailableRaw $bundle $name)
-   (if (idleAutonomyActiveForBundle $bundle)
-       (autonomousCandidateAvailable $name)
-       (responseCandidateAvailable $bundle $name)))
+   (if (heldMissingInputForBundle $bundle)
+       (and (missingInputClarificationNeededForBundle $bundle) (== $name ask-clarification))
+       (if (idleAutonomyActiveForBundle $bundle)
+           (autonomousCandidateAvailable $name)
+           (responseCandidateAvailable $bundle $name))))
 
 (= (autonomousCandidateAvailable $name)
    (if (hasErrors) (== $name self-improve) (autonomyPhaseAllows $name)))

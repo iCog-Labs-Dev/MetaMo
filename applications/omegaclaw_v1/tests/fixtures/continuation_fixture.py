@@ -192,6 +192,7 @@ _auto_calls = None
 _auto_messages = None
 _auto_scenario = None
 _auto_before = None
+_auto_question_turns = 0
 
 
 # Example: only input/provider services are doubled; normal startup owns task and plan installation.
@@ -201,7 +202,7 @@ def install_auto_loop(scenario):
     import local_channel
     import lib_llm_ext
     from pathlib import Path
-    global _auto_calls, _auto_messages, _auto_scenario, _auto_before
+    global _auto_calls, _auto_messages, _auto_scenario, _auto_before, _auto_question_turns
     setup()
     data = host.read_config(with_unrequested_read())
     # Core's text ingress escapes quotes; use ordinary literal paths for this loop scenario.
@@ -222,13 +223,38 @@ def install_auto_loop(scenario):
         data[scope]['skills'].append('send')
         data[scope]['permissions'].extend(['channels.send', 'channels.send:local:stdout'])
         data[scope]['egress'] = ['local:stdout']
+    if scenario.startswith('missing'):
+        data['commands'].append({'skill': 'send', 'candidate': 'ask-clarification',
+            'arguments': ['Which allowed file should replace the unavailable file?']})
+        if scenario == 'missing-denied':
+            data['frame']['egress'] = []
+        if scenario == 'missing-unbound':
+            data['commands'] = [row for row in data['commands']
+                                if row.get('candidate') != 'ask-clarification']
+        if scenario == 'missing-ambiguous':
+            data['commands'].append({'skill': 'send', 'candidate': 'ask-clarification',
+                                    'arguments': ['A different question?']})
+    if scenario == 'missing-irc':
+        import irc
+        import irc_routing_fixture
+        irc_routing_fixture.connect()
+        data['destination'] = dict(channel='irc', server='irc.example.org', port=6667, recipient='#room')
+        data['completion_criterion'] = 'TransportSubmission'
+        for scope in ('global', 'frame'):
+            data[scope]['permissions'] = [item.replace('local:stdout', 'irc:irc.example.org:6667:#room')
+                                           for item in data[scope]['permissions']]
+            data[scope]['egress'] = ['irc:irc.example.org:6667:#room']
+        irc.getLastMessage = auto_receive
     path = _config_path + '.loop.json'
     Path(path).write_text(json.dumps(data), encoding='utf-8')
     os.environ['OMEGACLAW_HOST_CONFIG'] = path
     _auto_scenario = scenario
+    _auto_question_turns = 0
     _auto_calls = dict(classification=0, extraction=0, answer=0, messages=0)
     paths = auto_paths()
     _auto_messages = iter(('Compare ' + ' and '.join(paths),))
+    if scenario == 'missing-irc':
+        _auto_messages = iter(('Nahom: Compare ' + ' and '.join(paths),))
     _auto_before = janus.query_once('findall(_T,oc_dispatch_result(_T,_,_),Tickets)')['Tickets']
     local_channel.getLastMessage = auto_receive
     lib_llm_ext.PROMPT_DELIMITER = ':-:-:-:'
@@ -254,6 +280,7 @@ def auto_receive():
 # Example: the model proposes references, answers from observations, and echoes selected commands.
 def auto_provider(provider, prompt, max_tokens, *args):
     import janus
+    global _auto_question_turns
     assert provider == 'Offline'
     if max_tokens == 512:
         _auto_calls['classification'] += 1
@@ -278,6 +305,26 @@ def auto_provider(provider, prompt, max_tokens, *args):
             {'path': _commands[0][1], 'content': 'observed local file content'}]
         return '{"text":"Both files were inspected: other content; observed local file content."}'
     result = janus.query_once('eval([selectedHostCommand],Command), swrite(Command,Source)')
+    if _auto_scenario.startswith('missing'):
+        if result['Command'] == _commands[0]:
+            from pathlib import Path
+            Path(_commands[0][1]).unlink()
+        if result['Command'] and result['Command'][0] == 'send':
+            _auto_question_turns += 1
+            if _auto_scenario == 'missing-no-action' and _auto_question_turns == 1:
+                return '()'
+            if _auto_scenario == 'missing-stale':
+                janus.query_once('oc_dispatch_mutate(true)')
+            if _auto_scenario == 'missing-uncertain':
+                # Trusted callback fixture only: no handler success is claimed for this attempt.
+                outcome = janus.query_once("""eval(['get-state','&selected-operation-decision'],Decision),
+                    sread(CommandSource,Command),
+                    Outcome=['OperationOutcome',Decision,['attempted-command',Command],
+                             'Unobserved',['DispatchResult','Unobserved','ExecutionUncertain',none]],
+                    eval([ingestOperationOutcome,[quote,Outcome]],Result)""",
+                    {'CommandSource': result['Source']})
+                assert outcome['Result'] == 'OutcomeAccepted', outcome
+                return '()'
     return result['Source'] if result['Command'] else '()'
 
 
@@ -289,6 +336,8 @@ def verify_auto_loop():
     assert _auto_calls == dict(classification=1, extraction=1,
                               answer=int(_auto_scenario in ('answer', 'sleep')), messages=1), _auto_calls
     state = janus.query_once("commitmentSnapshot(Owner), eval(['get-state','&host-continuation'],Plan)")
+    if _auto_scenario.startswith('missing'):
+        return verify_missing_loop(fresh, state)
     if _auto_scenario not in ('answer', 'sleep'):
         assert not [row for row in fresh if row[1][0] in ('read-file', 'send')], fresh
         assert state['Plan'] == [], state
@@ -301,4 +350,46 @@ def verify_auto_loop():
     assert len(sends) == 1 and sends[0][2] == [
         'DispatchResult', 'Executed', 'Feasible', ['SendObservation', 'local:stdout', 'Accepted']], sends
     assert state['Owner'][4] == 'Completed', state
+    return 1
+
+
+# Example: actual Core polling asks once and leaves the missing second read held and open.
+def verify_missing_loop(records, state):
+    import janus
+    reads = [row for row in records if row[1][0] == 'read-file']
+    assert [row[1][1] for row in reads] == auto_paths(), reads
+    assert reads[0][2] == ['DispatchResult', 'Executed', 'Feasible', 'other content'], reads
+    assert reads[1][2] == ['DispatchResult', 'Executed', 'Feasible',
+                           ['Error', 'read-file', 'FileUnavailable']], reads
+    assert state['Owner'][4] == 'Open' and state['Plan'][6] == 'Held', state
+    assert state['Plan'][7] == [['ExecutionStep', '2', _commands[0]]], state
+    retained = janus.query_once("""eval([hostContinuationRecovery],Recovery),
+        eval(['get-state','&continuation-evidence'],Evidence),
+        eval(['get-state','&continuation-clarification'],Question),
+        eval(['get-state','&recovery-view'],RecoveryView)""")
+    assert retained['Recovery'][7] == ['ReadRecoveryNeed', 'MissingInput', 'FileUnavailable'], retained
+    assert len(retained['Evidence'][5]) == 1, retained
+    assert retained['RecoveryView'] == 'RecoveryPending', retained
+    sends = [row for row in records if row[1][0] == 'send']
+    if _auto_scenario in ('missing-denied', 'missing-unbound', 'missing-ambiguous'):
+        assert not sends and retained['Question'] == 'NoClarificationObservation', retained
+        return 1
+    assert len(sends) == (0 if _auto_scenario == 'missing-uncertain' else 1), sends
+    question = retained['Question']
+    assert question[:2] == ['ClarificationObservation', retained['Recovery']], question
+    expected_status = 'Held' if _auto_scenario in ('missing-stale', 'missing-uncertain') else 'Delivered'
+    assert question[2] == expected_status, question
+    assert question[3][1][2] == 'ask-clarification', question
+    expected_outcome = ('Unobserved' if _auto_scenario == 'missing-uncertain'
+                        else 'Blocked' if _auto_scenario == 'missing-stale' else 'Success')
+    assert question[3][3] == expected_outcome, question
+    assert _auto_question_turns == (2 if _auto_scenario == 'missing-no-action' else 1)
+    if _auto_scenario == 'missing-irc':
+        import irc_routing_fixture
+        assert irc_routing_fixture.writes() == 1
+        assert sends[0][2][3] == ['SendObservation', 'irc:irc.example.org:6667:#room',
+                                  ['TransportSubmission', 'Submitted', 'Complete', 1, 1]], sends
+    elif expected_status == 'Delivered':
+        assert sends[0][2] == ['DispatchResult', 'Executed', 'Feasible',
+                              ['SendObservation', 'local:stdout', 'Accepted']], sends
     return 1

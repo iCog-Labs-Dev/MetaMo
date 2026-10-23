@@ -53,6 +53,7 @@
               (change-state! &continuation-evidence
                  (ContinuationEvidence $session $commitment $id $steps ()))
               (change-state! &continuation-recovery NoContinuationRecovery)
+              (change-state! &continuation-clarification NoClarificationObservation)
               ;; Fence the previous task's retained observation without deleting its evidence.
               (change-state! &continuation-applied-decision
                  (case (get-state &last-operation-outcome) (
@@ -201,6 +202,50 @@
            (HeldReadRecovery $session $owner $frame $revision $id $step $need $observation)
            NoContinuationRecovery))
       ($_ NoContinuationRecovery))))
+
+;; Example: a held missing input can ask once through the configured clarification binding.
+;; The bundle identifies the held plan; exact owner and failure evidence remain host-owned.
+(= (heldMissingInputForBundle $bundle)
+   (case (hostContinuationRecovery) (
+      ((HeldReadRecovery $_ $_ $frame $_ $plan $_ (ReadRecoveryNeed MissingInput $_) $_)
+       (tpAllTrue ((frameRuntimeTaskOpen $bundle)
+          (== $frame (frameBundleCurrentId $bundle))
+          (== (frameRuntimeContinuation $bundle) (ContinuationView $plan None Held ())))))
+      ($_ False))))
+
+;; Example: a receipt for another plan cannot suppress this held step's question.
+(= (clarificationObservedForRecovery $recovery)
+   (case (get-state &continuation-clarification) (
+      ((ClarificationObservation $recovery $_ $_) True)
+      ($_ False))))
+
+;; Example: an observed question attempt holds further sends until explicit recovery work.
+(= (missingInputClarificationNeededForBundle $bundle)
+   (and (heldMissingInputForBundle $bundle)
+        (not (clarificationObservedForRecovery (hostContinuationRecovery)))))
+
+;; Example: selection alone is not delivery; retain its exact recovery/decision association.
+(= (retainClarificationSelection $candidate $bundle)
+   (change-state! &selected-clarification-recovery
+      (if (and (== $candidate ask-clarification)
+               (missingInputClarificationNeededForBundle $bundle))
+          (ClarificationSelection (hostContinuationRecovery)
+             (get-state &selected-operation-decision))
+          NoClarificationSelection)))
+
+;; Example: one validated local Accepted or IRC Submitted outcome records the question once.
+;; Blocked/uncertain attempts remain observed holds, not a reason to send again while idle.
+(= (recordContinuationClarification $observation)
+   (case ((get-state &selected-clarification-recovery) $observation) (
+      (((ClarificationSelection $recovery $decision)
+        (OperationOutcome $decision $_ $status $_))
+       (if (and (== $recovery (hostContinuationRecovery))
+                (not (clarificationObservedForRecovery $recovery)))
+           (change-state! &continuation-clarification
+              (ClarificationObservation $recovery
+                 (if (== $status Success) Delivered Held) $observation))
+           False))
+      ($_ False))))
 
 (= (continuationApplyStatus $decision $outcome $steps)
    (let $_ (change-state! &continuation-applied-decision $decision)
