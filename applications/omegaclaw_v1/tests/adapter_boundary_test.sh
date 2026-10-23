@@ -64,6 +64,8 @@ assert positions == sorted(positions), positions
 lifecycle = Path(sys.argv[2]).read_text().split('(= (prepareTaskStateForMetaMo)', 1)[1]
 steps = ['(refreshTaskExecutionObserved)', '(refreshTaskCommitment)',
          '(applyOperationOutcome (get-state &cfv2-current-frame-id))',
+         '(beginOperationCycleForFrame (get-state &cfv2-current-frame-id))',
+         '(prepareAutomaticReadPlan)',
          '(frameStateForMetaMo)', '(setActiveFrameBundle $bundle)']
 positions = [lifecycle.index(step) for step in steps]
 assert positions == sorted(positions), positions

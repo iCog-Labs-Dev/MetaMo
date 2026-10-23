@@ -1,3 +1,4 @@
+!(import! &self (library lib_import))
 ;; Real bridge selection through concrete policy to real Core frame inspection.
 ;; Only external provider/memory services are doubled. No scoring replacement.
 !(import! &self fixtures/offline_services/offline_guard.py)
@@ -195,6 +196,7 @@
       (initOmegaClawMotivation)
       (change-state! &new-msg-flag False)
       (change-state! &prevmsg "")
+      (change-state! &lastsend "")
       (change-state! &error "")
       (change-state! &lastresults "")
       (hostBeginContinuation "read-plan" (get-state &read-plan))))
@@ -571,3 +573,68 @@
 !(test (py-call (host_config_fixture.finish_local_capture)) 1)
 
 !(test (py-call (host_config_fixture.cleanup)) 1)
+
+
+;; F3.A1: a user message traverses real Core ingress, startup, planning, selection and dispatch.
+;; The fixture supplies input/provider responses, never calls plan APIs or selects a command.
+!(import! &self (library MetaMo applications/omegaclaw_v1/runtime_support))
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_startup))
+(= (getPrompt) "Use only the selected host command.")
+(= (maxFeedback) 512)
+(= (addToHistory $message $response $commands $new) True)
+!(import! &self (library OmegaClaw-Core src/loop))
+!(configure maxSessionCycles 6)
+!(configure maxNewInputLoops 5)
+!(configure maxWakeLoops 1)
+!(configure spamShield True)
+!(configure sleepInterval 0)
+!(configure reasoningMode medium)
+!(configure useFrames True)
+
+;; Example: reset independent scenarios; within each run only Core receives the one request.
+(= (runAutomaticReadScenario $scenario)
+   (progn
+      (commitmentFixtureReset)
+      (initContextFrame)
+      (initOperationSession)
+      (initOmegaClawMotivation)
+      (py-call (continuation_fixture.install_auto_loop $scenario))
+      (initializeHostStartup)
+      (change-state! &prevmsg "")
+      (change-state! &lastsend "")
+      (change-state! &lastresults "")
+      (change-state! &error "")
+      (change-state! &loops 5)
+      (if (== $scenario "sleep") (setConstitutionalMode Sleep) True)
+      (omegaclaw 2)))
+
+!(test (runAutomaticReadScenario "answer") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "unallowed") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "no-action") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "stale") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+
+!(test (runAutomaticReadScenario "session") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "cancel") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+
+;; Sleeping hosts must wake before admission, without consuming the one planning attempt.
+!(test (runAutomaticReadScenario "sleep") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))

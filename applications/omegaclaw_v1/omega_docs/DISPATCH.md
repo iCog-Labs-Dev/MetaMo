@@ -1362,5 +1362,26 @@ After a separately admitted answer is accepted at `local:stdout`, the existing
 completion hook checks the exact read decisions and answer through F2.5/F2.6.
 It requires the explicit `LocalAccepted` completion policy. F2.7 retains frame
 reconciliation; read completion does not reinterpret IRC submission as recipient
-acknowledgement. Automatic user-request extraction/installation is separate from
-this completed-plan handoff.
+acknowledgement. Automatic user-request extraction/installation uses the separate F3.A1
+host cycle hook described below.
+
+
+## Automatic admitted read plans (F3.A1)
+
+At the normal cycle boundary, `prepareAutomaticReadPlan` runs after previous
+feedback is consumed and selection is cleared, before the one published frame
+snapshot. The trusted Python adapter reuses requirements classification, extracts
+only Files-only requests, and constructs the existing bounded ExecutionStep data.
+It does not grant permissions, choose a command for scoring, or run a handler.
+
+The existing dispatch mutex protects context capture and final installation.
+Owner, input, operation context, full native snapshot and epoch must still match
+after provider inference. The final transaction reuses normal admission and
+safe-point installation. Active continuations cannot be overwritten. Idle cycles
+do not retry unchanged extraction attempts; a sleeping host waits to wake first.
+A task requiring files without an admitted plan does not offer arbitrary catalog
+reads for execution. Completed plans then use the F3.7 evidence/answer path.
+
+The Core-loop regression supplies one plain-path request and model responses;
+it never installs a plan itself. File handlers, local sends, task completion and
+normal ingress are real. Core's pre-existing quote-escaping behavior is unchanged.

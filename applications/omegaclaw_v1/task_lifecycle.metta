@@ -235,8 +235,10 @@
       ;; Publish F3.5's installed pending step before captureCandidateOperations filters rows.
       ($_ (hostRefreshContinuation))
       ($_ (eval (refreshHostRecovery)))
+      ($_ (eval (beginOperationCycleForFrame (get-state &cfv2-current-frame-id))))
+      ;; The dispatch adapter is optional in pure composition; the live hook runs at the cleared slot.
+      ($_ (eval (prepareAutomaticReadPlan)))
       ($bundle (frameStateForMetaMo))
-      ($_ (eval (beginOperationCycle $bundle)))
       ;; The decision module providing this setter loads after lifecycle.
       ($_ (eval (setActiveFrameBundle $bundle)))
    ) $bundle))

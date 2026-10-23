@@ -135,6 +135,8 @@ mm_continuation_response_input(OwnerSource, ProofSource, Request, Paths, Observa
 % Example: a follow-up stays attached to the current task's summary.
 mm_continuation_request(['HostResponseInput',_,'FollowUp',Message],Summary,Request) :- !,
     atomics_to_string([Summary,Message],"\n",Request).
+mm_continuation_request(['HostResponseInput',_,Kind,Message],_,Message) :-
+    memberchk(Kind,['NewTask','Replace']), !.
 mm_continuation_request(_,Summary,Summary).
 
 % Example: queuing a conversational request cannot borrow another task's eligibility.
@@ -311,3 +313,46 @@ mm_read_completion(Requirements,Evidence,Ticket) :-
 
 % Example: completion requires the exact read decisions, including their original tickets.
 mm_read_decision(['OperationOutcome',Decision,_,_,_],Decision).
+
+
+% Example: only a provisioned admitted task at an empty selection slot may propose a plan.
+mm_read_plan_context(Owner, Context, Request, Snapshot, Epoch) :-
+    mm_response_context(Context,Owner),
+    Owner=[Session,Frame,Commitment,_,Frame,Input,_],
+    mm_dispatch_task_owner(Commitment), mm_dispatch_owner(Commitment),
+    Input=['HostResponseInput',Frame,Kind,_], memberchk(Kind,['NewTask','Replace','FollowUp']),
+    Commitment=['CommitmentSnapshot',_,Frame,_,'Open',Summary],
+    Context=['OperationContext',Session,_,Frame],
+    \+ mm_dispatch_busy,
+    eval(['get-state','&selected-operation-decision'],[]),
+    eval(['get-state','&selected-host-operation'],[]),
+    eval([continuationSlotAvailable,[quote,Session],[quote,Commitment]],true),
+    mm_continuation_request(Input,Summary,Request),
+    mm_dispatch_snapshot(Current), term_string(Current,Snapshot), oc_dispatch_epoch(Epoch).
+
+% Example: a follow-up or policy mutation during extraction cannot install stale work.
+mm_install_read_plan(OwnerSource,ContextSource,Snapshot,Epoch,IdSource,StepsSource,Text) :-
+    with_mutex(omegaclaw_dispatch, (
+        sread(OwnerSource,ExpectedOwner), sread(ContextSource,ExpectedContext),
+        (mm_read_plan_context(Owner,Context,_,CurrentSnapshot,Epoch),
+         Owner == ExpectedOwner, Context == ExpectedContext,
+         term_string(ExpectedSnapshot,Snapshot), term_string(CurrentState,CurrentSnapshot),
+         CurrentState == ExpectedSnapshot
+         -> sread(IdSource,Id), sread(StepsSource,Steps),
+            eval([hostAdmitContinuation,[quote,Id],[quote,Steps]],Admission),
+            Owner=[_,_,Commitment|_],
+            (Admission=['ContinuationAdmitted'|_]
+             -> eval([hostInstallAdmittedContinuation,[quote,Context],[quote,Commitment],
+                      [quote,Admission]],Result)
+             ; Result=Admission)
+         ; Result=['ContinuationRejected','StaleInput']),
+        swrite(Result,Text))).
+
+% Example: an unallowed read request cannot fall back to an unrelated catalog read.
+hostReadPlanRequired(Result) :-
+    (mm_response_context(_, [Session,Frame,Commitment|_]),
+     mm_dispatch_task_owner(Commitment), mm_dispatch_owner(Commitment),
+     eval(['get-state','&host-task-requirements'],
+          ['HostTaskRequirements',[Session,Frame,Commitment|_],_,['RequiredWork',Work],_,_]),
+     memberchk('Files',Work)
+     -> Result=true ; Result=false).

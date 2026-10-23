@@ -107,6 +107,10 @@
           (change-state! &task-continuation-view NoContinuation) True)))
 
 (= (beginOperationCycle $bundle)
+   (beginOperationCycleForFrame (frameBundleCurrentId $bundle)))
+
+;; Example: clear last cycle's selection before planning, then publish one final bundle.
+(= (beginOperationCycleForFrame $frame)
    (if (== (get-state &operation-provider) ()) False
        (let* (
           ($_ (if (== (get-state &operation-context) ()) (initOperationSession) True))
@@ -115,13 +119,16 @@
              (change-state! &selected-host-operation ())
              (change-state! &selected-operation-decision ())
              (change-state! &operation-context
-                (OperationContext $session (+ $cycle 1) (frameBundleCurrentId $bundle)))))))
+                (OperationContext $session (+ $cycle 1) $frame))))))
 
 ;; Example: an installed B-then-A plan admits only B's exact command on its first cycle.
 ;; Filter the published view, preserving duplicates for hostOperationGate to reject.
 (= (continuationOperationRows $bundle $rows)
    (case (frameRuntimeContinuation $bundle) (
-      (NoContinuation $rows)
+      (NoContinuation
+       (if (== (eval (hostReadPlanRequired)) True)
+           (filter-atom $rows $row (!= (index-atom $row 1) execute-skill))
+           $rows))
       ((ContinuationView $_ $_ $status $expected)
        (filter-atom $rows $row
           (let (HostOperation $candidate $command $_ $_ $_ $_) $row

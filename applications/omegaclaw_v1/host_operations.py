@@ -16,6 +16,7 @@ import host_requirements
 _pending_response = None
 _automatic_attempt = None
 _requirements_attempt = None
+_read_plan_attempt = None
 
 
 def _irc_transport():
@@ -63,7 +64,9 @@ eval(['get-state','&host-task-requirements'], Prior),
 eval(['get-state','&host-continuation'], Continuation),
 (Prior=['HostTaskRequirements',[_Session,_Frame,_Commitment|_],_,['RequiredWork',Inherited],_,_]
  -> true ; Inherited=[]),
-(Continuation == [] -> RequiredWork=Inherited ; sort(['Files'|Inherited], RequiredWork)),
+(_Commitment=['CommitmentSnapshot',_Id,_Frame,_Revision,'Open',_],
+ Continuation=['HostContinuation',_Session,_Id,_Frame,_Revision|_]
+ -> sort(['Files'|Inherited],RequiredWork) ; RequiredWork=Inherited),
 (Prior=['HostTaskRequirements',_Owner,Continuation,['RequiredWork',RequiredWork],_,_]
  -> Cached=true ; Cached=false)
 """
@@ -200,6 +203,49 @@ def _response_evidence(request, context, observations, requirements):
     if requirements is None:
         return _read_observations(context, observations)
     return host_requirements.conversation_evidence(request, context, observations, requirements)
+
+
+# Example: capture ownership and requirements at the cleared host cycle boundary.
+def _read_plan_context():
+    import janus
+    return janus.query_once('with_mutex(omegaclaw_dispatch, (' + _PREPARATION_CONTEXT + ',' +
+        _REQUIREMENTS_CONTEXT + r""",
+        mm_read_plan_context(_Owner,Context,Request,Snapshot,Epoch),
+        eval([provider],Provider), eval([constitutionalMode],Mode), swrite(Context,ContextSource),
+        swrite(Prior,PriorSource), swrite(Continuation,ContinuationSource)
+    ))""")
+
+
+# Example: one admitted two-file request reaches installation without a second user message.
+def prepare_automatic_read_plan():
+    import janus
+    from uuid import uuid4
+    from host_dispatch_config import encode
+    global _read_plan_attempt
+    current = _read_plan_context()
+    if not current.get('truth', False):
+        return '(ContinuationSkipped NotEligible)'
+    assessment = _refresh_requirements(current, current['Request'])
+    if (assessment is None or assessment['status'] != 'RequiresTools'
+            or assessment['required_work'] != ['Files']):
+        return '(ContinuationSkipped NotReadTask)'
+    # Requirements publication mutates the epoch; capture again before extraction.
+    fresh = _read_plan_context()
+    if not fresh.get('truth', False) or fresh['Owner'] != current['Owner']:
+        return '(ContinuationRejected StaleInput)'
+    if fresh['Mode'] == 'Sleep':
+        return '(ContinuationSkipped AwaitingWake)'
+    attempt = (fresh['Owner'], fresh['Request'])
+    if attempt == _read_plan_attempt:
+        return '(ContinuationSkipped AlreadyAttempted)'
+    _read_plan_attempt = attempt
+    proposal = host_requirements.extract_read_request(fresh['Provider'], fresh['Request'])
+    steps = host_requirements.construct_read_steps(proposal)
+    result = janus.query_once(
+        'mm_install_read_plan(Owner,ContextSource,Snapshot,Epoch,IdSource,StepsSource,Text)',
+        dict(Owner=fresh['Owner'], ContextSource=fresh['ContextSource'], Snapshot=fresh['Snapshot'],
+             Epoch=fresh['Epoch'], IdSource=encode(str(uuid4())), StepsSource=steps))
+    return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidPlan)'
 
 
 # Example: a finished plan queues its complete read evidence without selecting or sending.

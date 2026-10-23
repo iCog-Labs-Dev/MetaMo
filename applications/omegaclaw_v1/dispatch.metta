@@ -4,7 +4,7 @@
 
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/dispatch.pl)
-   (initMetaMoDispatch dispatchRoutingAllowed completeHostConversation))
+   (initMetaMoDispatch dispatchRoutingAllowed completeHostConversation hostReadPlanRequired))
 
 ;; Core holds its dispatch mutex and the IRC route guard from the final snapshot
 ;; through handler invocation. Check actual transport routing, not just config.
@@ -19,6 +19,12 @@
              ($_ $decision))))))
 
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_operations.py))
+
+;; Example: the ordinary cycle prepares a read plan before publishing its selection snapshot.
+(= (prepareAutomaticReadPlan)
+   (progn
+      (py-call (host_operations.prepare_automatic_read_plan))
+      (hostRefreshContinuation)))
 
 ;; Example: (hostAdmitContinuation "plan" proposed-steps) checks the live host catalog.
 ;; Resolved steps remain data until hostInstallAdmittedContinuation installs them.
