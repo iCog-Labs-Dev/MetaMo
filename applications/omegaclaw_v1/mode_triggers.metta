@@ -51,16 +51,16 @@
       ($signalRows (collapse (match &self (ModeSignalTrigger $group $kind $enter $exit)
          (ModeSignalTrigger $group $kind $enter $exit))))
       ($contextRows (collapse (match &self (ModeContextTrigger $group $condition)
-         (ModeContextTrigger $group $condition)))))
-      (TriggerEvidence
-         (map-atom $signalRows $row
+         (ModeContextTrigger $group $condition))))
+      ($signalEvidence (map-atom $signalRows $row
             (let* (
                ((ModeSignalTrigger $_ $kind $enter $exit) $row)
                ($threshold (if (== $phase Exit) $exit $enter)))
                (SignalTriggerEvidence $kind $phase $threshold
                   (filter-atom $signals $signal
                      (let (signal $name $_) $signal (== $name $kind)))
-                  (modeSignalMeetsThreshold $kind $threshold $signals))))
-         (map-atom $contextRows $row
+                  (modeSignalMeetsThreshold $kind $threshold $signals)))))
+      ($contextEvidence (map-atom $contextRows $row
             (let (ModeContextTrigger $_ $condition) $row
-               (ContextTriggerEvidence $condition (modeContextCondition $condition $hasFrame)))))))
+               (ContextTriggerEvidence $condition (modeContextCondition $condition $hasFrame))))))
+      (TriggerEvidence $signalEvidence $contextEvidence)))
