@@ -102,6 +102,7 @@
           (change-state! &host-continuation ())
           (change-state! &continuation-evidence ())
           (change-state! &continuation-applied-decision ())
+          (change-state! &continuation-recovery NoContinuationRecovery)
           (change-state! &task-continuation-view NoContinuation) True)))
 
 (= (beginOperationCycle $bundle)

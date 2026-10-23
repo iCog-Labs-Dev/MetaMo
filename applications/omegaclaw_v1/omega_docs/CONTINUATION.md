@@ -81,6 +81,43 @@ explicit operator action, not evidence that uncertain effects can safely repeat.
 There is no durable progress, restart recovery, general task planner, multi-frame
 continuation, budget settlement or arbitrary-handler support.
 
+## Held-read recovery classification (F4.1)
+
+The host retains a newly consumed unsuccessful read observation in
+`&continuation-recovery`. `hostContinuationRecovery` returns it only for the
+current open owner and held step:
+
+```metta
+(HeldReadRecovery SESSION COMMITMENT FRAME COMMITMENT_REVISION PLAN STEP
+   (ReadRecoveryNeed MissingInput FileUnavailable) ORIGINAL_OPERATION_OUTCOME)
+```
+
+`FileUnavailable` means required input is unavailable; it does not establish
+whether the path is wrong, the file was deleted, or preflight failed for another
+reason. A typed `PermissionDenied` is classified separately. Other explicit
+blocked results or executed handler errors are `DefiniteFailure`, with their
+original reason. Unobserved results are `Uncertainty`; undocumented results
+conservatively yield `Uncertainty UnknownOutcome`.
+
+If policy prunes the pending read before selection, Core records the canonical
+`Blocked MissingDecision` outcome. When that same cycle's typed candidate
+rejections contain `execute-skill PermissionDenied`, the host retains
+`(ReadRecoveryNeed PermissionDenied (CandidateRejection execute-skill PermissionDenied))`.
+Otherwise the result remains `DefiniteFailure MissingDecision`; the host does not
+guess which policy condition prevented selection.
+
+Classification occurs only after the existing applied-decision, session/frame,
+pending-command and duplicate-consumption checks. The record preserves the exact
+observation and plan/step ownership. Completed read evidence, the pending cursor,
+and the consumption marker keep their existing semantics. Idle cycles do not
+overwrite the retained reason; a successor plan or explicit session reset clears
+it. Ownership displacement can hold a plan without inventing a read failure.
+
+This is host-side bookkeeping, not a new signal substrate or motivational repair
+rule. Constitutional modes do not establish recovery need. The existing
+`ContinuationView` and bounded frame bundle remain unchanged. F4.1 neither sends
+a clarification nor admits a correction or retry; F4.2 onward supplies that work.
+
 ## Core helper interfaces
 
 The compatible Core `src/helper.py` supplies two pure helpers returning integer

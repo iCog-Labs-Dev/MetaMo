@@ -14,6 +14,8 @@
 ;; Bounded, owner-scoped outcomes for the installed plan; never model evidence.
 !(bind! &continuation-evidence (new-state ()))
 !(bind! &continuation-applied-decision (new-state ()))
+;; Exact held-read observation stays host-side; it grants no repair authority.
+!(bind! &continuation-recovery (new-state NoContinuationRecovery))
 !(bind! &task-continuation-view (new-state NoContinuation))
 
 (= (frameStateGoalSummary)

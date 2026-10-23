@@ -52,6 +52,7 @@
                  (HostContinuation $session $owner $frame $revision $id Ready $steps))
               (change-state! &continuation-evidence
                  (ContinuationEvidence $session $commitment $id $steps ()))
+              (change-state! &continuation-recovery NoContinuationRecovery)
               ;; Fence the previous task's retained observation without deleting its evidence.
               (change-state! &continuation-applied-decision
                  (case (get-state &last-operation-outcome) (
@@ -145,6 +146,62 @@
              (cons-atom (get-state &last-operation-outcome) $outcomes))))
       ($_ False))))
 
+;; Example: FileUnavailable needs input; it does not establish why the file is unavailable.
+;; Only typed host outcomes classify recovery. Modes and free-form error text do not.
+(= (continuationReadRecoveryNeed $result)
+   (case $result (
+      ((DispatchResult Executed $_ (Error read-file FileUnavailable))
+       (ReadRecoveryNeed MissingInput FileUnavailable))
+      ((DispatchResult Blocked PermissionDenied $_)
+       (ReadRecoveryNeed PermissionDenied PermissionDenied))
+      ((DispatchResult Executed $_ (Error $_ $reason))
+       (ReadRecoveryNeed DefiniteFailure $reason))
+      ((DispatchResult Blocked $reason $_)
+       (ReadRecoveryNeed DefiniteFailure $reason))
+      ((DispatchResult Unobserved $reason $_)
+       (ReadRecoveryNeed Uncertainty $reason))
+      ($_ (ReadRecoveryNeed Uncertainty UnknownOutcome)))))
+
+;; Example: a canonical no-action result can retain the exact pending read's typed denial.
+;; Candidate admission runs later in composition; defer this read until the host cycle.
+(= (continuationRecoveryNeed $observation)
+   (case $observation (
+      ((OperationOutcome
+          (OperationDecision $_ none () (DispatchUnavailable MissingDecision)) $_ Blocked
+          (DispatchResult Blocked MissingDecision none))
+       (if (tpContains (eval (candidateRejections))
+               (CandidateRejection execute-skill PermissionDenied))
+           (ReadRecoveryNeed PermissionDenied (CandidateRejection execute-skill PermissionDenied))
+           (ReadRecoveryNeed DefiniteFailure MissingDecision)))
+      ((OperationOutcome $_ $_ $_ $result) (continuationReadRecoveryNeed $result))
+      ($_ (ReadRecoveryNeed Uncertainty UnknownOutcome)))))
+
+;; Example: retain the failed second read with its owner and step, preserving first-read evidence.
+;; Called only after the existing consumed-decision checks; unrelated observations cannot attach.
+(= (continuationRetainRecovery $steps $observation)
+   (case ((get-state &host-continuation) $observation) (
+      (((HostContinuation $session $owner $frame $revision $id Ready $steps)
+        (OperationOutcome $decision $_ $_ $result))
+       (if (tpAllTrue ((continuationOwnerCurrent $session $owner $frame $revision)
+                      (continuationDecisionMatches $session $frame $steps $decision)))
+           (let (ExecutionStep $step $_command) (car-atom $steps)
+              (change-state! &continuation-recovery
+                 (HeldReadRecovery $session $owner $frame $revision $id $step
+                    (continuationRecoveryNeed $observation) $observation)))
+           False))
+      ($_ False))))
+
+;; Example: an old owner's retained diagnostic is not recovery evidence for a successor.
+(= (hostContinuationRecovery)
+   (case ((get-state &host-continuation) (get-state &continuation-recovery)) (
+      (((HostContinuation $session $owner $frame $revision $id Held $steps)
+        (HeldReadRecovery $session $owner $frame $revision $id $step $need $observation))
+       (if (and (continuationOwnerCurrent $session $owner $frame $revision)
+                (== $step (index-atom (car-atom $steps) 1)))
+           (HeldReadRecovery $session $owner $frame $revision $id $step $need $observation)
+           NoContinuationRecovery))
+      ($_ NoContinuationRecovery))))
+
 (= (continuationApplyStatus $decision $outcome $steps)
    (let $_ (change-state! &continuation-applied-decision $decision)
       (case $outcome (
@@ -159,7 +216,10 @@
        (if (tpAllTrue ((== $decision (get-state &applied-operation-decision))
                        (!= $decision (get-state &continuation-applied-decision))
                        (continuationDecisionMatches $session $frame $steps $decision)))
-           (continuationApplyStatus $decision $outcome $steps)
+           (progn
+              (if (== $outcome Success) True
+                  (continuationRetainRecovery $steps $observation))
+              (continuationApplyStatus $decision $outcome $steps))
            (Ready $steps)))
       ($_ (Ready $steps)))))
 
