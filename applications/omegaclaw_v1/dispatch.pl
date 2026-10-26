@@ -3,6 +3,7 @@
 % command/metadata bindings and typed policies from host configuration.
 :- dynamic mm_dispatch_binding/3, mm_dispatch_policies/2, mm_dispatch_owner/1.
 :- dynamic mm_completion_policy/2.
+:- dynamic mm_dispatch_native_required/0.
 
 % Example: an invoked command with unresolved effects prevents task handoff.
 mm_dispatch_busy :-
@@ -87,9 +88,81 @@ mm_budget_install(['BudgetAccounts',Accounts,Records]) :-
 mm_dispatch_live_policies(Global, Frame, Accounting) :-
     eval(['get-state','&budget-account-state'],Accounting),
     (mm_dispatch_policies(ConfiguredGlobal,ConfiguredFrame)
-     -> eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredGlobal]],Global),
-        eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredFrame]],Frame)
+     -> eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredGlobal]],BudgetGlobal),
+        eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredFrame]],BudgetFrame),
+        mm_native_scope('&cfv2-global-constraints',BudgetGlobal,Global),
+        mm_native_scope('&cfv2-current-constraints',BudgetFrame,Frame)
      ; Global=[], Frame=[]).
+
+% Example: structural declarations have fixed semantics, never executable prose.
+% Operational restrictions use the existing typed constraint evaluator below.
+mm_native_constraint(['Constraint',Name,Description], []) :-
+    string(Description), memberchk(Name,
+        ['FrameIsAuthority','RootIsPointerOnly','NoRawThoughtPrompting',
+         'SkillCommandsOnly','AuditViaHistory','NoUnjustifiedAutonomousSideEffects']), !.
+mm_native_constraint(Constraint, [Constraint]) :-
+    eval([tpEntryValid,constraints,[quote,Constraint]],true).
+
+% Example: unknown raw constraints cannot disappear through prompt compaction.
+mm_native_constraints(Key, Constraints) :-
+    nb_current(Key,Raw), ground(Raw), is_list(Raw), length(Raw,Count), Count =< 128,
+    maplist(mm_native_constraint,Raw,Rows), append(Rows,Constraints).
+
+% Example: native frame DenySkill tightens its configured scope at both gates.
+mm_native_scope(_, Scope, Scope) :- \+ mm_dispatch_native_required, !.
+mm_native_scope(Key, Scope, Result) :-
+    Scope=['PolicyScope',Target,Skills,Permissions,Egress,[constraints,Existing],Budgets], !,
+    (mm_native_constraints(Key,Native)
+     -> append(Existing,Native,Constraints),
+        Result=['PolicyScope',Target,Skills,Permissions,Egress,[constraints,Constraints],Budgets]
+     ; Result=['NativePolicyRejected','UnsupportedConstraint']).
+mm_native_scope(_, Rejection, Rejection).
+
+% Example: a binding alone cannot justify work on an unsupported autonomous frame.
+% A supported operation must be explicitly host-bound to the current active frame.
+mm_native_operation_reason(Origin, Target, _Request, _Operation, Reason) :-
+    eval([frameStateForMetaMo],Current),
+    maplist(mm_dispatch_schedule_field,Current,Canonical),
+    maplist(mm_dispatch_schedule_field,Origin,CanonicalOrigin),
+    maplist(mm_dispatch_schedule_field,Target,CanonicalTarget),
+    (Canonical \== CanonicalOrigin ; Canonical \== CanonicalTarget), !,
+    Reason='StaleSnapshot'.
+mm_native_operation_reason(Origin, Target, Request, Operation, Reason) :-
+    mm_dispatch_live_policies(Global,Frame,_),
+    eval([feasibilityGateForRequest,[quote,Origin],[quote,Target],
+          [quote,Request],[quote,Operation],[quote,Global],[quote,Frame]],Decision),
+    (Decision == ['GateDecision','Admitted','Feasible']
+     -> mm_native_justification_reason(Request,Operation,Reason)
+     ; (Decision=['GateDecision','Rejected',Reason] -> true ; Reason='InvalidPolicyDecision')).
+
+% Example: feasible current policy still needs a justified, exact host operation.
+mm_native_justification_reason(Request, Operation, Reason) :-
+    (\+ mm_native_source_authorized
+     -> Reason='UnjustifiedAutonomousSideEffects'
+     ; findnsols(2,Command,mm_dispatch_resolve(Request,Command,Operation),Commands),
+       (Commands=[_] -> mm_native_budget_reason(Reason) ; Reason='MissingHostJustification')).
+
+% Example: normal startup requires user provenance; manual host configuration
+% may bind an ownerless inspection frame. Neither admits AgentDirective work.
+mm_native_source_authorized :- nb_current('&cfv2-current-source','UserDirective'), !.
+mm_native_source_authorized :-
+    nb_current('&cfv2-current-source',[]), \+ mm_dispatch_owner(_).
+
+% Example: an exhausted native budget cannot be overridden by an Open typed policy.
+mm_native_budget_reason(Reason) :-
+    (nb_current('&cfv2-global-budget',Global), is_list(Global), memberchk([status,'Open'],Global),
+     nb_current('&cfv2-current-budget',Frame), is_list(Frame), memberchk([status,'Open'],Frame)
+     -> Reason='Feasible' ; Reason='BudgetExhausted').
+
+% Trusted host boundary only; raw constraints/state never enter MetaMo appraisal.
+% Example: dispatchNativePolicyGate rejects stale bundles before selecting work.
+dispatchNativePolicyGate(Origin, Target, Request, Operation, Decision) :-
+    (mm_dispatch_native_required
+     -> with_mutex(omegaclaw_dispatch,
+          mm_native_operation_reason(Origin,Target,Request,Operation,Reason))
+     ; Reason='Feasible'),
+    (Reason == 'Feasible' -> Admission='Admitted' ; Admission='Rejected'),
+    Decision=['GateDecision',Admission,Reason].
 mm_dispatch_revoke(Command) :-
     oc_dispatch_mutate((retractall(mm_dispatch_binding(Command,_,_)),
                        eval([revokePreparedHostCommand,[quote,Command]],_))).
@@ -358,6 +431,7 @@ initMetaMoDispatch(true) :-
     oc_dispatch_configure(mm_dispatch_snapshot,mm_dispatch_resolve,mm_dispatch_gate,mm_dispatch_execute),
     oc_dispatch_configure_guard(mm_dispatch_enter_route,mm_dispatch_leave_route),
     oc_dispatch_configure_accounting(mm_budget_reserve,mm_budget_settle),
+    (mm_dispatch_native_required -> true ; assertz(mm_dispatch_native_required)),
     retractall(oc_dispatch_intent(_)), assertz(oc_dispatch_intent(mm_dispatch_intent)).
 
 % Example: policy is installed atomically with the task's dispatch configuration.

@@ -5,13 +5,20 @@
 
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/dispatch.pl)
-   (initMetaMoDispatch dispatchRoutingAllowed completeHostConversation hostReadPlanRequired))
+   (initMetaMoDispatch dispatchRoutingAllowed dispatchNativePolicyGate
+    completeHostConversation hostReadPlanRequired))
 
 ;; Core holds its dispatch mutex and the IRC route guard from the final snapshot
 ;; through handler invocation. Check actual transport routing, not just config.
 ;; Keep the pure feasibility API independent of channel/runtime configuration.
 (= (dispatchOperationGate $origin $target $request $operation $global $frame)
    (let $decision (feasibilityGateForRequest $origin $target $request $operation $global $frame)
+      (if (!= $decision (GateDecision Admitted Feasible)) $decision
+          (dispatchNativeOperationGate $origin $target $request $operation))))
+
+;; Example: routing and host justification can only tighten typed feasibility.
+(= (dispatchNativeOperationGate $origin $target $request $operation)
+   (let $decision (dispatchNativePolicyGate $origin $target $request $operation)
       (if (!= $decision (GateDecision Admitted Feasible)) $decision
           (case $operation (
              ((PolicyOperation $_ $_ (skill "send") $_ (egress $destinations) $_)

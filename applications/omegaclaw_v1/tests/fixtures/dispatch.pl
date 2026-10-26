@@ -82,3 +82,11 @@ hostBudgetFixtureExecutor(Mode, true) :-
     memberchk(Mode-Execute,[uncertain-hostBudgetFixturePartialExecute,normal-mm_dispatch_execute]),
     oc_dispatch_mutate((retract(oc_dispatch_hooks(S,R,G,_)),
                        assertz(oc_dispatch_hooks(S,R,G,Execute)))).
+
+% Example: mutate only native policy inputs under Core's lock/epoch contract.
+hostPolicyFixtureWrite(Key, Value, true) :-
+    atom_string(Name,Key),
+    memberchk(Name,['&cfv2-global-constraints','&cfv2-current-constraints',
+                  '&cfv2-current-source','&cfv2-current-frame-mode',
+                  '&cfv2-root-mode','&cfv2-global-budget','&cfv2-current-budget']),
+    ground(Value), oc_dispatch_mutate(eval(['change-state!',Name,[quote,Value]],_)).

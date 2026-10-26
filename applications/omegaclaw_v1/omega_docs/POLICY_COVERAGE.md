@@ -13,8 +13,14 @@ its availability wiring is resolved as described in
 [the budget lifecycle documentation](BUDGET_ACCOUNTING.md#production-availability-and-lifecycle).
 Item 1.3 also resolves G2 for the supported command-invocation resource through
 [production reservation and settlement](BUDGET_ACCOUNTING.md#production-reservation-and-settlement).
-Uncovered enforcement in G3–G5 remains open. The tables below preserve the
-original 1.1 baseline.
+Item 1.4 connects raw native constraints, current host justification, native
+budget closure, continuation-mode regression coverage and command-batch limits;
+see [native constraint enforcement](DISPATCH.md#native-constraints-and-justification-integration-item-14).
+G3–G4 are closed for the supported catalog. For G5, the command-batch limit is
+now enforced; provider/transport/memory setup remains a trusted host-service
+boundary with existing per-call caps, not a new command-budget resource. No
+additional host-service meter or rollout is introduced. The tables below
+preserve the original 1.1 baseline.
 
 ## Production boundary
 

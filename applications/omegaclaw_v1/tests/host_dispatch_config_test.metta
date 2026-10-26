@@ -12,7 +12,7 @@
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/dispatch.pl)
    (hostBudgetFixturePublish hostBudgetFixtureFrame hostBudgetFixtureRejectProvision
     hostBudgetFixturePolicies hostBudgetFixtureRevoke hostBudgetFixtureReserve
-    hostBudgetFixtureSettle hostBudgetFixtureExecutor))
+    hostBudgetFixtureSettle hostBudgetFixtureExecutor hostPolicyFixtureWrite))
 (= (maxOutputToken) 256)
 (= (wakeupInterval) 1)
 (= (getFrameSkillsCompact) (quote (read-file show-current-frame)))
@@ -244,6 +244,82 @@
 !(test (hostBudgetAdmission) (GateDecision Rejected InvalidGlobalPolicy))
 !(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
     (DispatchResult Blocked InvalidGlobalPolicy none))
+
+;; Raw native constraints must not be lost in compacted prompt summaries.
+!(hostBudgetFixturePublish (hostBudgetState 0 0 0 0))
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
+!(bind! &native-root-constraints (new-state (get-state &cfv2-global-constraints)))
+!(bind! &native-frame-constraints (new-state (get-state &cfv2-current-constraints)))
+!(bind! &native-source (new-state (get-state &cfv2-current-source)))
+!(bind! &before-native-rejection (new-state (get-state &budget-account-state)))
+!(bind! &native-constraint-ticket (new-state (hostReadTicket)))
+!(hostPolicyFixtureWrite "&cfv2-global-constraints"
+    (append (get-state &native-root-constraints) ((Constraint UnimplementedSafety "unsupported"))))
+!(test (hostBudgetAdmission) (GateDecision Rejected InvalidGlobalPolicy))
+!(test (coreDispatchCommand (get-state &native-constraint-ticket) (get-state &host-read-command))
+    (DispatchResult Blocked StaleSnapshot none))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked InvalidGlobalPolicy none))
+!(setConstitutionalMode Rumination)
+!(test (hostBudgetAdmission) (GateDecision Rejected InvalidGlobalPolicy))
+!(setConstitutionalMode Engaged)
+!(hostPolicyFixtureWrite "&cfv2-global-constraints" (get-state &native-root-constraints))
+!(hostPolicyFixtureWrite "&cfv2-current-constraints" ((Constraint UnimplementedSafety "unsupported")))
+!(test (hostBudgetAdmission) (GateDecision Rejected InvalidFramePolicy))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked InvalidFramePolicy none))
+!(hostPolicyFixtureWrite "&cfv2-current-constraints" (get-state &native-frame-constraints))
+!(setActiveFrameBundle (frameStateForMetaMo))
+!(bind! &cached-native-operation-rows (new-state (captureCandidateOperations (activeFrameBundle))))
+!(hostPolicyFixtureWrite "&cfv2-current-constraints" ((DenySkill "read-file")))
+;; Cached operation metadata cannot omit a newly imposed native restriction.
+!(test (hostOperationGate (frameStateForMetaMo) execute-skill (get-state &cached-native-operation-rows))
+    (GateDecision Rejected ConstraintDenied))
+!(test (hostBudgetAdmission) (GateDecision Rejected ConstraintDenied))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked ConstraintDenied none))
+!(test (get-state &budget-account-state) (get-state &before-native-rejection))
+!(hostPolicyFixtureWrite "&cfv2-current-constraints" (get-state &native-frame-constraints))
+
+;; Autonomous frames have no supported host justification, even with grants and
+;; an active frame. Posture changes cannot promote the denied candidate.
+!(hostPolicyFixtureWrite "&cfv2-current-source" AgentDirective)
+!(test (hostBudgetAdmission) (GateDecision Rejected UnjustifiedAutonomousSideEffects))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked UnjustifiedAutonomousSideEffects none))
+!(setConstitutionalMode Rumination)
+!(test (hostBudgetAdmission) (GateDecision Rejected UnjustifiedAutonomousSideEffects))
+!(setConstitutionalMode Engaged)
+!(hostPolicyFixtureWrite "&cfv2-current-source" (get-state &native-source))
+!(test (get-state &budget-account-state) (get-state &before-native-rejection))
+!(test (hostBudgetAdmission) (GateDecision Admitted Feasible))
+
+;; Example: feasible metadata is insufficient without an exact host-bound operation.
+(= (nativeUnboundOperationGate)
+    (let*
+        (
+            ($bundle (frameStateForMetaMo))
+            (($global $frame) (hostBudgetFixturePolicies))
+        )
+        (dispatchOperationGate $bundle $bundle
+            (AdmissionRequest propose-candidate current-frame execute-skill)
+            (PolicyOperation (candidate execute-skill) (target "configured-frame")
+                (skill "read-file") (permissions ("files.read")) (egress ())
+                (costs ((ResourceCost "commands" "units" 1))))
+            $global $frame)
+    )
+)
+
+!(test (nativeUnboundOperationGate) (GateDecision Rejected MissingHostJustification))
+
+;; All operational classes respect native budget closure, including inspection.
+!(bind! &native-open-budget (new-state (get-state &cfv2-global-budget)))
+!(hostPolicyFixtureWrite "&cfv2-global-budget"
+    (ResourceBudget (max-output-tokens 256) (max-command-lines 5) (wake-interval 1) (status Closed)))
+!(test (hostBudgetAdmission) (GateDecision Rejected BudgetExhausted))
+!(test (coreDispatchCommand (coreDispatchCapture (hostFrameIntent)) (quote (show-current-frame)))
+    (DispatchResult Blocked BudgetExhausted none))
+!(hostPolicyFixtureWrite "&cfv2-global-budget" (get-state &native-open-budget))
 
 ;; Real production charging: two captured decisions cannot reuse the same balance.
 !(hostBudgetFixturePublish (hostBudgetState 0 0 0 0))

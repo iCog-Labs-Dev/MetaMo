@@ -23,6 +23,8 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_dispatch_config.py))
 !(import! &self fixtures/host_config_fixture.py)
 !(import_prolog_functions_from_file
+   (library MetaMo applications/omegaclaw_v1/tests/fixtures/dispatch.pl) (hostPolicyFixtureWrite))
+!(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/commitments.pl)
    (commitmentFixtureReset commitmentFixtureOpen commitmentFixtureOutcome commitmentFixtureApply commitmentFixtureEpoch))
 !(commitmentFixtureReset)
@@ -87,6 +89,12 @@
 !(test (continuationResolveRead (car-atom (get-state &read-plan))) (car-atom (get-state &read-plan)))
 !(test (hostAdmitContinuation "admitted" (get-state &read-plan))
    (ContinuationAdmitted "admitted" (get-state &read-plan)))
+
+;; The production read-plan adapter rejects frame/root mode mismatch.
+!(hostPolicyFixtureWrite "&cfv2-current-frame-mode" Slow)
+!(test (hostAdmitContinuation "mode-mismatch" (get-state &read-plan))
+    (ContinuationRejected FrameModeMismatch))
+!(hostPolicyFixtureWrite "&cfv2-current-frame-mode" Fast)
 !(test (hostAdmitContinuation "relative" (sread (py-call (continuation_fixture.relative_steps))))
    (ContinuationAdmitted "relative"
       ((ExecutionStep "1" (sread (py-call (continuation_fixture.command 1))))
@@ -140,6 +148,20 @@
    (ContinuationView "read-plan" "1" Ready (repr (sread (py-call (continuation_fixture.command 0))))))
 !(bind! &first-ticket (new-state (coreLoopDispatchBegin)))
 !(bind! &first-command (new-state (selectedHostCommand)))
+
+;; A mode change after selection cannot invoke or charge the retained read.
+!(bind! &before-mode-denial (new-state (get-state &budget-account-state)))
+!(hostPolicyFixtureWrite "&cfv2-current-frame-mode" Slow)
+!(test (coreDispatchCommand (get-state &first-ticket) (get-state &first-command))
+    (DispatchResult Blocked StaleSnapshot none))
+!(test (coreDispatchCommand
+    (coreDispatchCapture (AdmissionRequest propose-candidate current-frame execute-skill))
+    (get-state &first-command)) (DispatchResult Blocked FrameModeMismatch none))
+!(test (get-state &budget-account-state) (get-state &before-mode-denial))
+!(hostPolicyFixtureWrite "&cfv2-current-frame-mode" Fast)
+!(setActiveFrameBundle (frameStateForMetaMo))
+!(retainSelectedOperation execute-skill (captureCandidateOperations (activeFrameBundle)))
+!(change-state! &first-ticket (coreLoopDispatchBegin))
 !(test (coreLoopDispatchCommand (get-state &first-ticket) (get-state &first-command))
    (DispatchResult Executed Feasible "observed local file content"))
 !(bind! &first-outcome (new-state (get-state &last-operation-outcome)))

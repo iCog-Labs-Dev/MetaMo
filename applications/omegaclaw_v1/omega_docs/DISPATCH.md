@@ -74,6 +74,72 @@ Both scope accounts reserve 1 unit before a handler starts; a definite returned
 invocation spends 1 even when it reports failure or duplicate suppression.
 Core ticket replay consumes nothing further. Unknown consumption remains pending.
 
+## Native constraints and justification (integration item 1.4)
+
+Enabled v1 projects the complete raw Core root/current constraint lists into
+the host policy boundary. Compacted prompt summaries are never parsed for
+authority. Native `DenySkill`, `RequirePermission`, `DenyEgress` and `MaxCost`
+records tighten their respective global/frame scopes using the existing typed
+evaluator. Unsupported, malformed or over-bound native lists reject the scope
+as InvalidGlobalPolicy/InvalidFramePolicy; the host diagnostic retains
+`NativePolicyRejected UnsupportedConstraint`. A native denial cannot be removed
+by a configured grant, numeric score or constitutional posture change.
+
+The six existing `(Constraint NAME "description")` defaults are recognized by
+name; prose is never evaluated or used to grant permissions. FrameIsAuthority
+and SkillCommandsOnly are enforced through current-target checks and exact host
+bindings. RootIsPointerOnly, NoRawThoughtPrompting and AuditViaHistory describe
+the existing root construction, bounded prompt projection and audit substrates;
+they are architectural declarations, not alternative permission grants. A new
+name is unsupported until an enforcement mechanism is connected.
+
+NoUnjustifiedAutonomousSideEffects is also a mandatory host feasibility floor.
+Beyond active-frame/mode/budget checks, the operation must resolve to exactly one
+current host binding or owned prepared command. Normal startup requires user
+frame provenance and current commitment ownership. Explicit manual host
+configuration can authorize an ownerless inspection frame; this is trusted
+operator authority, not a model-created justification. AgentDirective and other
+unsupported source provenance cannot execute through this catalog, even with
+an active frame and permissive policy. Neither changing modes nor omitting the
+descriptive marker removes the floor. Native Closed/Exhausted budgets also
+block read-only inspection and replies, not only execution-class candidates.
+
+`hostOperationGate` now uses `dispatchOperationGate`, as continuation admission
+and final dispatch already do. Its trusted native adapter compares the provided
+bundle with current host state and rechecks current live scopes under Core's
+mutex, so cached operation rows cannot omit a newer native restriction. Raw
+policy state remains host-owned and is not added to MetaMo appraisal. Final
+snapshot/epoch revalidation still rejects changes after selection before
+reservation or execution.
+
+Autonomous creation remains unsupported by the production catalog. Core's
+`new-autonomous-frame`, `cfv2-create-autonomous-frame` and generic AgentDirective
+creation entry now reject Fast mode before allocating IDs, goals or relations.
+Slow is necessary but insufficient: without a supported host creation policy,
+they return MissingAutonomousCreationPolicy with no effects. No new creation
+route or policy bypass is installed. User input retains its existing guarded
+UserDirective construction path.
+
+The Core polling loop now filters parsed command batches against both native
+`max-command-lines` limits before invoking any handler. Oversized batches execute
+no commands and record CommandLimitExceeded; malformed limits fail closed.
+Per-call provider output caps remain the configured host-service limits.
+Classifier/plan/preparation calls, channel startup/polling and memory/history
+maintenance remain trusted host services, outside the command catalog and its
+`commands` resource/egress policies. No shared token/byte budget or permission
+for those services is inferred from a send grant. This item adds no service or
+live rollout.
+
+Item 1.4 verification on 26 October 2026: all 82 MeTTa test files passed. The
+focused host policy suite passed 105 assertions, continuation passed 500, and
+native creation/batch limits passed 19. These cover unknown root/frame
+constraints, live restrictions over cached rows, exact host justification,
+autonomous-source and native-budget denial, mode changes after selection and
+absence of creation effects. Six relevant Python suites passed 118 tests;
+all four shell boundary guards, Core's 20 named dispatch tests and 10 dispatch
+guard tests passed. Existing files/fixtures were extended; no live external
+services were called.
+
 `dispatch.pl` supplies these Prolog host APIs (not exported as model skills):
 
 | API | Responsibility |

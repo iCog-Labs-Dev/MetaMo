@@ -15,6 +15,8 @@ assert '(coreLoopIngestReceived $msg $received)' in loop
 host_startup = (root / 'MetaMo/applications/omegaclaw_v1/host_startup.metta').read_text()
 assert '(configureCoreLoopIngest ingestHostMessage True)' in host_startup
 assert '(coreLoopDispatchCommand $dispatchTicket $s)' in loop
+assert '($admittedCommands (coreLoopCommands $sexpr))' in loop
+assert '(let $s (superpose $admittedCommands)' in loop
 assert '(coreLoopDispatchCommand $dispatchTicket (quote (switch-mode)))' in loop
 assert '(if (== (get-state &cfv2-root-mode) Fast) (switch-mode)' not in loop
 assert loop.index('($dispatchTicket (coreLoopDispatchBegin))') < loop.index('lib_llm_ext.callProvider')

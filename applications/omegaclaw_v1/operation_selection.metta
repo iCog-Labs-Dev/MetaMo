@@ -160,7 +160,9 @@
           (if (!= (size-atom $matches) 1)
               (GateDecision Rejected AmbiguousOperation)
               (let (HostOperation $_ $_ $operation $global $frame $_) (car-atom $matches)
-                 (candidateAdmissionForOperation $bundle $candidate $operation $global $frame))))))
+                 (eval (dispatchOperationGate $bundle $bundle
+                    (AdmissionRequest propose-candidate current-frame $candidate)
+                    $operation $global $frame)))))))
 
 (= (pruneHostOperations $bundle $actions $rows)
    (if (== $actions ()) (CandidatePruning (admitted ()) (rejected ()))
