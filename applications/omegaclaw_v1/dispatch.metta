@@ -31,6 +31,29 @@
 (= (hostAdmitContinuation $id $steps)
    (sread (py-call (host_operations.admit_read_plan $id (repr $steps)))))
 
+;; Example: validate the exact recorded correction without resuming its held read.
+;; Ownership comparison and current catalog/policy admission share Core's mutex.
+(= (hostAdmitCorrection $correction)
+   (sread (py-call (host_operations.admit_correction (repr $correction)))))
+
+;; Example: an old correction cannot borrow a successor's read permissions.
+;; Called under the host lock; the returned step is data, not retry authority.
+(= (continuationAdmitCorrection $correction)
+   (case (and (!= $correction NoContinuationCorrection)
+              (== $correction (hostContinuationCorrection))) (
+      (False (ContinuationRejected StaleCorrection))
+      (True
+       (let* (
+          ((ContinuationCorrection (CorrectionTarget $_ $_ $plan $step $_) $_ $path) $correction)
+          ($command (cons-atom read-file (cons-atom $path ())))
+          ($steps (cons-atom (ExecutionStep $step $command) ()))
+          ($admission (hostAdmitContinuation $plan $steps))
+       )
+          (case $admission (
+             ((ContinuationAdmitted $plan ($resolved))
+              (ContinuationCorrectionAdmitted $correction $resolved))
+             ($_ $admission))))))))
+
 ;; Example: install F3.3's result only for the context/commitment that requested it.
 ;; Admission is rechecked under the same lock as F3.4 installation and invalidation.
 (= (hostInstallAdmittedContinuation $context $commitment $admission)

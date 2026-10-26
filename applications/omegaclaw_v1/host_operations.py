@@ -566,6 +566,27 @@ def admit_read_plan(plan_id, steps_source):
         return '(ContinuationRejected InvalidPlan)'
 
 
+# Example: admit only the still-recorded correction through the existing read gate.
+def admit_correction(correction_source):
+    """Point-in-time F4.4 admission; never edits the plan or issues a retry ticket."""
+    import janus
+    try:
+        if type(correction_source) is not str or len(correction_source.encode('utf-8')) > 32768:
+            return '(ContinuationRejected InvalidCorrection)'
+    except (ValueError, TypeError):
+        return '(ContinuationRejected InvalidCorrection)'
+    # As with read-plan admission, the Prolog-backed catalog requires a locked
+    # bridge. Correlation, step construction and gate decisions remain MeTTa.
+    result = janus.query_once(r'''
+with_mutex(omegaclaw_dispatch, (
+    catch(sread(Source, _Correction), _, fail), ground(_Correction),
+    eval([continuationAdmitCorrection, [quote,_Correction]], _Result),
+    swrite(_Result, Text)
+))
+''', {'Source': correction_source})
+    return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidCorrection)'
+
+
 # Example: cycle-zero and later installation share the same serialized guard.
 def begin_continuation(plan_id, steps_source):
     """Trusted safe point used by the admitted-installation transaction."""

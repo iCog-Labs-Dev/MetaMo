@@ -327,17 +327,128 @@
 !(test (commitmentFixtureEpoch) (get-state &correction-epoch))
 !(test (get-state &error) "")
 !(change-state! &continuation-plan-revision 1)
+!(test (hostAdmitCorrection (get-state &recorded-correction)) (ContinuationRejected StaleCorrection))
 !(test (hostContinuationCorrection) NoContinuationCorrection)
 !(test (sread (py-call (host_ingress.ingest (get-state &correction-message))))
    (HostInput Held StaleCorrection))
 !(change-state! &continuation-plan-revision 0)
 !(change-state! &cfv2-current-frame-id "other-frame")
 !(test (hostContinuationCorrection) NoContinuationCorrection)
+!(test (hostAdmitCorrection (get-state &recorded-correction)) (ContinuationRejected StaleCorrection))
 !(test (sread (py-call (host_ingress.ingest (get-state &correction-message))))
    (HostInput Held FrameMismatch))
 !(change-state! &cfv2-current-frame-id "configured-frame")
 
 ;; A decision captured before replacement cannot write a proposal for the successor.
+;; F4.4 checks the held owner's proposed path with fresh catalog/policy admission.
+;; Every check also proves that admission changes no recovery, evidence, ticket or task state.
+(= (continuationTestCorrectionAdmission)
+   (let* (
+      ($before (py-call (continuation_fixture.correction_validation_state)))
+      ($result (hostAdmitCorrection (hostContinuationCorrection)))
+      ($after (py-call (continuation_fixture.correction_validation_state)))
+   )
+      (CorrectionAdmissionCheck $result (== $before $after))))
+
+;; Example: trusted fixture data records a proposal; production uses explicit correction ingress.
+(= (continuationTestCorrectionPath $path)
+   (change-state! &continuation-correction
+      (ContinuationCorrection (hostCorrectionTarget) (hostContinuationRecovery) $path)))
+
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected UnsupportedOperation) True))
+!(test (hostAdmitCorrection NoContinuationCorrection) (ContinuationRejected StaleCorrection))
+!(test (hostAdmitCorrection (quote (change-state! &error "must not run")))
+   (ContinuationRejected StaleCorrection))
+!(test (sread (py-call (host_operations.admit_correction "(")))
+   (ContinuationRejected InvalidCorrection))
+
+;; Restore the second read's grant removed by the preceding denial scenario.
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "ambiguous"))))
+!(change-state! &continuation-correction NoContinuationCorrection)
+!(test (sread (py-call (host_ingress.ingest
+   (py-call (continuation_fixture.correction_message "path"
+      (sread (py-call (continuation_fixture.correction_path))))))))
+   (HostInput CorrectionRecorded (get-state &correction-target)))
+!(bind! &allowed-correction (new-state (hostContinuationCorrection)))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationCorrectionAdmitted (get-state &allowed-correction)
+      (ExecutionStep "1" (sread (py-call (continuation_fixture.command 1))))) True))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationCorrectionAdmitted (get-state &allowed-correction)
+      (ExecutionStep "1" (sread (py-call (continuation_fixture.command 1))))) True))
+
+!(continuationTestCorrectionPath (sread (py-call (continuation_fixture.correction_path "relative"))))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationCorrectionAdmitted (hostContinuationCorrection)
+      (ExecutionStep "1" (sread (py-call (continuation_fixture.command 1))))) True))
+!(continuationTestCorrectionPath (sread (py-call (continuation_fixture.correction_path "quoted"))))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationCorrectionAdmitted (hostContinuationCorrection)
+      (ExecutionStep "1" (sread (py-call (continuation_fixture.command 0))))) True))
+
+!(continuationTestCorrectionPath (sread (py-call (continuation_fixture.correction_path "unconfigured"))))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected UnsupportedOperation) True))
+!(continuationTestCorrectionPath (sread (py-call (continuation_fixture.correction_path "alias"))))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected UnsupportedOperation) True))
+!(continuationTestCorrectionPath "")
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected InvalidPlan) True))
+!(continuationTestCorrectionPath (quote (change-state! &error "must not run")))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected InvalidPlan) True))
+
+!(change-state! &continuation-correction (get-state &allowed-correction))
+!(setConstitutionalMode Sleep)
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected SleepModeOperationalWork) True))
+!(setConstitutionalMode Engaged)
+
+;; Example: revoking a previously admitted correction rejects its next check.
+(= (continuationTestCorrectionDenied $scope $variant)
+   (progn
+      (py-call (host_dispatch_config.provision (py-call (continuation_fixture.admission_config $scope $variant))))
+      (continuationTestCorrectionAdmission)))
+
+!(test (continuationTestCorrectionDenied "global" "permission")
+   (CorrectionAdmissionCheck (ContinuationRejected PermissionDenied) True))
+!(test (continuationTestCorrectionDenied "global" "skill")
+   (CorrectionAdmissionCheck (ContinuationRejected SkillNotAllowed) True))
+!(test (continuationTestCorrectionDenied "global" "budget")
+   (CorrectionAdmissionCheck (ContinuationRejected BudgetExhausted) True))
+!(test (continuationTestCorrectionDenied "global" "constraint")
+   (CorrectionAdmissionCheck (ContinuationRejected ConstraintDenied) True))
+!(test (continuationTestCorrectionDenied "global" "cost")
+   (CorrectionAdmissionCheck (ContinuationRejected ConstraintDenied) True))
+!(test (continuationTestCorrectionDenied "frame" "permission")
+   (CorrectionAdmissionCheck (ContinuationRejected PermissionDenied) True))
+!(test (continuationTestCorrectionDenied "frame" "skill")
+   (CorrectionAdmissionCheck (ContinuationRejected SkillNotAllowed) True))
+!(test (continuationTestCorrectionDenied "frame" "budget")
+   (CorrectionAdmissionCheck (ContinuationRejected BudgetExhausted) True))
+!(test (continuationTestCorrectionDenied "frame" "constraint")
+   (CorrectionAdmissionCheck (ContinuationRejected ConstraintDenied) True))
+!(test (continuationTestCorrectionDenied "frame" "cost")
+   (CorrectionAdmissionCheck (ContinuationRejected ConstraintDenied) True))
+!(test (continuationTestCorrectionDenied "frame" "unsupported")
+   (CorrectionAdmissionCheck (ContinuationRejected UnsupportedOperation) True))
+!(py-call (host_dispatch_config.provision (get-state &config-path)))
+!(py-call (continuation_fixture.duplicate_correction_binding 1))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationRejected AmbiguousOperation) True))
+!(py-call (continuation_fixture.duplicate_correction_binding 0))
+!(test (continuationTestCorrectionAdmission)
+   (CorrectionAdmissionCheck (ContinuationCorrectionAdmitted (get-state &allowed-correction)
+      (ExecutionStep "1" (sread (py-call (continuation_fixture.command 1))))) True))
+!(test (get-state &host-continuation) (get-state &correction-plan))
+!(test (get-state &continuation-evidence) (get-state &held-read-evidence))
+!(test (get-state &continuation-plan-revision) 0)
+!(change-state! &continuation-correction (get-state &recorded-correction))
+!(py-call (host_dispatch_config.provision (py-call (continuation_fixture.deny_second))))
+
+;; A decision captured before replacement cannot admit a correction for the successor.
 !(bind! &old-correction-decision (new-state (hostIngressDecision Correction)))
 !(test (commitmentFixtureApply
    (quote (CommitmentEvent "replace-held-correction" "two-reads" 0
@@ -346,11 +457,13 @@
 !(test (hostContinuationCorrection) NoContinuationCorrection)
 !(test (sread (py-call (host_ingress.correct (repr (get-state &old-correction-decision))
    (get-state &correction-message)))) (HostInput Held StaleCommitment))
+!(test (hostAdmitCorrection (get-state &allowed-correction)) (ContinuationRejected StaleCorrection))
 !(test (get-state &host-continuation) (get-state &correction-plan))
 
 ;; A trusted uncertain observation is retained once and cannot turn into an automatic retry.
 !(test (continuationTestReset) (ContinuationStarted "read-plan"))
 !(test (hostContinuationCorrection) NoContinuationCorrection)
+!(test (hostAdmitCorrection (get-state &allowed-correction)) (ContinuationRejected StaleCorrection))
 !(test (sread (py-call (host_ingress.ingest (get-state &correction-message))))
    (HostInput Held StaleCorrection))
 !(test (get-state &continuation-recovery) NoContinuationRecovery)

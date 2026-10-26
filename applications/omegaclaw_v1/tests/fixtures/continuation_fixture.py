@@ -19,6 +19,51 @@ def correction_message(field='', value=''):
     return 'correction: ' + json.dumps(data)
 
 
+# Example: compare all recovery/selection state and Core tickets before/after admission.
+def correction_validation_state():
+    import janus
+    result = janus.query_once('''
+        findall([_K,_V], (member(_K, ['&host-continuation','&continuation-evidence',
+            '&continuation-recovery','&continuation-correction','&continuation-plan-revision',
+            '&continuation-applied-decision','&continuation-clarification',
+            '&task-continuation-view','&selected-operation-decision','&selected-host-operation',
+            '&last-operation-outcome','&host-response-input','&error']), nb_current(_K,_V)), States),
+        commitmentSnapshot(Owner), oc_dispatch_epoch(Epoch),
+        findall([_T,_I,_E,_C],oc_dispatch_ticket(_T,_I,_E,_C),Tickets),
+        findall([_T,_C,_R],oc_dispatch_result(_T,_C,_R),Results)
+    ''')
+    return repr(result)
+
+
+# Example: the corrected reference resolves to the second configured read, even with quotes.
+def correction_path(kind='absolute'):
+    import os
+    from pathlib import Path
+    path = _commands[1][1]
+    if kind == 'relative':
+        path = os.path.relpath(path)
+    elif kind == 'alias':
+        path = str(Path(_commands[0][1]).with_name('alias.txt'))
+    elif kind == 'unconfigured':
+        path = str(Path(path).with_name('unconfigured.txt'))
+    elif kind == 'quoted':
+        path = _commands[0][1]
+    return host.encode(path)
+
+
+# Example: ambiguity in the trusted catalog must reject correction admission too.
+def duplicate_correction_binding(enabled):
+    import janus
+    query = ('''sread(Source, Command), oc_dispatch_mutate((
+        mm_dispatch_binding(Command,Request,Operation),
+        assertz(mm_dispatch_binding(Command,Request,Operation))))''' if enabled else
+        '''sread(Source, Command), oc_dispatch_mutate((
+        retract(mm_dispatch_binding(Command,Request,Operation)),
+        retractall(mm_dispatch_binding(Command,_,_)),
+        assertz(mm_dispatch_binding(Command,Request,Operation))))''')
+    return int(janus.query_once(query, {'Source': command(1)})['truth'])
+
+
 # Example: the real ingress callback correlates the missing second read without any effect.
 def verify_correction_ingress():
     import janus
@@ -59,6 +104,14 @@ def verify_correction_ingress():
         assert after[field] == before[field], (field, before, after)
     assert after['Correction'][1] == before['Target'], after
     assert after['Correction'][3] == '(change-state! &error "must remain data")', after
+    # F4.4 runs against real Core ingress after one successful read and one missing read.
+    # An unconfigured command-like path stays inert and preserves the completed evidence.
+    import host_operations
+    retained = correction_validation_state()
+    source = janus.query_once('eval([hostContinuationCorrection],_Correction), swrite(_Correction,Source)')['Source']
+    assert host_operations.admit_correction(source) == (
+        '(ContinuationRejected UnsupportedOperation)')
+    assert correction_validation_state() == retained
     if _auto_scenario == 'missing-irc':
         assert route('cancel: no longer needed')[1] == 'Cancelled'
         assert route(message) == ['HostInput', 'Held', 'MissingCommitment']
@@ -133,6 +186,8 @@ def admission_config(scope, variant):
         data[scope]['budgets'][0]['available'] = 0
     elif variant == 'constraint':
         data[scope]['constraints'].append(['DenySkill', 'read-file'])
+    elif variant == 'cost':
+        data[scope]['constraints'].append(['MaxCost', 'commands', 'units', 0])
     elif variant == 'unsupported':
         data['commands'] = [row for row in data['commands'] if row['arguments'] != [_commands[1][1]]]
     else:

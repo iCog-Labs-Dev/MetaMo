@@ -75,6 +75,12 @@ class ResponsePreparationTests(unittest.TestCase):
             self.assertEqual(host.admit_read_plan(plan_id, steps), '(ContinuationRejected InvalidPlan)')
         self.llm.callProvider.assert_not_called()
 
+    # Example: invalid correction sources cannot enter the host interpreter.
+    def test_correction_admission_input_bounds(self):
+        for source in (None, [], 'x' * 32769, '\ud800'):
+            self.assertEqual(host.admit_correction(source), '(ContinuationRejected InvalidCorrection)')
+        self.llm.callProvider.assert_not_called()
+
     # Example: invalid installation arguments cannot mutate the host interpreter.
     def test_continuation_installation_input_bounds(self):
         for plan_id, steps in (('', '()'), ('plan', None), ('plan', []),

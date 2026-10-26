@@ -1,5 +1,49 @@
 # Explicit session continuation
 
+## Validating a corrected path (F4.4)
+
+Trusted host callers validate F4.3's retained proposal through
+`(hostAdmitCorrection (hostContinuationCorrection))`, after loading dispatch.
+The supplied record must still equal the current held MissingInput correction.
+Core's existing dispatch mutex covers that comparison and the existing
+`hostAdmitContinuation` catalog/policy admission. Stale ownership, session, frame,
+plan revision or recovery evidence returns `ContinuationRejected StaleCorrection`.
+
+Admission checks one proposed `ExecutionStep`, retaining the held step ID. Relative
+paths resolve lexically against the host working directory, using F3.3's resolver;
+only an exact installed read binding can match. No basename search, glob/tilde
+expansion, symlink following or file-content access occurs. The existing concrete
+gate checks current global/frame skills, permissions, constraints, budgets and
+mode restrictions. Missing/ambiguous bindings and denied paths retain their typed
+`ContinuationRejected` reason. Command-like path strings remain inert data.
+
+Success returns `(ContinuationCorrectionAdmitted ORIGINAL-CORRECTION RESOLVED-STEP)`.
+The original record preserves the target and held recovery evidence for a later
+ownership check. This is point-in-time admission, not durable authorization or
+proof that the file exists. Rechecking after policy revocation can reject an
+earlier success. Neither success nor rejection edits the plan, cursor, revision,
+completed evidence, pending correction, clarification receipt, selection or ticket
+ledger. No provider, file handler, send, reservation or completion is invoked.
+F4.5 must revalidate before applying a correction; resume, fresh retry tickets and
+retry limits remain F4.5–F4.8. No automatic resume hook is installed by F4.4.
+
+Verification extends the existing continuation fixture with allowed absolute,
+relative and quoted paths, unconfigured paths/symlinks, inert and malformed input,
+both-scope permission/skill/budget/constraint/cost denials, ambiguous bindings,
+Sleep and stale ownership/revision/session checks. Before/after snapshots verify
+unchanged host state and Core tickets/results. Real local/IRC Core-loop fixtures
+also reject an unconfigured correction after a successful first read and missing
+second read, preserving the completed evidence. External providers/sockets remain
+doubled. Reproduce with the existing continuation test, preparation Python tests
+and four boundary guards; no new test files or Core edits are required.
+
+Verified 26 October 2026: all 75 discovered MeTTa files pass, including 366
+continuation test markers; preparation/requirements/ingress Python suites pass
+34/22/11 tests, and all four boundary guards pass. Full-suite reproduction from
+the application directory:
+`python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 120`.
+Local log: `/tmp/f44-metta-suite.log`. No live provider/channel calls were made.
+
 ## Correlating a correction (F4.3)
 
 For a current Held/MissingInput read, `(hostCorrectionTarget)` returns
