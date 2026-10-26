@@ -237,6 +237,8 @@
    (let* (
       ($_ (refreshTaskExecutionObserved))
       ($_ (refreshTaskCommitment))
+      ;; Recover only authoritative uncertainty before consuming feedback or clearing selection.
+      ($_ (eval (observeHostUncertainty)))
       ($_ (eval (applyOperationOutcome (get-state &cfv2-current-frame-id))))
       ;; Publish F3.5's installed pending step before captureCandidateOperations filters rows.
       ($_ (hostRefreshContinuation))

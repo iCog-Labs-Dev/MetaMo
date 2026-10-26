@@ -833,6 +833,7 @@
 !(bind! &resume-correction (new-state (hostContinuationCorrection)))
 !(bind! &resume-admission (new-state (hostAdmitCorrection (get-state &resume-correction))))
 !(bind! &resume-step (new-state (index-atom (get-state &resume-admission) 2)))
+!(bind! &resume-retries (new-state (get-state &continuation-retries)))
 
 ;; Example: failed resume checks preserve all host state and Core ledger entries.
 (= (continuationTestResume $admission)
@@ -920,6 +921,26 @@
    (ResumeCheck (ContinuationRejected InvalidPlan) True))
 !(change-state! &continuation-correction (get-state &resume-correction))
 
+;; Missing, malformed and wrong-owner counters must reject without resetting the allowance.
+!(change-state! &continuation-retries NoContinuationRetries)
+!(test (continuationTestResume (get-state &resume-admission))
+   (ResumeCheck (ContinuationRejected InvalidRetryState) True))
+!(let (ContinuationRetries $session $owner $id $limit $_) (get-state &resume-retries)
+   (change-state! &continuation-retries
+      (ContinuationRetries $session $owner $id $limit ((StepRetries "1" 0) (StepRetries "1" 0)))))
+!(test (continuationTestResume (get-state &resume-admission))
+   (ResumeCheck (ContinuationRejected InvalidRetryState) True))
+!(let (ContinuationRetries $session $owner $id $limit $_) (get-state &resume-retries)
+   (change-state! &continuation-retries
+      (ContinuationRetries $session $owner $id $limit ((StepRetries "1" 0) (StepRetries "2" -1)))))
+!(test (continuationTestResume (get-state &resume-admission))
+   (ResumeCheck (ContinuationRejected InvalidRetryState) True))
+!(let (ContinuationRetries $_ $owner $id $limit $counts) (get-state &resume-retries)
+   (change-state! &continuation-retries (ContinuationRetries "old-session" $owner $id $limit $counts)))
+!(test (continuationTestResume (get-state &resume-admission))
+   (ResumeCheck (ContinuationRejected InvalidRetryState) True))
+!(change-state! &continuation-retries (get-state &resume-retries))
+
 ;; Fence a retained idle/no-action outcome as well as the original failed read.
 ;; Keep this explicit F4.5 API scenario independent of F4.6's automatic cycle hook.
 !(change-state! &continuation-correction NoContinuationCorrection)
@@ -942,6 +963,7 @@
 !(test (index-atom (get-state &continuation-evidence) 5)
    (index-atom (get-state &resume-evidence) 5))
 !(test (get-state &continuation-plan-revision) 1)
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 0) (StepRetries "2" 1)))
 !(test (get-state &continuation-applied-decision) (index-atom (get-state &last-operation-outcome) 1))
 !(test (hostContinuationRecovery) NoContinuationRecovery)
 !(test (hostContinuationCorrection) NoContinuationCorrection)
@@ -965,8 +987,167 @@
 !(test (py-call (continuation_fixture.verify_resumed_evidence)) 1)
 !(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
 !(initOperationSession)
+!(test (get-state &continuation-retries) NoContinuationRetries)
 !(test (continuationTestResume (get-state &resume-admission))
    (ResumeCheck (ContinuationRejected StaleCorrection) True))
+!(py-call (host_config_fixture.cleanup))
+
+;; F4.8: Core records a native read exception, but its callback is deliberately absent.
+!(change-state! &config-path (py-call (continuation_fixture.setup)))
+!(change-state! &read-plan (sread (py-call (continuation_fixture.plan))))
+!(test (continuationTestReset) (ContinuationStarted "read-plan"))
+!(py-call (host_dispatch_config.provision (get-state &config-path)))
+!(motivationContextBlock)
+!(coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+!(bind! &native-first-outcome (new-state (get-state &last-operation-outcome)))
+!(motivationContextBlock)
+!(bind! &native-uncertain-decision (new-state (get-state &selected-operation-decision)))
+!(bind! &native-uncertain-ticket (new-state (selectedHostTicket)))
+!(bind! &native-uncertain-command (new-state (selectedHostCommand)))
+!(test (py-call (continuation_fixture.make_selected_read_unreadable)) 1)
+;; Direct Core invocation simulates loss of the adapter callback, not a replacement handler.
+!(test (coreDispatchCommand (get-state &native-uncertain-ticket) (get-state &native-uncertain-command))
+   (DispatchResult Unobserved ExecutionUncertain none))
+!(test (get-state &last-operation-outcome) (get-state &native-first-outcome))
+!(test (py-call (continuation_fixture.restore_selected_read)) 1)
+!(prepareTaskStateForMetaMo)
+!(test (frameRuntimeContinuation (activeFrameBundle)) (ContinuationView "read-plan" None Held ()))
+!(test (get-state &operation-feedback) (OperationFeedback Unobserved 0))
+!(test (index-atom (hostContinuationRecovery) 7) (ReadRecoveryNeed Uncertainty ExecutionUncertain))
+!(test (index-atom (index-atom (hostContinuationRecovery) 8) 1) (get-state &native-uncertain-decision))
+!(test (hostCorrectionTarget) NoCorrectionTarget)
+!(test (index-atom (get-state &continuation-evidence) 5) ((get-state &native-first-outcome)))
+!(test (sread (py-call (host_ingress.ingest (py-call (continuation_fixture.uncertain_correction_message)))))
+   (HostInput Held StaleCorrection))
+!(test (continuationTestResume (get-state &resume-admission))
+   (ResumeCheck (ContinuationRejected OutstandingInvocation) True))
+!(test (captureCandidateOperations (activeFrameBundle)) ())
+!(test (coreDispatchCommand (get-state &native-uncertain-ticket) (get-state &native-uncertain-command))
+   (DispatchResult Unobserved ExecutionUncertain none))
+
+;; A manually captured fresh ticket must also fail final revalidation while uncertainty remains.
+!(bind! &uncertain-new-ticket (new-state
+   (coreDispatchCapture (AdmissionRequest propose-candidate current-frame execute-skill))))
+!(test (coreDispatchCommand (get-state &uncertain-new-ticket) (get-state &native-uncertain-command))
+   (DispatchResult Blocked OutstandingInvocation none))
+!(bind! &uncertain-effects (new-state (py-call (continuation_fixture.dispatch_result_count))))
+!(bind! &uncertain-counter-state (new-state (get-state &continuation-retries)))
+!(motivationContextBlock)
+!(motivationContextBlock)
+!(test (py-call (continuation_fixture.dispatch_result_count)) (get-state &uncertain-effects))
+!(test (selectedHostCommand) ())
+!(test (get-state &continuation-retries) (get-state &uncertain-counter-state))
+!(test (get-state &continuation-plan-revision) 0)
+!(test (index-atom (get-state &continuation-evidence) 5) ((get-state &native-first-outcome)))
+!(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
+!(test (continuationReadRecoveryNeed (DispatchResult Unobserved Timeout none))
+   (ReadRecoveryNeed Uncertainty Timeout))
+!(test (continuationReadRecoveryNeed (DispatchResult Unobserved NoCallback none))
+   (ReadRecoveryNeed Uncertainty NoCallback))
+!(initOperationSession)
+!(py-call (host_config_fixture.cleanup))
+
+;; F4.7: counters belong to steps, not paths, and only accepted resumes consume them.
+!(change-state! &config-path (py-call (continuation_fixture.setup)))
+!(change-state! &read-plan (sread (py-call (continuation_fixture.plan))))
+!(test (continuationTestReset) (ContinuationStarted "read-plan"))
+!(py-call (host_dispatch_config.provision (get-state &config-path)))
+!(test (index-atom (get-state &continuation-retries) 4) 2)
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 0) (StepRetries "2" 0)))
+
+;; First step uses one retry and succeeds; the second step retains its own two retries.
+!(motivationContextBlock)
+!(py-call (host_config_fixture.remove_file))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error read-file FileUnavailable)))
+!(prepareTaskStateForMetaMo)
+!(py-call (host_config_fixture.replace_file_content))
+
+;; Example: input is correlated normally; lifecycle, rather than the fixture, applies the resume.
+(= (continuationTestRetryCorrection $kind)
+   (sread (py-call (host_ingress.ingest (py-call (continuation_fixture.correction_message "path"
+      (sread (py-call (continuation_fixture.correction_path $kind)))))))))
+
+!(test (continuationTestRetryCorrection "quoted") (HostInput CorrectionRecorded (hostCorrectionTarget)))
+!(test (policyOutputOperation (motivationContextBlock)) execute-skill)
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 1) (StepRetries "2" 0)))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible "changed after invocation"))
+!(motivationContextBlock)
+!(py-call (continuation_fixture.remove_pending_file))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error read-file FileUnavailable)))
+!(prepareTaskStateForMetaMo)
+!(bind! &retry-first-evidence (new-state (index-atom (get-state &continuation-evidence) 5)))
+
+;; Example: successive failures get new ordinary tickets, while the counter stays with step "2".
+(= (continuationTestRetryFailure)
+   (progn
+      (continuationTestRetryCorrection "absolute")
+      (motivationContextBlock)
+      (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))))
+
+!(test (continuationTestRetryFailure) (DispatchResult Executed Feasible (Error read-file FileUnavailable)))
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 1) (StepRetries "2" 1)))
+!(prepareTaskStateForMetaMo)
+!(test (continuationTestRetryFailure) (DispatchResult Executed Feasible (Error read-file FileUnavailable)))
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 1) (StepRetries "2" 2)))
+!(prepareTaskStateForMetaMo)
+!(test (continuationTestRetryCorrection "absolute") (HostInput CorrectionRecorded (hostCorrectionTarget)))
+!(bind! &exhausted-admission (new-state (hostAdmitCorrection (hostContinuationCorrection))))
+!(test (continuationTestResume (get-state &exhausted-admission))
+   (ResumeCheck (ContinuationRejected RetryLimitExceeded) True))
+!(test (prepareAutomaticContinuationResume) (ContinuationRejected RetryLimitExceeded))
+!(bind! &retry-effects (new-state (py-call (continuation_fixture.dispatch_result_count))))
+!(motivationContextBlock)
+!(motivationContextBlock)
+!(test (py-call (continuation_fixture.dispatch_result_count)) (get-state &retry-effects))
+!(test (frameRuntimeContinuation (activeFrameBundle)) (ContinuationView "read-plan" None Held ()))
+!(test (index-atom (get-state &continuation-evidence) 5) (get-state &retry-first-evidence))
+!(test (get-state &continuation-plan-revision) 3)
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 1) (StepRetries "2" 2)))
+!(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
+
+;; A changed path or registry policy cannot reset the captured allowance.
+!(remove-atom &self (ContinuationRetryPolicy 2))
+!(add-atom &self (ContinuationRetryPolicy 3))
+!(prepareTaskStateForMetaMo)
+!(test (continuationTestResume (get-state &exhausted-admission))
+   (ResumeCheck (ContinuationRejected RetryLimitExceeded) True))
+!(remove-atom &self (ContinuationRetryPolicy 3))
+!(add-atom &self (ContinuationRetryPolicy 2))
+!(py-call (host_config_fixture.write "ambiguous"))
+!(py-call (host_dispatch_config.provision (py-call (continuation_fixture.with_unrequested_read))))
+!(continuationTestCorrectionPath (sread (py-call (continuation_fixture.correction_path "replacement"))))
+!(test (continuationTestResume (hostAdmitCorrection (hostContinuationCorrection)))
+   (ResumeCheck (ContinuationRejected RetryLimitExceeded) True))
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 1) (StepRetries "2" 2)))
+
+;; New sessions reset counters; zero disables retries and invalid policies reject installation.
+!(remove-atom &self (ContinuationRetryPolicy 2))
+!(test (continuationTestReset) (ContinuationRejected InvalidRetryPolicy))
+!(test (get-state &continuation-retries) NoContinuationRetries)
+!(add-atom &self (ContinuationRetryPolicy 0))
+!(test (hostBeginContinuation "zero-retry" (get-state &read-plan)) (ContinuationStarted "zero-retry"))
+!(test (index-atom (get-state &continuation-retries) 5) ((StepRetries "1" 0) (StepRetries "2" 0)))
+!(motivationContextBlock)
+!(py-call (host_config_fixture.remove_file))
+!(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error read-file FileUnavailable)))
+!(prepareTaskStateForMetaMo)
+!(continuationTestRetryCorrection "quoted")
+!(test (prepareAutomaticContinuationResume) (ContinuationRejected RetryLimitExceeded))
+!(remove-atom &self (ContinuationRetryPolicy 0))
+!(add-atom &self (ContinuationRetryPolicy 2))
+!(test (continuationRetryLimitValid 16) True)
+!(test (continuationRetryLimitValid 17) False)
+!(test (continuationRetryLimitValid -1) False)
+!(test (continuationRetryLimitValid 0.5) False)
+!(add-atom &self (ContinuationRetryPolicy 2))
+!(test (continuationRetryPolicy) (ContinuationRejected InvalidRetryPolicy))
+!(remove-atom &self (ContinuationRetryPolicy 2))
+!(add-atom &self (ContinuationRetryPolicy 2))
+!(initOperationSession)
 !(py-call (host_config_fixture.cleanup))
 
 ;; F3.A1: a user message traverses real Core ingress, startup, planning, selection and dispatch.
@@ -990,6 +1171,7 @@
    (progn
       (commitmentFixtureReset)
       (initContextFrame)
+      (initMetaMoDispatch)
       (initOperationSession)
       (initOmegaClawMotivation)
       (py-call (continuation_fixture.install_auto_loop $scenario))
@@ -1030,6 +1212,12 @@
 
 ;; Sleeping hosts must wake before admission, without consuming the one planning attempt.
 !(test (runAutomaticReadScenario "sleep") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; F4.2: ordinary Core ingress, automatic plan, native missing read and one bound question.
+;; F4.8: a real native read exception remains held after restored access, correction and follow-up input.
+!(test (runAutomaticReadScenario "uncertain-read") True)
 !(test (py-call (continuation_fixture.verify_auto_loop)) 1)
 !(py-call (host_config_fixture.cleanup))
 

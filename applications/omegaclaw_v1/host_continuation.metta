@@ -3,6 +3,19 @@
 ;; Failed, blocked, uncertain or displaced work stays held for host review.
 !(bind! &continuation-plan-revision (new-state 0))
 !(bind! &continuation-correction (new-state NoContinuationCorrection))
+!(bind! &continuation-retries (new-state NoContinuationRetries))
+
+;; Example: zero disables retries; the trusted per-plan limit is bounded to 16.
+(= (continuationRetryLimitValid $limit)
+   (if (tpQuantity $limit)
+       (and (== $limit (floor-math $limit)) (<= $limit 16)) False))
+
+;; Example: exactly one (ContinuationRetryPolicy 2) row permits two resumed attempts per step.
+(= (continuationRetryPolicy)
+   (case (collapse (match &self (ContinuationRetryPolicy $limit) $limit)) (
+      (($limit) (if (continuationRetryLimitValid $limit)
+          (ContinuationRetryPolicy $limit) (ContinuationRejected InvalidRetryPolicy)))
+      ($_ (ContinuationRejected InvalidRetryPolicy)))))
 
 (= (continuationId $id)
    (if (tpId $id) (<= (string_length $id) 256) False))
@@ -46,7 +59,8 @@
       (True (ContinuationPrepared $id $steps))
       ($_ (ContinuationRejected InvalidPlan)))))
 
-(= (continuationInstall $session $id $steps $commitment)
+;; Example: a successor plan receives independent counters under its exact commitment owner.
+(= (continuationInstallWithRetries $session $id $steps $commitment $limit)
    (case $commitment (
       ((CommitmentSnapshot $owner $frame $revision Open $_)
        (if (== $frame (get-state &cfv2-current-frame-id))
@@ -58,6 +72,9 @@
               (change-state! &continuation-recovery NoContinuationRecovery)
               (change-state! &continuation-plan-revision 0)
               (change-state! &continuation-correction NoContinuationCorrection)
+              (change-state! &continuation-retries
+                 (ContinuationRetries $session $commitment $id $limit
+                    (map-atom $steps $step (StepRetries (index-atom $step 1) 0))))
               (change-state! &continuation-clarification NoClarificationObservation)
               ;; Fence the previous task's retained observation without deleting its evidence.
               (change-state! &continuation-applied-decision
@@ -68,6 +85,12 @@
               (ContinuationStarted $id))
            (ContinuationRejected WrongFrame)))
       ($_ (ContinuationRejected MissingCommitment)))))
+
+(= (continuationInstall $session $id $steps $commitment)
+   (case (continuationRetryPolicy) (
+      ((ContinuationRetryPolicy $limit)
+       (continuationInstallWithRetries $session $id $steps $commitment $limit))
+      ($rejection $rejection))))
 
 (= (continuationStartInSession $id $steps)
    (case (get-state &operation-context) (
@@ -279,25 +302,76 @@
            (ContinuationRejected RevisionExhausted))
        (ContinuationRejected InvalidPlanRevision)))
 
+;; Example: missing, duplicate or malformed stored counters cannot silently become zero.
+(= (continuationRetryRowValid $row $limit)
+   (case $row (
+      ((StepRetries $step $count)
+       (if (tpQuantity $count)
+           (tpAllTrue ((continuationId $step) (== $count (floor-math $count)) (<= $count $limit)))
+           False))
+      ($_ False))))
+
+;; Example: corrections preserve the ordered step IDs and original per-plan retry limit.
+(= (continuationRetryStateValid $state $plan $evidence)
+   (case ($state $plan $evidence) (
+      (((ContinuationRetries $session (CommitmentSnapshot $owner $frame $revision Open $summary) $id $limit $counts)
+        (HostContinuation $session $owner $frame $revision $id Ready $_)
+        (ContinuationEvidence $session (CommitmentSnapshot $owner $frame $revision Open $summary) $id $steps $_))
+       (if (and (continuationRetryLimitValid $limit) (== (get-metatype $counts) Expression))
+           (if (tpAllTrue ((== (CommitmentSnapshot $owner $frame $revision Open $summary) (commitmentSnapshot))
+              (== (size-atom $counts) (size-atom $steps))
+              (<= (size-atom $counts) 16)
+              (tpAllTrue (map-atom $counts $row (continuationRetryRowValid $row $limit)))))
+               (== (map-atom $counts $row (index-atom $row 1))
+                   (map-atom $steps $step (index-atom $step 1))) False)
+           False))
+      ($_ False))))
+
+;; Example: after two resumes under limit 2, retain the held step for host review.
+(= (continuationIncrementRetry (ContinuationRetries $session $owner $id $limit $counts) $plan $evidence $revision)
+   (let* (
+      ($step (index-atom (car-atom (index-atom $plan 7)) 1))
+      ($matched (car-atom (filter-atom $counts $candidate (== (index-atom $candidate 1) $step))))
+      ($count (index-atom $matched 2))
+   )
+      (if (< $count $limit)
+          (ContinuationResumePrepared $plan $evidence $revision
+             (ContinuationRetries $session $owner $id $limit
+                (map-atom $counts $entry
+                   (if (== (index-atom $entry 1) $step) (StepRetries $step (+ $count 1)) $entry))))
+          (ContinuationRejected RetryLimitExceeded))))
+
+;; Example: only an accepted resume of step "2" increments step "2"; preparation never writes.
+(= (continuationPrepareRetry $prepared)
+   (case $prepared (
+      ((ContinuationResumePrepared $plan $evidence $revision)
+       (let $state (get-state &continuation-retries)
+          (if (continuationRetryStateValid $state $plan $evidence)
+              (continuationIncrementRetry $state $plan $evidence $revision)
+              (ContinuationRejected InvalidRetryState))))
+      ($rejection $rejection))))
+
 ;; Example: a selected command or exhausted revision leaves the held plan untouched.
 (= (continuationPrepareResume $replacement)
    (case (continuationResumeRevision (get-state &continuation-plan-revision)) (
       ((ContinuationRevision $_)
        (if (and (== (get-state &selected-operation-decision) ())
                 (== (get-state &selected-host-operation) ()))
-           (continuationPrepareCorrectedPlan (get-state &host-continuation)
-              (get-state &continuation-evidence) $replacement)
+           (continuationPrepareRetry
+              (continuationPrepareCorrectedPlan (get-state &host-continuation)
+                 (get-state &continuation-evidence) $replacement))
            (ContinuationRejected OutstandingInvocation)))
       ($rejection $rejection))))
 
 ;; Example: successful resume changes only pending work and fences all pre-resume feedback.
 ;; The locked bridge advances Core's epoch once after this transition succeeds.
-(= (continuationApplyResume $plan $evidence $revision)
+(= (continuationApplyResume $plan $evidence $revision $retries)
    (let (HostContinuation $_ $_ $_ $_ $id Ready $pending) $plan
       (progn
          (change-state! &host-continuation $plan)
          (change-state! &continuation-evidence $evidence)
          (change-state! &continuation-plan-revision $revision)
+         (change-state! &continuation-retries $retries)
          (change-state! &continuation-applied-decision
             (case (get-state &last-operation-outcome) (
                ((OperationOutcome $decision $_ $_ $_) $decision)

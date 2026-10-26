@@ -6,7 +6,10 @@
 
 % Example: an invoked command with unresolved effects prevents task handoff.
 mm_dispatch_busy :-
-    oc_dispatch_result(_,_,['DispatchResult','Unobserved','ExecutionUncertain',none]).
+    mm_dispatch_busy(_).
+% Example: read continuation also checks its handler's unresolved attempts before fresh dispatch.
+mm_dispatch_busy(Command) :-
+    oc_dispatch_result(_,Command,['DispatchResult','Unobserved','ExecutionUncertain',none]).
 
 % Example: an arbitrary frame switch cannot inherit the operator's task policy.
 mm_dispatch_task_owner(Owner) :-
@@ -56,11 +59,13 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval(['get-state','&continuation-evidence'], Evidence),
     eval(['get-state','&continuation-recovery'], Recovery),
     eval(['get-state','&continuation-clarification'], Clarification),
+    eval(['get-state','&continuation-retries'], Retries),
     (mm_completion_policy(Criterion,Destination) -> Completion=[Criterion,Destination]
      ; Completion=['Disabled',""]),
     Raw=[completion-policy-Completion,channel-Channel,route-Route,prepared-Prepared,answered-Answered,
          requirements-Requirements,continuation-Continuation,continuation-evidence-Evidence,
-         continuation-recovery-Recovery,continuation-clarification-Clarification|FrameRaw].
+         continuation-recovery-Recovery,continuation-clarification-Clarification,
+         continuation-retries-Retries|FrameRaw].
 
 % Example: native identity stays data across the Python provider boundary.
 mm_response_context(Context, [Session,Frame,Commitment,Task,Input,ResponseInput,Transport]) :-
@@ -242,8 +247,9 @@ mm_dispatch_resolve(Intent, Command, Operation) :-
           ['PreparedRouting',Channel,Route]]),
     eval([commchannel], Channel), mm_dispatch_route(Channel, Current), Route == Current.
 mm_dispatch_gate(Intent, ['DispatchContext',Bundle,Global,Frame,_,_], Operation, Decision) :-
-    eval([dispatchOperationGate, [quote,Bundle], [quote,Bundle],
-          [quote,Intent], [quote,Operation], [quote,Global], [quote,Frame]],Decision).
+    (mm_dispatch_busy(['read-file',_]) -> Decision=['GateDecision','Rejected','OutstandingInvocation']
+     ; eval([dispatchOperationGate, [quote,Bundle], [quote,Bundle],
+             [quote,Intent], [quote,Operation], [quote,Global], [quote,Frame]],Decision)).
 mm_dispatch_execute(_, Command, Result) :- eval(Command,Result).
 
 initMetaMoDispatch(true) :-

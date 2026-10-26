@@ -6,6 +6,47 @@ import host_requirements
 
 _config_path = None
 _commands = None
+_unreadable = None
+
+
+# Example: exists_file still succeeds but the native reader throws when opening this fixture file.
+def make_selected_read_unreadable():
+    import os
+    import stat
+    import janus
+    from pathlib import Path
+    global _unreadable
+    command = janus.query_once('eval([selectedHostCommand],Command)')['Command']
+    assert command[0] == 'read-file', command
+    path = Path(command[1])
+    _unreadable = (path, stat.S_IMODE(path.stat().st_mode))
+    path.chmod(0)
+    assert path.exists() and not os.access(path, os.R_OK), 'fixture must run as an unprivileged user'
+    return 1
+
+
+# Example: restoring access is not evidence that an earlier uncertain invocation failed.
+def restore_selected_read():
+    global _unreadable
+    if _unreadable is not None:
+        path, mode = _unreadable
+        path.chmod(mode)
+        _unreadable = None
+    return 1
+
+
+# Example: even a reply echoing the actual uncertain owner/step cannot authorize a correction.
+def uncertain_correction_message():
+    import janus
+    from pathlib import Path
+    state = janus.query_once('''eval([hostContinuationRecovery],Recovery),
+        eval(['get-state','&continuation-plan-revision'],Revision)''')
+    recovery = state['Recovery']
+    assert recovery[7][1] == 'Uncertainty', recovery
+    data = dict(session=recovery[1], commitment=recovery[2], plan=recovery[5],
+                step=recovery[6], revision=state['Revision'],
+                path=str(Path(_commands[0][1]).with_name('unrequested.txt')))
+    return 'correction: ' + json.dumps(data)
 
 
 # Example: echo the host's exact target, changing one field to exercise stale replies.
@@ -24,7 +65,7 @@ def correction_validation_state():
     import janus
     result = janus.query_once('''
         findall([_K,_V], (member(_K, ['&host-continuation','&continuation-evidence',
-            '&continuation-recovery','&continuation-correction','&continuation-plan-revision',
+            '&continuation-recovery','&continuation-correction','&continuation-plan-revision','&continuation-retries',
             '&continuation-applied-decision','&continuation-clarification',
             '&task-continuation-view','&selected-operation-decision','&selected-host-operation',
             '&last-operation-outcome','&host-response-input','&error']), nb_current(_K,_V)), States),
@@ -343,6 +384,7 @@ _auto_scenario = None
 _auto_before = None
 _auto_question_turns = 0
 _auto_correction = None
+_auto_uncertain_messages = 0
 
 
 # Example: only input/provider services are doubled; normal startup owns task and plan installation.
@@ -354,6 +396,7 @@ def install_auto_loop(scenario):
     from pathlib import Path
     global _auto_calls, _auto_messages, _auto_scenario, _auto_before, _auto_question_turns
     global _auto_correction
+    global _auto_uncertain_messages
     setup()
     data = host.read_config(with_unrequested_read())
     # Core's text ingress escapes quotes; use ordinary literal paths for this loop scenario.
@@ -404,6 +447,7 @@ def install_auto_loop(scenario):
     os.environ['OMEGACLAW_HOST_CONFIG'] = path
     _auto_scenario = scenario
     _auto_question_turns = 0
+    _auto_uncertain_messages = 0
     _auto_correction = dict(sent=False, replay=False, retry=False) if scenario.startswith('missing-resume') else None
     if scenario == 'missing-resume-irc':
         _auto_correction['irc_writes'] = irc_routing_fixture.writes()
@@ -432,8 +476,26 @@ def auto_receive():
     message = next(_auto_messages, '')
     if not message and _auto_correction is not None:
         message = auto_correction_message()
+    if not message and _auto_scenario == 'uncertain-read':
+        message = auto_uncertain_message()
     _auto_calls['messages'] += int(bool(message))
     return message
+
+
+# Example: correction and follow-up text cannot resolve an observed uncertain read.
+def auto_uncertain_message():
+    import janus
+    global _auto_uncertain_messages
+    state = janus.query_once('''eval([hostContinuationRecovery],Recovery),
+        eval(['get-state','&continuation-plan-revision'],Revision)''')
+    recovery = state['Recovery']
+    if not isinstance(recovery, list) or recovery[7][1] != 'Uncertainty' or _auto_uncertain_messages >= 2:
+        return ''
+    _auto_uncertain_messages += 1
+    restore_selected_read()
+    if _auto_uncertain_messages == 2:
+        return 'follow-up: the file is fixed, retry now'
+    return uncertain_correction_message()
 
 
 # Example: supply a real correction only after the actual question has been observed.
@@ -537,6 +599,8 @@ def auto_provider(provider, prompt, max_tokens, *args):
             return '{"text":"Both files were inspected: other content; unrequested content."}'
         return '{"text":"Both files were inspected: other content; observed local file content."}'
     result = janus.query_once('eval([selectedHostCommand],Command), swrite(Command,Source)')
+    if _auto_scenario == 'uncertain-read' and result['Command'] == _commands[0]:
+        make_selected_read_unreadable()
     verify_retry_selection(result)
     if _auto_scenario.startswith('missing'):
         if result['Command'] == _commands[0] and (_auto_correction is None or not _auto_correction['sent']):
@@ -566,6 +630,8 @@ def verify_auto_loop():
     import janus
     records = janus.query_once('findall([_T,_C,_R],oc_dispatch_result(_T,_C,_R),Rows)')['Rows']
     fresh = [row for row in records if row[0] not in _auto_before]
+    if _auto_scenario == 'uncertain-read':
+        return verify_uncertain_loop(fresh)
     if _auto_correction is not None:
         return verify_automatic_resume(fresh)
     assert _auto_calls == dict(classification=1, extraction=1,
@@ -585,6 +651,31 @@ def verify_auto_loop():
     assert len(sends) == 1 and sends[0][2] == [
         'DispatchResult', 'Executed', 'Feasible', ['SendObservation', 'local:stdout', 'Accepted']], sends
     assert state['Owner'][4] == 'Completed', state
+    return 1
+
+
+# Example: native uncertainty survives corrected input and idle cycles without any retry or answer.
+def verify_uncertain_loop(records):
+    import janus
+    state = janus.query_once('''commitmentSnapshot(Owner),
+        eval([hostContinuationRecovery],Recovery), eval([hostCorrectionTarget],Target),
+        eval(['get-state','&continuation-evidence'],Evidence),
+        eval(['get-state','&continuation-retries'],Retries),
+        eval(['get-state','&continuation-plan-revision'],Revision),
+        eval(['get-state','&continuation-correction'],Correction),
+        eval([selectedHostCommand],Selected)''')
+    reads = [row for row in records if row[1][0] == 'read-file']
+    assert [row[1][1] for row in reads] == auto_paths(), reads
+    assert reads[0][2] == ['DispatchResult','Executed','Feasible','other content'], reads
+    assert reads[1][2] == ['DispatchResult','Unobserved','ExecutionUncertain','none'], reads
+    assert not [row for row in records if row[1][0] == 'send'], records
+    assert state['Recovery'][7] == ['ReadRecoveryNeed','Uncertainty','ExecutionUncertain'], state
+    assert state['Recovery'][8][1][4] == reads[1][0], state
+    assert state['Target'] == 'NoCorrectionTarget' and state['Correction'] == 'NoContinuationCorrection', state
+    assert state['Owner'][4] == 'Open' and state['Selected'] == [] and state['Revision'] == 0, state
+    assert len(state['Evidence'][5]) == 1, state
+    assert state['Retries'][5] == [['StepRetries','1',0],['StepRetries','2',0]], state
+    assert _auto_calls == dict(classification=1, extraction=1, answer=0, messages=3), _auto_calls
     return 1
 
 

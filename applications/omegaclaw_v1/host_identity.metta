@@ -28,7 +28,7 @@
        (== (catch (identityAll ((>= $value 0) (== (% $value 1) 0)))) True) False))
 
 ;; Construct tagged data without invoking a same-named PeTTa function (id).
-(= (identityPair $key $value) (cons-atom $key (cons-atom $value ())))
+(= (identityPair $key $value) (quote ($key $value)))
 
 (= (identityMember $value $rows)
    (if (== $rows ()) False

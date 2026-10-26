@@ -1,5 +1,101 @@
 # Explicit session continuation
 
+## Holding uncertain reads (F4.8)
+
+An uncertain read is not a missing file. `hostCorrectionTarget` remains available
+only for typed MissingInput recovery; timeout, unknown output or absent feedback
+cannot create correction/resume authority. The existing resume guard also rejects
+an outstanding Core invocation, independently of path permission or retry count.
+
+The lifecycle now calls `observeHostUncertainty` before applying feedback and
+clearing selection. Under Core's dispatch mutex, the trusted adapter looks up
+the retained selected read's exact ticket/command. Only Core's canonical
+`DispatchResult Unobserved ExecutionUncertain none` is republished through the
+existing `ingestOperationOutcome` API. This closes the lost-callback gap where
+Core had recorded uncertainty but continuation still appeared Ready. Correlation,
+immutable callback handling and one-shot consumption retain their existing rules;
+no outcome is inferred from elapsed time, silence or model text.
+
+While Core retains an unresolved read invocation, operation capture returns no
+executable bindings or fresh selected tickets. Final v1 dispatch revalidation
+also returns `OutstandingInvocation`, including for a manually captured fresh
+ticket. The original ticket replays its recorded uncertain result without another
+handler call. Restoring file access or sending a current-owner correction or
+follow-up does not resolve that observation. Previously completed reads, the held
+cursor, plan revision, commitment and retry allowance remain intact.
+
+These new capture/final-dispatch checks apply to unresolved `read-file` attempts
+in the bounded read workflow. Existing general outstanding-invocation guards for
+resume, planning and task handoff remain in use. Supported send behavior outside
+this read-continuation boundary retains its existing semantics.
+
+No uncertain-effect reconciliation API is added: the current workflow leaves
+uncertain reads held for host review. A future release path must require trusted
+evidence correlated to the original attempt. A user statement, timeout or new
+ticket is not such evidence. Session reset or dispatcher restart is not proof
+that a possible effect did not occur; durable recovery remains separate work.
+
+The existing continuation fixture triggers a native file-open exception after
+Core's existence check, then restores access. One case deliberately omits the
+adapter callback and verifies authoritative recovery before selection, unchanged
+prior-read evidence/counters, rejected resume, original-ticket replay, fresh-ticket
+rejection and later idle cycles without another read. Another uses the actual
+Core polling loop and receives correction/follow-up messages while the uncertain
+read remains held, with no answer or additional handler effect. Provider/memory
+services are doubled; the file handler and Core ledger are real. These permission
+fixtures run as an unprivileged user and restore the synthetic file's permissions.
+
+Verified 26 October 2026: all 75 MeTTa files pass (496 continuation test markers),
+97 preparation/requirements/ingress/configuration Python tests, all four boundary
+guards and Core dispatch's 20 declared tests / 22 generated cases pass. Reproduce
+from the application directory with
+`python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 60`.
+Local full-suite log: `/tmp/f48-metta-suite.log`. No live requests/messages were sent.
+
+## Per-step retry limits (F4.7)
+
+The trusted registry declares exactly one `(ContinuationRetryPolicy 2)` row.
+The integer limit is 0–16; zero disables correction retries. The default allows
+two accepted resumes per step after the initial attempt. Missing, duplicate or
+invalid policy rejects plan installation before changing continuation state.
+Changing registry policy affects newly installed plans only.
+
+Installation captures `(ContinuationRetries SESSION COMMITMENT PLAN LIMIT COUNTS)`
+with one `(StepRetries STEP-ID 0)` row for each original step, in plan order.
+The exact session, open commitment snapshot and plan own these counters. Changing
+a path or advancing the plan revision does not change step identity or reset its
+allowance. Successful successor installation replaces the counters; session reset
+clears them. The state is session-only and is not restored across restart.
+
+F4.5's existing locked resume transition validates the retained state, then checks
+the held step's count against its captured limit. Preparation computes the next
+count without writing; only an accepted resume commits that increment alongside
+the revised plan/evidence, with the existing single epoch invalidation. Denied or
+malformed corrections, stale ownership, selected/uncertain invocations and replay
+consume no additional retries. The count measures accepted resume transitions,
+not observed successful reads or budget charges; an accepted resume consumes its
+allowance even if the later model emits no command or execution fails.
+
+At the limit, resume returns `(ContinuationRejected RetryLimitExceeded)`. The
+pending step, correction, revision, successful-read evidence, counters and epoch
+stay unchanged. F4.6's automatic hook uses the same guard, so later idle cycles
+cannot dispatch another retry. The commitment stays open and the step stays Held
+for host review. Another path or a higher registry limit cannot restart that
+exhausted step. Invalid, missing or mismatched stored counters return
+`InvalidRetryState` rather than silently starting over at zero. Retry state is
+also included in dispatch freshness snapshots.
+
+Verification uses the existing continuation fixture: native missing-file results,
+explicit ingress and normal bridge cycles show one step consuming one retry and
+succeeding while the next consumes its own two retries and remains held on the
+third correction. Tests preserve the first read and assert no new handler result,
+revision, counter or epoch mutation on exhaustion; malformed counters, changed
+paths/policy, replay, zero allowance, reset and policy bounds are covered too.
+All 75 MeTTa files pass, including 470 continuation test markers; 97 relevant
+Python tests and all four boundary guards pass. Reproduce from the application
+directory with `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 60`.
+Local log: `/tmp/f47-metta-suite.log`. No live provider/channel calls were made.
+
 ## Automatic correction capture and fresh retry tickets (F4.6)
 
 `prepareTaskStateForMetaMo` now calls `prepareAutomaticContinuationResume` after
@@ -34,8 +130,9 @@ execute the corrected read once with a fresh ticket, answer from actual evidence
 complete the local task/frame and remain idle. A plan awaiting completion cannot
 select its obsolete input-recovery clarification. The IRC socket-double scenario
 uses the same hook and submits one question and one answer; its read commitment
-stays open under the existing local-only read-completion contract. F4.7 retry
-limits, F4.8 uncertainty resolution and live acceptance remain separate work.
+stays open under the existing local-only read-completion contract. F4.7 now bounds
+accepted resumes; F4.8 now holds uncertain reads. Live acceptance and trusted
+uncertainty reconciliation remain separate work.
 
 Verified 26 October 2026: all 75 MeTTa files pass (428 continuation test markers),
 97 preparation/requirements/ingress/configuration Python tests, all four boundary
@@ -79,7 +176,8 @@ revalidation. This is a trusted session-only API, not a model skill. F4.6 now
 connects it to the automatic host cycle above. It supports the existing MissingInput
 correction target;
 general replanning and resolving uncertain effects remain outside this slice.
-F4.7–F4.8 and full recovery acceptance remain separately tracked.
+F4.7 now applies its per-step retry guard and F4.8 holds unresolved reads;
+full recovery acceptance remains separately tracked.
 
 The existing continuation regression performs a real first read, a missing second
 read, explicit correction ingress, F4.4 admission and F4.5 resume. A normal cycle
@@ -121,7 +219,7 @@ earlier success. Neither success nor rejection edits the plan, cursor, revision,
 completed evidence, pending correction, clarification receipt, selection or ticket
 ledger. No provider, file handler, send, reservation or completion is invoked.
 F4.5 revalidates before applying a correction and F4.6 connects normal ticket
-capture. Retry limits and uncertainty resolution remain F4.7–F4.8. F4.4 itself
+capture. F4.7 bounds retries and F4.8 holds uncertainty. F4.4 itself
 does not resume or execute a read.
 
 Verification extends the existing continuation fixture with allowed absolute,

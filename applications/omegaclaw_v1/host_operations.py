@@ -587,6 +587,26 @@ with_mutex(omegaclaw_dispatch, (
     return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidCorrection)'
 
 
+# Example: a lost callback cannot hide Core's retained uncertainty from the next cycle.
+def observe_pending_invocation():
+    """Ingest only Core's exact unresolved result for the retained selected read."""
+    import janus
+    result = janus.query_once(r'''
+with_mutex(omegaclaw_dispatch, (
+    (eval(['get-state','&selected-operation-decision'], _Decision),
+     _Decision=['OperationDecision',_,_,_Command,_Ticket],
+     _Command=['read-file',_],
+     oc_dispatch_result(_Ticket,_Command,_Result),
+     _Result=['DispatchResult','Unobserved','ExecutionUncertain',none]
+     -> eval([ingestOperationOutcome,[quote,['OperationOutcome',_Decision,
+                 ['attempted-command',_Command],'Unobserved',_Result]]], _Outcome)
+     ; _Outcome=['OutcomeSkipped','NoUncertainInvocation']),
+    swrite(_Outcome, Text)
+))
+''')
+    return result['Text'] if result.get('truth', False) else '(OutcomeSkipped NoUncertainInvocation)'
+
+
 # Example: a trusted host resumes only a freshly revalidated F4.4 correction.
 def resume_continuation(admission_source):
     """safe point; preserve completed evidence and invalidate old tickets once."""
@@ -688,6 +708,7 @@ with_mutex(omegaclaw_dispatch, (
     (oc_dispatch_hooks(mm_dispatch_snapshot, mm_dispatch_resolve,
                        mm_dispatch_gate, mm_dispatch_execute),
      eval([frameStateForMetaMo], _Current), _Current == _Bundle,
+     \+ mm_dispatch_busy(['read-file',_]),
      mm_dispatch_policies(_Global, _Frame)
      -> findall([_Candidate,_Command,_Operation],
           mm_dispatch_resolve(

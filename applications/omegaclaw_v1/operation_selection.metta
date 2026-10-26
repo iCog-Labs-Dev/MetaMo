@@ -107,6 +107,7 @@
           (change-state! &continuation-recovery NoContinuationRecovery)
           (change-state! &continuation-plan-revision 0)
           (change-state! &continuation-correction NoContinuationCorrection)
+          (change-state! &continuation-retries NoContinuationRetries)
           (change-state! &continuation-clarification NoClarificationObservation)
           (change-state! &selected-clarification-recovery NoClarificationSelection)
           (change-state! &task-continuation-view NoContinuation) True)))

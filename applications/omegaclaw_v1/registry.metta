@@ -557,3 +557,6 @@
 (SelfModelSpec resource_usage      0.30)
 (SelfModelSpec memory_confidence   0.70)
 (SelfModelSpec identity_continuity 0.90)
+
+;; Trusted policy captured at plan installation; zero disables correction retries.
+(ContinuationRetryPolicy 2)

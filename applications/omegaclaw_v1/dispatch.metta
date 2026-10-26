@@ -20,6 +20,11 @@
 
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_operations.py))
 
+;; Example: publish a retained uncertain invocation even if its original callback was lost.
+;; This reads Core's ledger, never infers an outcome from time or model text.
+(= (observeHostUncertainty)
+   (sread (py-call (host_operations.observe_pending_invocation))))
+
 ;; Example: the ordinary cycle prepares a read plan before publishing its selection snapshot.
 (= (prepareAutomaticReadPlan)
    (progn
@@ -50,8 +55,8 @@
           (case $current (
              ($admission
               (case (continuationPrepareResume $step) (
-                 ((ContinuationResumePrepared $plan $evidence $revision)
-                  (continuationApplyResume $plan $evidence $revision))
+                 ((ContinuationResumePrepared $plan $evidence $revision $retries)
+                  (continuationApplyResume $plan $evidence $revision $retries))
                  ($rejection $rejection))))
              ((ContinuationCorrectionAdmitted $_ $_) (ContinuationRejected StaleAdmission))
              ($_ $current)))))
