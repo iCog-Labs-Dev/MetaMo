@@ -1,6 +1,9 @@
 ;; Trusted host lifecycle, not motivational planning or a model skill.
 ;; One bounded read plan at a time, installed only at a guarded host safe point.
 ;; Failed, blocked, uncertain or displaced work stays held for host review.
+!(bind! &continuation-plan-revision (new-state 0))
+!(bind! &continuation-correction (new-state NoContinuationCorrection))
+
 (= (continuationId $id)
    (if (tpId $id) (<= (string_length $id) 256) False))
 
@@ -53,6 +56,8 @@
               (change-state! &continuation-evidence
                  (ContinuationEvidence $session $commitment $id $steps ()))
               (change-state! &continuation-recovery NoContinuationRecovery)
+              (change-state! &continuation-plan-revision 0)
+              (change-state! &continuation-correction NoContinuationCorrection)
               (change-state! &continuation-clarification NoClarificationObservation)
               ;; Fence the previous task's retained observation without deleting its evidence.
               (change-state! &continuation-applied-decision
@@ -202,6 +207,41 @@
            (HeldReadRecovery $session $owner $frame $revision $id $step $need $observation)
            NoContinuationRecovery))
       ($_ NoContinuationRecovery))))
+
+;; Example: the host supplies this target with a missing-file question.
+;; The session/owner prevent an old reply attaching to a reused plan or step ID.
+(= (hostCorrectionTarget)
+   (case (hostContinuationRecovery) (
+      ((HeldReadRecovery $session $owner $_ $_ $plan $step
+          (ReadRecoveryNeed MissingInput $_) $_)
+       (CorrectionTarget $session $owner $plan $step
+          (get-state &continuation-plan-revision)))
+      ($_ NoCorrectionTarget))))
+
+;; Example: correlation retains a proposed path as inert data, leaving the cursor held.
+;; Called by trusted ingress under Core's dispatch mutex, never by model dispatch.
+(= (hostCorrelateCorrection $target $path)
+   (case (and (!= $target NoCorrectionTarget) (== $target (hostCorrectionTarget))) (
+      (False (HostInput Held StaleCorrection))
+      (True
+       (let $proposal (ContinuationCorrection $target (hostContinuationRecovery) $path)
+          (case (get-state &continuation-correction) (
+             (NoContinuationCorrection
+              (progn
+                 (change-state! &continuation-correction $proposal)
+                 (HostInput CorrectionRecorded $target)))
+             ($proposal (HostInput CorrectionRecorded $target))
+             ($_ (HostInput Held CorrectionAlreadyPending)))))))))
+
+;; Example: replacement, session reset, or a changed held step hides stale proposals.
+(= (hostContinuationCorrection)
+   (case (get-state &continuation-correction) (
+      ((ContinuationCorrection $target $recovery $path)
+       (if (and (== $target (hostCorrectionTarget))
+                (== $recovery (hostContinuationRecovery)))
+           (ContinuationCorrection $target $recovery $path)
+           NoContinuationCorrection))
+      ($_ NoContinuationCorrection))))
 
 ;; Example: a held missing input can ask once through the configured clarification binding.
 ;; The bundle identifies the held plan; exact owner and failure evidence remain host-owned.

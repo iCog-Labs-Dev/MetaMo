@@ -26,6 +26,8 @@
             ((Cancel False) (HostInput Held FrameMismatch))
             ((Replace True) (HostInput Replace $id $frame $revision))
             ((Replace False) (HostInput Held FrameMismatch))
+            ((Correction True) (HostInput Correction $id $frame $revision))
+            ((Correction False) (HostInput Held FrameMismatch))
             ($_ (HostInput Held ExplicitFollowupRequired))
         )
     )
@@ -111,6 +113,8 @@
                 (hostIngressFollowup $decision $message))
             ((HostInput Replace $_ $_ $_)
                 (hostIngressReplacement $decision $message))
+            ((HostInput Correction $_ $_ $_)
+                (sread (py-call (host_ingress.correct (repr $decision) $message))))
             ((HostInput Cancel $_ $_ $_)
                 (progn
                     (change-state! &last-host-followup ())
@@ -149,6 +153,7 @@
         (
             ((HostInput Held $_) False)
             ((HostInput Cancelled $_ $_ $_) False)
+            ((HostInput CorrectionRecorded $_) False)
             ($_ (get-state &core-loop-new-message))
         )
     )

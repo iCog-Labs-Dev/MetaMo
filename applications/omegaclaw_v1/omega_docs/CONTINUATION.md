@@ -1,5 +1,61 @@
 # Explicit session continuation
 
+## Correlating a correction (F4.3)
+
+For a current Held/MissingInput read, `(hostCorrectionTarget)` returns
+`(CorrectionTarget SESSION COMMITMENT PLAN STEP REVISION)`. The trusted host
+can include these fields with its question. Explicit ingress uses bounded JSON:
+
+```text
+correction: {"session":"<session>","commitment":"<commitment>","plan":"inspect-two-files","step":"second","revision":0,"path":"reports/report.txt"}
+```
+
+Copy session/commitment/plan/step/revision from the actual target; the placeholders
+above are not valid identities for a running task. A bare path or unmarked reply
+does not identify a correction. All six fields are required exactly once;
+identifiers/path are nonblank strings of at most 256 characters, and revision is
+an integer from 0 through 9007199254740991. Unknown fields, duplicate fields,
+control characters, malformed JSON and invalid types are rejected before routing.
+IRC retains its existing envelope, batch and sender-ownership checks.
+
+The existing ingress router checks the exact open commitment and native frame
+under Core's dispatch mutex. The target must match the current session, owner,
+plan, held step and plan revision. Only typed MissingInput recovery is eligible;
+an uncertain attempt cannot become a correction target. Accepted input returns
+`HostInput CorrectionRecorded TARGET` and retains
+`ContinuationCorrection TARGET HELD-RECOVERY PATH`. Read it through
+`hostContinuationCorrection`, which hides records displaced by a different
+owner, session, held outcome or revision.
+
+Identical redelivery returns the same receipt. A different proposal for an
+already pending target returns `Held CorrectionAlreadyPending`; stale targets
+return `Held StaleCorrection`. Correlation preserves the held cursor, prior read
+evidence, clarification receipt, task state, response input, transport provenance
+and dispatch tickets. It does not append the protocol message as fresh task input
+or invoke a provider, file handler or send. Proposed paths remain inert data;
+catalog/policy validation and resume are F4.4–F4.5.
+
+Plan installation initializes the session-local plan revision to zero and clears
+pending corrections; session reset does the same. F4.5 must advance this revision
+when changing the plan and invalidate old decisions under the existing mutex.
+F4.3 neither edits the plan nor advances its revision. This is not restart-safe
+correction storage or automatic interpretation of free-form replies.
+
+Verification extends the existing continuation and ingress tests: valid/replayed
+correction, conflicting path, stale session/owner/plan/step/revision, wrong frame,
+replacement, reset and uncertain recovery. Actual Core ingress is exercised after
+a missing second read on local and IRC profiles, with first-read evidence retained,
+sender mismatch/cancellation checks and no additional handler invocation. External
+providers and IRC sockets remain doubled.
+
+Verified 24 October 2026: all 75 discovered MeTTa files pass, including 332
+continuation assertions; ingress/preparation/requirements Python suites pass
+11/33/22 tests, and all four boundary guards pass. Reproduce from the application
+directory with `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 120`
+and the existing `tests/host_ingress_test.py`, `tests/response_preparation_test.py`
+and `tests/host_requirements_test.py` entry points. Local suite log:
+`/tmp/f43-metta-suite.log`. No live provider or channel calls were made.
+
 The host may install one bounded file-read plan for an admitted commitment.
 `host_continuation.metta` owns this host bookkeeping; its location inside MetaMo
 is not motivational authority. The module does not create a plan from user text,

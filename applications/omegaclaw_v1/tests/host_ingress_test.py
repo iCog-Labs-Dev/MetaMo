@@ -10,6 +10,26 @@ spec.loader.exec_module(ingress)
 
 
 class HostIngressTests(unittest.TestCase):
+    def test_explicit_correction_requires_exact_bounded_target(self):
+        import json
+        data = dict(session='s', commitment='c', plan='p', step='2', revision=0,
+                    path='reports/report.txt')
+        message = 'correction: ' + json.dumps(data)
+        self.assertEqual(ingress.classify_message(message), 'Correction')
+        self.assertEqual(ingress.parse_correction(message), data)
+        for field, value in (('session', ''), ('step', 2), ('revision', True),
+                             ('revision', -1), ('revision', 9007199254740992),
+                             ('path', 'a' * 257), ('path', 'a\nb'), ('path', '\ud800')):
+            with self.subTest(field=field, value=value):
+                changed = dict(data, **{field: value})
+                self.assertEqual(ingress.classify_message('correction: ' + json.dumps(changed)),
+                                 'InvalidInput')
+        for payload in ('{}', '[]', '"path"', '{',
+                        json.dumps(dict(data, grant=True)),
+                        json.dumps(data)[:-1] + ', "step":"2"}'):
+            self.assertEqual(ingress.classify_message('correction: ' + payload), 'InvalidInput')
+        self.assertEqual(ingress.classify_message('correction: reports/report.txt'), 'InvalidInput')
+
     def test_irc_envelope_preserves_body_and_sender(self):
         for body in ('hello', 'follow-up: more: detail', 'https://example.org',
                      'write a note: hello', '(send "quoted text")', '  hello  '):

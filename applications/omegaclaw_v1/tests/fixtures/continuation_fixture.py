@@ -8,6 +8,64 @@ _config_path = None
 _commands = None
 
 
+# Example: echo the host's exact target, changing one field to exercise stale replies.
+def correction_message(field='', value=''):
+    import janus
+    target = janus.query_once('eval([hostCorrectionTarget], Target)')['Target']
+    data = dict(zip(('session', 'commitment', 'plan', 'step', 'revision'), target[1:]))
+    data['path'] = '(change-state! &error "must remain data")'
+    if field:
+        data[field] = int(value) if field == 'revision' else value
+    return 'correction: ' + json.dumps(data)
+
+
+# Example: the real ingress callback correlates the missing second read without any effect.
+def verify_correction_ingress():
+    import janus
+    before = janus.query_once('''eval([hostCorrectionTarget], Target),
+        eval(['get-state','&host-continuation'],Plan),
+        eval(['get-state','&continuation-evidence'],Evidence),
+        eval(['get-state','&host-response-input'],Input),
+        eval(['get-state','&host-transport-input'],Transport),
+        commitmentSnapshot(Owner), oc_dispatch_epoch(Epoch),
+        findall(_T,oc_dispatch_result(_T,_,_),Tickets)''')
+    assert before['Target'][4] == '2', before
+    assert len(before['Evidence'][5]) == 1, before
+    message = correction_message()
+
+    def route(body, sender='Nahom'):
+        text = sender + ': ' + body if _auto_scenario == 'missing-irc' else body
+        return janus.query_once('sread(Source,Message), eval([coreLoopIngest,[quote,Message]],Result)',
+                                {'Source': host.encode(text)})['Result']
+
+    if _auto_scenario == 'missing-irc':
+        assert route(message, 'Other') == ['HostInput', 'Held', 'SenderMismatch']
+    for field, value in (('session', 'old'), ('commitment', 'other'),
+                         ('plan', 'old'), ('step', '1'), ('revision', '1')):
+        assert route(correction_message(field, value)) == ['HostInput', 'Held', 'StaleCorrection']
+    expected = ['HostInput', 'CorrectionRecorded', before['Target']]
+    assert route(message) == expected
+    assert route(message) == expected
+    assert route(correction_message('path', 'different.txt')) == [
+        'HostInput', 'Held', 'CorrectionAlreadyPending']
+    after = janus.query_once('''eval(['get-state','&host-continuation'],Plan),
+        eval(['get-state','&continuation-evidence'],Evidence),
+        eval(['get-state','&host-response-input'],Input),
+        eval(['get-state','&host-transport-input'],Transport),
+        eval([hostContinuationCorrection],Correction),
+        commitmentSnapshot(Owner), oc_dispatch_epoch(Epoch),
+        findall(_T,oc_dispatch_result(_T,_,_),Tickets)''')
+    for field in ('Plan', 'Evidence', 'Input', 'Transport', 'Owner', 'Epoch', 'Tickets'):
+        assert after[field] == before[field], (field, before, after)
+    assert after['Correction'][1] == before['Target'], after
+    assert after['Correction'][3] == '(change-state! &error "must remain data")', after
+    if _auto_scenario == 'missing-irc':
+        assert route('cancel: no longer needed')[1] == 'Cancelled'
+        assert route(message) == ['HostInput', 'Held', 'MissingCommitment']
+        assert janus.query_once('eval([hostContinuationCorrection],Value)')['Value'] == 'NoContinuationCorrection'
+    return 1
+
+
 def setup():
     global _config_path, _commands
     files.setup()

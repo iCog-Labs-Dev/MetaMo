@@ -1,6 +1,34 @@
 """Trusted ingress transport helpers; routing rules live in host_ingress.metta."""
 
+import json
 import re
+
+
+# Example: correction: {"session":"s","commitment":"c","plan":"p","step":"2","revision":0,"path":"report.txt"}
+def parse_correction(message):
+    """Validate bounded correlation data; a proposed path carries no permission."""
+    def unique_fields(pairs):
+        result = dict(pairs)
+        if len(result) != len(pairs):
+            raise ValueError('duplicate correction field')
+        return result
+
+    try:
+        data = json.loads(message.strip().partition(':')[2], object_pairs_hook=unique_fields)
+        fields = {'session', 'commitment', 'plan', 'step', 'revision', 'path'}
+        if not isinstance(data, dict) or set(data) != fields:
+            return None
+        for field in fields - {'revision'}:
+            value = data[field]
+            if (not isinstance(value, str) or not value.strip() or len(value) > 256
+                    or any(ord(char) < 32 for char in value)):
+                return None
+            value.encode('utf-8')
+        if type(data['revision']) is not int or not 0 <= data['revision'] <= 9007199254740991:
+            return None
+        return data
+    except (ValueError, TypeError, UnicodeEncodeError, RecursionError):
+        return None
 
 
 # Example: only IRC's transport envelope turns 'Nahom: hello' into 'hello'.
@@ -46,9 +74,12 @@ def classify_message(message):
     except UnicodeEncodeError:
         return 'InvalidInput'
     prefix, separator, body = message.strip().partition(':')
-    kinds = {'follow-up': 'FollowUp', 'cancel': 'Cancel', 'replace': 'Replace'}
+    kinds = {'follow-up': 'FollowUp', 'cancel': 'Cancel', 'replace': 'Replace',
+             'correction': 'Correction'}
     if prefix.casefold() not in kinds or not separator:
         return 'NewTask'
+    if prefix.casefold() == 'correction':
+        return 'Correction' if parse_correction(message) is not None else 'InvalidInput'
     return kinds[prefix.casefold()] if body.strip() else 'InvalidInput'
 
 
@@ -80,7 +111,7 @@ def ingest(message, transport=None):
          -> _Decision=['HostInput','Held','SenderMismatch']
          ; eval([hostIngressDecision, [quote,_Kind]], _Decision)),
         eval([hostIngressApply, [quote,_Decision], [quote,_Message]], _Result),
-        (_Result = ['HostInput',_Status|_], _Status \== 'Held'
+        (_Result = ['HostInput',_Status|_], \+ memberchk(_Status, ['Held','CorrectionRecorded'])
          -> (_Kind == 'NewTask'
              -> eval(['get-state','&cfv2-last-admitted-frame-id'], _Frame)
              ; eval(['get-state','&cfv2-current-frame-id'], _Frame)),
@@ -97,6 +128,31 @@ def ingest(message, transport=None):
          'TransportSource': encode(metadata)})
     if not result.get('truth', False):
         raise RuntimeError('host input routing failed')
+    return result['Source']
+
+
+# Example: a delayed correction cannot attach to a successor or changed plan revision.
+def correct(decision, message):
+    data = parse_correction(message) if classify_message(message) == 'Correction' else None
+    if data is None:
+        return '(HostInput Held InvalidInput)'
+    import janus
+    from host_dispatch_config import encode, record
+    target = record('CorrectionTarget', *(data[key] for key in
+                    ('session', 'commitment', 'plan', 'step', 'revision')))
+    result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        sread(DecisionSource, _Decision), sread(TargetSource, _Target),
+        sread(PathSource, _Path),
+        (_Decision = ['HostInput','Correction',_Id,_Frame,_Revision],
+         commitmentSnapshot(['CommitmentSnapshot',_Id,_Frame,_Revision,'Open',_]),
+         eval(['get-state','&cfv2-current-frame-id'], _Frame)
+         -> eval([hostCorrelateCorrection,[quote,_Target],[quote,_Path]], _Result)
+         ; _Result=['HostInput','Held','StaleCommitment']),
+        swrite(_Result, Source)))''',
+        {'DecisionSource': decision, 'TargetSource': encode(target),
+         'PathSource': encode(data['path'])})
+    if not result.get('truth', False):
+        raise RuntimeError('host correction correlation failed')
     return result['Source']
 
 
