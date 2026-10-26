@@ -11,8 +11,10 @@ Follow-up: item 1.2 now connects live accounting availability to production
 admission and final revalidation. G1 below records the original audit finding;
 its availability wiring is resolved as described in
 [the budget lifecycle documentation](BUDGET_ACCOUNTING.md#production-availability-and-lifecycle).
-Automatic invocation accounting in G2 and uncovered enforcement in G3–G5
-remain open. The tables below preserve the 1.1 baseline.
+Item 1.3 also resolves G2 for the supported command-invocation resource through
+[production reservation and settlement](BUDGET_ACCOUNTING.md#production-reservation-and-settlement).
+Uncovered enforcement in G3–G5 remains open. The tables below preserve the
+original 1.1 baseline.
 
 ## Production boundary
 

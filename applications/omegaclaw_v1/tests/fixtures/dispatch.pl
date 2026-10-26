@@ -43,3 +43,42 @@ hostBudgetFixtureRevoke(true) :- mm_dispatch_set_policies([],[]).
 hostBudgetFixtureReserve(Ticket, Operation, Costs, Result) :-
     oc_dispatch_mutate(eval([reserveOperationBudget,[quote,Ticket],
                             [quote,Operation],[quote,Costs]],Result)).
+
+% Example: a synthetic failing handler still declares its real skill and unit cost.
+hostFailureFixtureScope(['PolicyScope',Target,[skills,Skills],Permissions,Egress,
+                        [constraints,Constraints],Budgets],
+                       ['PolicyScope',Target,[skills,Allowed],Permissions,Egress,
+                        [constraints,Restrictions],Budgets]) :-
+    (memberchk("read-file",Skills)
+     -> sort(["outcome-test-failure"|Skills],Allowed) ; Allowed=Skills),
+    (memberchk(['DenySkill',"read-file"],Constraints)
+     -> Restrictions=[['DenySkill',"outcome-test-failure"]|Constraints]
+     ; Restrictions=Constraints).
+hostFailureFixtureInstall :-
+    oc_dispatch_mutate((
+        mm_dispatch_policies(Global,Frame),
+        maplist(hostFailureFixtureScope,[Global,Frame],[NewGlobal,NewFrame]),
+        mm_dispatch_set_policies(NewGlobal,NewFrame),
+        mm_dispatch_binding(Command,Request,['PolicyOperation',Candidate,Target,_|Fields]),
+        Command=['read-file',_],
+        mm_dispatch_revoke(Command),
+        mm_dispatch_register(['outcome-test-failure'],Request,
+            ['PolicyOperation',Candidate,Target,[skill,"outcome-test-failure"]|Fields]))).
+
+% Example: deliver a duplicate or forged observation through the trusted callback.
+hostBudgetFixtureSettle(Ticket, Command, Reported, Settlement) :-
+    oc_dispatch_mutate((
+        eval(['get-state','&budget-account-state'],['BudgetAccounts',_,Records]),
+        eval([baFindReservation,[quote,Records],[quote,Ticket]],Record),
+        eval([baOriginalReservation,[quote,Record]],
+             ['BudgetReservation',_,['BudgetOperation',_,Operation],_,_]),
+        mm_budget_settle(Ticket,Operation,Command,Reported,Settlement))).
+
+% Example: lose the result after a visible handler effect; Core retains uncertainty.
+hostBudgetFixturePartialExecute(_,_,_) :-
+    eval(['get-state','&budget-test-effects'],Before), After is Before+1,
+    eval(['change-state!','&budget-test-effects',After],_), throw(partial_effect).
+hostBudgetFixtureExecutor(Mode, true) :-
+    memberchk(Mode-Execute,[uncertain-hostBudgetFixturePartialExecute,normal-mm_dispatch_execute]),
+    oc_dispatch_mutate((retract(oc_dispatch_hooks(S,R,G,_)),
+                       assertz(oc_dispatch_hooks(S,R,G,Execute)))).

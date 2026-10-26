@@ -309,10 +309,55 @@ mm_dispatch_gate(Intent, ['DispatchContext',Bundle,Global,Frame,_,_], Operation,
              [quote,Intent], [quote,Operation], [quote,Global], [quote,Frame]],Decision)).
 mm_dispatch_execute(_, Command, Result) :- eval(Command,Result).
 
+% Example: every supported handler invocation consumes exactly one command unit.
+% Token/byte or variable-cost metadata has no production meter and is rejected.
+mm_budget_operation(Operation, Command, Costs) :-
+    eval([baOperationValid,[quote,['BudgetOperation',Command,Operation]]],true),
+    memberchk([costs,[['ResourceCost',"commands","units",1]]],Operation),
+    memberchk([target,Target],Operation),
+    eval([baExpectedCosts,"host",[quote,Target],
+          [quote,[['ResourceCost',"commands","units",1]]]],Costs).
+
+% Example: reserve both scopes atomically using Core's actual ticket and command.
+mm_budget_reserve(Ticket, Operation, Command, Decision) :-
+    (mm_budget_operation(Operation,Command,Costs)
+     -> eval([reserveOperationBudget,[quote,Ticket],
+              [quote,['BudgetOperation',Command,Operation]],[quote,Costs]],Reservation),
+        mm_budget_reservation_decision(Reservation,Ticket,Costs,Decision)
+     ; Decision=['GateDecision','Rejected','UnsupportedBudgetMeter']).
+
+% Example: a missing account or exhausted revision denies start without partial debit.
+mm_budget_reservation_decision(['BudgetReserved',Ticket,Costs],Ticket,Costs,
+                               ['GateDecision','Admitted','Feasible']) :- !.
+mm_budget_reservation_decision(['BudgetAccountingRejected',Reason],_,_,
+                               ['GateDecision','Rejected',Reason]) :- atom(Reason), !.
+mm_budget_reservation_decision(_,_,_,['GateDecision','Rejected','BudgetReservationFailed']).
+
+% Example: completed reads, inspections and definite handler failures each cost 1.
+% Uncertain invocation or partial transport submission retains its reservation.
+mm_budget_observed_costs(['DispatchResult','Executed','Feasible',Value],Costs,Actual) :- !,
+    (Value=['SendObservation',_,['TransportSubmission','Uncertain'|_]]
+     -> Actual='Unknown' ; Actual=Costs).
+mm_budget_observed_costs(_,_, 'Unknown').
+
+% Example: callbacks must match Core's immutable result AND the original operation.
+% Unknown consumption is not translated to zero, and replay is settled by the component.
+mm_budget_settle(Ticket, Operation, Command, Result, Settlement) :-
+    (oc_dispatch_result(Ticket,Command,Recorded), Recorded == Result,
+     mm_budget_operation(Operation,Command,Costs),
+     eval(['get-state','&budget-account-state'],['BudgetAccounts',_,Records]),
+     eval([baFindReservation,[quote,Records],[quote,Ticket]],Reservation),
+     eval([baOriginalReservation,[quote,Reservation]],
+          ['BudgetReservation',Ticket,['BudgetOperation',Command,Operation],Costs,_])
+     -> mm_budget_observed_costs(Result,Costs,Actual),
+        eval([settleOperationBudget,[quote,Ticket],[quote,Actual]],Settlement)
+     ; Settlement=['BudgetAccountingRejected','MismatchedOutcome']).
+
 initMetaMoDispatch(true) :-
     retractall(mm_completion_policy(_,_)),
     oc_dispatch_configure(mm_dispatch_snapshot,mm_dispatch_resolve,mm_dispatch_gate,mm_dispatch_execute),
     oc_dispatch_configure_guard(mm_dispatch_enter_route,mm_dispatch_leave_route),
+    oc_dispatch_configure_accounting(mm_budget_reserve,mm_budget_settle),
     retractall(oc_dispatch_intent(_)), assertz(oc_dispatch_intent(mm_dispatch_intent)).
 
 % Example: policy is installed atomically with the task's dispatch configuration.

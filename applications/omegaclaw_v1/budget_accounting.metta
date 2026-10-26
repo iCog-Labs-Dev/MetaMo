@@ -2,7 +2,7 @@
 ;; Session initialization, availability, reservation and settlement.
 ;; Load contexts/typed_policy before this module.
 ;; The production dispatch adapter loads this module for live availability.
-;; Invocation reservation/settlement wiring remains integration item 1.3.
+;; Core's host hooks also reserve and settle command units around invocation.
 ;;
 ;; These are trusted host operations, not model-callable skills. Core dispatch
 ;; owns invocation and synchronization; MetaMo reads budget projections only.

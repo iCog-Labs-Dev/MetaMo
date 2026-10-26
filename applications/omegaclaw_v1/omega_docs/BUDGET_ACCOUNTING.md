@@ -3,8 +3,9 @@
 MetaMo checks prospective costs; Core owns balances, reservations, meters and
 dispatch. The production adapter now publishes live session availability at
 operation admission, continuation admission and final dispatch revalidation
-(integration item 1.2). **Automatic dispatch reservation/settlement and usage
-metering remain item 1.3.** Durable recovery is outside this integration item.
+(integration item 1.2). Item 1.3 connects automatic reservation and settlement
+for the supported command-invocation resource. Durable recovery and additional
+resource meters are outside this integration item.
 
 `budget_accounting.metta` now initializes accounts, publishes availability, and
 reserves complete global/frame costs and settles actual usage with session replay
@@ -53,14 +54,56 @@ correction admission. Core's final snapshot includes those scopes and the host
 accounting state, so changes invalidate an older ticket even when projected
 availability happens to be unchanged. A fresh ticket must satisfy the current
 availability. Host meter/accounting updates must use the existing Core mutex
-and mutation epoch, including future reservation and settlement callers.
+and mutation epoch. Production invocation uses Core's same mutex and advances
+its epoch after recording the result and attempting settlement.
 
 Accounts retain the component's 128-account session bound, including older
 frames; adding accounts beyond it rejects provisioning without changing the
-store. This implementation supplies session availability, not restart recovery.
-Dispatch still does not automatically consume a command unit: item 1.3 must
-connect reservation and observed settlement before cumulative execution cost
-is enforced.
+store. This implementation supplies session accounting, not restart recovery.
+
+## Production reservation and settlement
+
+`initMetaMoDispatch` installs `mm_budget_reserve` and `mm_budget_settle` with
+Core's `oc_dispatch_configure_accounting`. The hooks run under the existing
+dispatch mutex and transport route guard. Standalone Core and deliberately
+unaccounted test dispatchers retain their existing behavior; enabled v1 installs
+both hooks before starting the loop.
+
+After final policy/snapshot revalidation, `oc_dispatch_start` calls the reserve
+hook with the actual Core ticket, resolved operation and exact command.
+`mm_budget_operation` requires matching command/skill metadata and exactly one
+`commands` / `units` cost of 1. Unknown or variable resource meters cannot start
+an operation. `reserveOperationBudget` atomically reserves both scope accounts
+and stores the complete operation identity and original account revisions.
+Any account failure rejects the start without a partial multi-account update.
+
+Reservation, claim and synchronous invocation share the same lock interval, so
+there is no unlocked cancellation/revocation window between them. Core claims
+the ticket as pending before calling the handler. A policy denial or stale ticket
+before reservation consumes nothing. A retry needs a new ticket and reservation.
+
+Core records the immutable handler result before calling `mm_budget_settle`.
+The callback requires an exact match to that receipt and to the reserved
+operation/command before calling the existing settlement component. It does
+not trust a motivational decision, model completion claim or arbitrary callback
+text as a usage observation. Settlement applies to the original accounts even
+if later task policy changes; it does not allocate new accounts or permissions.
+
+| Observed supported operation | Command-unit settlement |
+| --- | --- |
+| Handler returns, including a definite read failure or a transport's definite non-submission/duplicate suppression | 1 spent in each scope, reservation released. The resource counts handler invocations, not successful reads, delivered messages or transmitted bytes. |
+| Handler throws/fails after start, or IRC reports `TransportSubmission Uncertain` (including partial writes) | `Unknown` usage retains the complete reservation in both scopes. There is no automatic refund or retry. |
+| Replay of an already recorded Core ticket | Stored result returned without another reservation, invocation or settlement. A fresh ticket that reaches a duplicate-suppression handler is a new invocation and costs 1. |
+| Duplicate settlement callback matching the original receipt | Existing settlement returned without another charge. Mismatched command, operation or receipt is rejected without changing balances. |
+| Settlement callback fails or throws | Preserve the real handler result and reservation. Core records `AccountingPending SettlementUnavailable` in its trusted `oc_dispatch_accounting_result/2` diagnostic. |
+
+For this fixed-cost meter, a definite returned invocation consumes its entire
+reservation; there is no automatic partial/zero-usage estimate. The component's
+existing actual-usage API still supports explicit measured partial/zero reports
+and overrun holds for trusted host reconciliation. Uncertainty must be resolved
+with authoritative host evidence, never by elapsed time, silence or a forged
+replacement Core result. No automatic reconciliation or restart recovery is
+introduced here.
 
 ## Values and publication
 
@@ -156,7 +199,9 @@ It covers both scopes, spent/reserved deductions, policy ceilings, closed
 accounts, stale tickets, native frame identity, retained reservation records,
 new-frame/reprovision/revocation lifecycle, missing accounts and corrupt or
 uninitialized storage. Trusted fixture updates simulate the meter; these tests
-do not claim automatic invocation charging.
+now also check automatic invocation charging, cumulative exhaustion, competing
+tickets, duplicate/mismatched callbacks, definite failed reads, all-or-nothing
+reservation failure and pending uncertain effects.
 
 Item 1.2 verification on 26 October 2026: all 82 existing MeTTa test files
 passed, and the expanded `host_dispatch_config_test.metta` passed all 58
@@ -178,6 +223,19 @@ all-or-nothing multi-account failure, cumulative exhaustion and replay without
 duplicate charges. `tests/budget_settlement_test.metta` covers actual partial/full/
 zero usage, preserved competing reservations, duplicate/conflicting reports,
 unknown consumption, overrun blocking, revoked accounts and atomic failure.
-Core still needs integrated tests for
-concurrent reservations, all-or-nothing multi-account failure, revocation before
-start, duplicate callbacks, partial execution costs and restart reconciliation.
+`tests/irc_submission_test.metta` checks settled command invocations and preserved
+reservations for first-write and partial multi-chunk uncertainty, including
+replay. `tests/dispatch_guard_test.pl` additionally checks reservation-before-
+invocation ordering, denied starts, competing threads, replay and lost settlement
+callbacks under Core's dispatch/transport locks. The existing Core dispatch
+suite retains policy-revocation and serialized-start coverage. Variable-resource
+execution meters and restart reconciliation remain outside the supported path.
+
+Item 1.3 verification on 26 October 2026: all 82 MeTTa test files passed;
+the final targeted budget and IRC accounting suites passed 87 and 37 assertions
+respectively. Six relevant Python suites passed 118 tests, all four existing
+shell boundary guards passed, and Core's existing dispatch suite (20 named tests,
+including a three-case UUID test) plus the expanded 10 dispatch-guard tests
+passed. Regression fixtures outside the bounded budget suite now explicitly
+allocate headroom for their multiple invocations; production configuration
+defaults remain unchanged. No new test files or live external calls were added.

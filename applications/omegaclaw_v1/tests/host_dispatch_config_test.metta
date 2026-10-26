@@ -11,7 +11,8 @@
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/dispatch.pl)
    (hostBudgetFixturePublish hostBudgetFixtureFrame hostBudgetFixtureRejectProvision
-    hostBudgetFixturePolicies hostBudgetFixtureRevoke hostBudgetFixtureReserve))
+    hostBudgetFixturePolicies hostBudgetFixtureRevoke hostBudgetFixtureReserve
+    hostBudgetFixtureSettle hostBudgetFixtureExecutor))
 (= (maxOutputToken) 256)
 (= (wakeupInterval) 1)
 (= (getFrameSkillsCompact) (quote (read-file show-current-frame)))
@@ -29,7 +30,7 @@
 !(change-state! &cfv2-current-frame-mode Fast)
 !(setConstitutionalMode Engaged)
 !(initMetaMoDispatch)
-!(bind! &host-config-path (new-state (py-call (host_config_fixture.setup))))
+!(bind! &host-config-path (new-state (py-call (host_config_fixture.setup "bounded"))))
 !(bind! &host-read-command (new-state (sread (py-call (host_config_fixture.command)))))
 (= (hostReadIntent) (AdmissionRequest propose-candidate current-frame execute-skill))
 (= (hostFrameIntent) (AdmissionRequest propose-candidate current-frame search-knowledge))
@@ -44,8 +45,14 @@
 !(bind! &allowed-ticket (new-state (hostReadTicket)))
 !(test (coreDispatchCommand (get-state &allowed-ticket) (get-state &host-read-command))
    (DispatchResult Executed Feasible "observed local file content"))
+!(bind! &after-first-charge (new-state (get-state &budget-account-state)))
+!(test (budgetAvailability (BudgetAccountId "host" Global "commands" "units"))
+    (ResourceBudget "commands" "units" 9 Open))
+!(test (budgetAvailability (BudgetAccountId "host" (FrameTarget "configured-frame") "commands" "units"))
+    (ResourceBudget "commands" "units" 1 Open))
 !(test (coreDispatchCommand (get-state &allowed-ticket) (get-state &host-read-command))
    (DispatchResult Executed Feasible "observed local file content"))
+!(test (get-state &budget-account-state) (get-state &after-first-charge))
 !(test (coreDispatchCommand (hostReadTicket) (quote (read-file "/unregistered/path")))
    (DispatchResult Blocked UnsupportedOperation none))
 !(test (coreDispatchCommand (hostReadTicket) (quote (read-file (change-state! &error "injected"))))
@@ -57,6 +64,10 @@
    (DispatchResult Blocked UnsupportedOperation none))
 !(test (coreDispatchCommand (coreDispatchCapture (hostFrameIntent)) (quote (show-current-frame)))
    (DispatchResult Executed Feasible (cfv2-current-frame)))
+!(test (budgetAvailability (BudgetAccountId "host" (FrameTarget "configured-frame") "commands" "units"))
+    (ResourceBudget "commands" "units" 0 Open))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked BudgetExhausted none))
 
 ;; Atomic reprovision replaces prior bindings and invalidates outstanding work.
 !(bind! &old-ticket (new-state (hostReadTicket)))
@@ -116,6 +127,9 @@
         (index-atom (index-atom (index-atom $scope 6) 1) 0))
 )
 
+;; Earlier real invocations consumed two units. Reset only this fixture's meter
+;; state to isolate the availability cases below; provisioning cannot reset it.
+!(hostBudgetFixturePublish (hostBudgetState 0 0 0 0))
 !(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
 !(test (budgetAvailability (hostBudgetId Global)) (ResourceBudget "commands" "units" 10 Open))
 !(test (budgetAvailability (hostBudgetId (FrameTarget "configured-frame")))
@@ -230,5 +244,78 @@
 !(test (hostBudgetAdmission) (GateDecision Rejected InvalidGlobalPolicy))
 !(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
     (DispatchResult Blocked InvalidGlobalPolicy none))
+
+;; Real production charging: two captured decisions cannot reuse the same balance.
+!(hostBudgetFixturePublish (hostBudgetState 0 0 0 0))
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
+!(bind! &first-spender (new-state (hostReadTicket)))
+!(bind! &competing-spender (new-state (hostReadTicket)))
+!(test (coreDispatchCommand (get-state &first-spender) (get-state &host-read-command))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (coreDispatchCommand (get-state &competing-spender) (get-state &host-read-command))
+    (DispatchResult Blocked StaleSnapshot none))
+!(test (budgetAvailability (hostBudgetId Global)) (ResourceBudget "commands" "units" 9 Open))
+
+;; Duplicate callbacks charge once; a forged successful result cannot settle.
+!(bind! &settled-budget (new-state (get-state &budget-account-state)))
+!(test (hostBudgetFixtureSettle (get-state &first-spender) (get-state &host-read-command)
+    (DispatchResult Executed Feasible "observed local file content"))
+    (BudgetSettled (DispatchTicket (index-atom (get-state &first-spender) 1))
+        ((AccountCost (hostBudgetId Global) 1)
+         (AccountCost (hostBudgetId (FrameTarget "configured-frame")) 1))))
+!(test (get-state &budget-account-state) (get-state &settled-budget))
+!(test (hostBudgetFixtureSettle (get-state &first-spender) (get-state &host-read-command)
+    (DispatchResult Executed Feasible "forged usage observation"))
+    (BudgetAccountingRejected MismatchedOutcome))
+!(test (get-state &budget-account-state) (get-state &settled-budget))
+
+;; A failed read is a completed handler invocation, not a zero-cost operation.
+!(py-call (host_config_fixture.remove_file))
+!(bind! &failed-read-ticket (new-state (hostReadTicket)))
+!(test (coreDispatchCommand (get-state &failed-read-ticket) (get-state &host-read-command))
+    (DispatchResult Executed Feasible (Error read-file FileUnavailable)))
+!(test (budgetAvailability (hostBudgetId (FrameTarget "configured-frame")))
+    (ResourceBudget "commands" "units" 0 Open))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked BudgetExhausted none))
+!(py-call (host_config_fixture.replace_file_content))
+
+;; A frame reservation failure cannot leave the global scope partially debited.
+!(hostBudgetFixturePublish (BudgetAccounts
+    ((BudgetAccount (hostBudgetId Global) 10 0 0 Open 1)
+     (BudgetAccount (hostBudgetId (FrameTarget "configured-frame"))
+        2 0 0 Open 9007199254740991)) ()))
+!(bind! &before-reservation-denial (new-state (get-state &budget-account-state)))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked BudgetRevisionExhausted none))
+!(test (get-state &budget-account-state) (get-state &before-reservation-denial))
+
+;; A lost callback after a visible effect holds both scopes and never auto-refunds.
+!(hostBudgetFixturePublish (hostBudgetState 0 0 0 0))
+!(bind! &budget-test-effects (new-state 0))
+!(hostBudgetFixtureExecutor uncertain)
+!(bind! &uncertain-budget-ticket (new-state (hostReadTicket)))
+!(test (coreDispatchCommand (get-state &uncertain-budget-ticket) (get-state &host-read-command))
+    (DispatchResult Unobserved ExecutionUncertain none))
+!(test (get-state &budget-test-effects) 1)
+!(test (budgetAvailability (hostBudgetId Global)) (ResourceBudget "commands" "units" 9 Open))
+!(test (budgetAvailability (hostBudgetId (FrameTarget "configured-frame")))
+    (ResourceBudget "commands" "units" 1 Open))
+!(bind! &pending-budget (new-state (get-state &budget-account-state)))
+!(test (coreDispatchCommand (get-state &uncertain-budget-ticket) (get-state &host-read-command))
+    (DispatchResult Unobserved ExecutionUncertain none))
+!(test (get-state &budget-test-effects) 1)
+!(test (get-state &budget-account-state) (get-state &pending-budget))
+!(test (hostBudgetFixtureSettle (get-state &uncertain-budget-ticket) (get-state &host-read-command)
+    (DispatchResult Unobserved ExecutionUncertain none))
+    (BudgetAccountingPending (get-state &uncertain-budget-ticket) UsageUnknown))
+!(test (get-state &budget-account-state) (get-state &pending-budget))
+!(test (hostBudgetFixtureSettle (get-state &uncertain-budget-ticket) (get-state &host-read-command)
+    (DispatchResult Executed Feasible "invented success"))
+    (BudgetAccountingRejected MismatchedOutcome))
+!(test (get-state &budget-account-state) (get-state &pending-budget))
+!(test (coreDispatchCommand (hostReadTicket) (get-state &host-read-command))
+    (DispatchResult Blocked OutstandingInvocation none))
+!(hostBudgetFixtureExecutor normal)
 
 !(test (py-call (host_config_fixture.cleanup)) 1)

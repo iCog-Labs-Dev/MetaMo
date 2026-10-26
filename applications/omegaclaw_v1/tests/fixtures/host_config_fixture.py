@@ -9,7 +9,8 @@ _config = None
 _path = None
 
 
-def setup():
+# Example: general lifecycle regressions have headroom; budget tests opt into 10/2.
+def setup(profile="regression"):
     global _temp, _config, _path
     _temp = tempfile.TemporaryDirectory(prefix="omegaclaw-host-config-")
     root = Path(_temp.name).resolve()
@@ -21,6 +22,8 @@ def setup():
     _config["commands"][0]["arguments"] = [str(data)]
     for name in ("global", "frame"):
         _config[name]["permissions"] = ["files.read", "files.read:" + str(data), "frames.read"]
+        if profile != "bounded":
+            _config[name]["budgets"][0]["available"] = 1000
     _path = root / "host.json"
     return write("allowed")
 
@@ -174,13 +177,9 @@ def replace_file_content():
 
 def install_failure_handler():
     import janus
-    return int(janus.query_once("""
-oc_dispatch_mutate((
-    mm_dispatch_binding(_Command, _Request, _Operation), _Command=['read-file',_],
-    mm_dispatch_revoke(_Command),
-    mm_dispatch_register(['outcome-test-failure'], _Request, _Operation)
-))
-""")["truth"])
+    source = str(Path(__file__).with_name('dispatch.pl'))
+    return int(janus.query_once('ensure_loaded(Source), hostFailureFixtureInstall',
+                               {'Source': source})['truth'])
 
 
 def remove_file():

@@ -39,6 +39,14 @@
 (= (hostSendTicket) (coreDispatchCapture (hostSendIntent)))
 (= (hostSendCommand) (quote (send "observed reply")))
 
+;; Example: command units meter invocations; partial transport work stays pending.
+(= (submissionBudgetUsage)
+    (let (BudgetAccounts $accounts $_) (get-state &budget-account-state)
+        (map-atom $accounts $account
+            ((index-atom $account 3) (index-atom $account 4)))
+    )
+)
+
 !(import! &self (library OmegaClaw-Core channels/irc.py))
 !(import! &self fixtures/irc_routing_fixture.py)
 !(import! &self fixtures/irc_submission_fixture.py)
@@ -52,17 +60,20 @@
    (DispatchResult Executed Feasible
       (SendObservation "irc:irc.example.org:6667:#room" (TransportSubmission Submitted Complete 1 1))))
 !(test (py-call (irc_routing_fixture.writes)) 1)
+!(test (submissionBudgetUsage) ((1 0) (1 0)))
 ;; Fresh invocation of confirmed duplicate text reports suppression, not delivery.
 !(test (coreDispatchCommand (hostSendTicket) (hostSendCommand))
    (DispatchResult Executed Feasible
       (SendObservation "irc:irc.example.org:6667:#room" (TransportSubmission NotSubmitted SuppressedDuplicate 0 1))))
 !(test (py-call (irc_routing_fixture.writes)) 1)
+!(test (submissionBudgetUsage) ((2 0) (2 0)))
 ;; Clear transport dedup to prove the ticket ledger alone prevents another write.
 !(py-call (irc_submission_fixture.clear_marker))
 !(test (coreDispatchCommand (get-state &submission-ticket) (hostSendCommand))
    (DispatchResult Executed Feasible
       (SendObservation "irc:irc.example.org:6667:#room" (TransportSubmission Submitted Complete 1 1))))
 !(test (py-call (irc_routing_fixture.writes)) 1)
+!(test (submissionBudgetUsage) ((2 0) (2 0)))
 ;; A first sendall exception can still follow partial bytes. No success or retry.
 !(py-call (irc_routing_fixture.connect "same"))
 !(py-call (irc_submission_fixture.fail_after 0))
@@ -74,8 +85,10 @@
 !(test (operationOutcomeStatus (hostSendCommand) (get-state &failed-result)) Unobserved)
 !(test (py-call (irc_routing_fixture.writes)) 2)
 !(test (py-call (irc_submission_fixture.marker_empty)) 1)
+!(test (submissionBudgetUsage) ((2 1) (2 1)))
 !(test (coreDispatchCommand (get-state &failed-ticket) (hostSendCommand)) (get-state &failed-result))
 !(test (py-call (irc_routing_fixture.writes)) 2)
+!(test (submissionBudgetUsage) ((2 1) (2 1)))
 !(test (py-call (irc_routing_fixture.route_lock_available)) 1)
 ;; Three UTF-8 chunks; the second write fails, so the third is never attempted.
 !(py-call (irc_routing_fixture.connect "same"))
@@ -89,8 +102,10 @@
       (SendObservation "irc:irc.example.org:6667:#room" (TransportSubmission Uncertain WriteUncertain 1 3))))
 !(test (py-call (irc_routing_fixture.writes)) 4)
 !(test (py-call (irc_submission_fixture.marker_empty)) 1)
+!(test (submissionBudgetUsage) ((2 2) (2 2)))
 !(test (coreDispatchCommand (get-state &partial-ticket) (get-state &long-command)) (get-state &partial-result))
 !(test (py-call (irc_routing_fixture.writes)) 4)
+!(test (submissionBudgetUsage) ((2 2) (2 2)))
 !(test (operationOutcomeStatus (get-state &long-command) (get-state &partial-result)) Unobserved)
 ;; The dispatch guard releases the route lock after an uncertain attempt.
 !(test (py-call (irc_routing_fixture.route_lock_available)) 1)
@@ -108,6 +123,7 @@
    (DispatchResult Executed Feasible
       (SendObservation "irc:irc.example.org:6667:#room" (TransportSubmission Submitted Complete 1 1))))
 !(test (py-call (irc_routing_fixture.writes)) 5)
+!(test (submissionBudgetUsage) ((3 2) (3 2)))
 ;; The clarification candidate returns the same transport observation contract.
 !(test (coreDispatchCommand
    (coreDispatchCapture (AdmissionRequest propose-candidate current-frame ask-clarification))

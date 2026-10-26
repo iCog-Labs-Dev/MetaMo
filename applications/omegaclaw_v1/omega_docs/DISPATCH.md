@@ -45,8 +45,10 @@ Configured budget amounts seed host accounts on first allocation and remain
 policy ceilings. Admission and final dispatch now use live
 `limit - spent - reserved` availability from those accounts in both scopes;
 missing or invalid accounting blocks execution. Reprovisioning and new tasks
-preserve existing global consumption. Dispatch reservation and settlement are
-still separate integration work. See [budget lifecycle and publication](BUDGET_ACCOUNTING.md#production-availability-and-lifecycle).
+preserve existing global consumption. Core now reserves before invocation and
+settles observed command-unit consumption afterward. Uncertain invocation or
+partial IRC submission retains the reservation. See
+[production accounting](BUDGET_ACCOUNTING.md#production-reservation-and-settlement).
 
 In trusted startup/admission code, after loading composition and dispatch and
 establishing the current frame, initialize dispatch and provision before starting
@@ -67,8 +69,10 @@ host API, not a model skill. The startup adapter below invokes the same installe
 The manual `provision` API retains explicit string frame targets. Startup resolves
 the configured target to the actual Core ID, preserving its symbol/string type. The host must keep allowlisted paths under its control throughout the
 session: provisioning-time path validation is not a filesystem sandbox.
-Costs currently account for command units only, not file bytes, memory, or time;
-budgets are checked prospectively without reservation or consumption settlement.
+Costs account for command invocations only, not file bytes, memory or time.
+Both scope accounts reserve 1 unit before a handler starts; a definite returned
+invocation spends 1 even when it reports failure or duplicate suppression.
+Core ticket replay consumes nothing further. Unknown consumption remains pending.
 
 `dispatch.pl` supplies these Prolog host APIs (not exported as model skills):
 

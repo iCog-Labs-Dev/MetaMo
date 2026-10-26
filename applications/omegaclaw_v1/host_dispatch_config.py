@@ -2,7 +2,7 @@
 
 Not a model skill. Call provision from trusted host code after initMetaMoDispatch.
 The host owns this file and the configured filesystem paths throughout the session.
-Only command-count costs are modeled here; reservation/settlement is separate.
+Only command-count costs are modeled here; Core's host hooks reserve and settle them.
 """
 import json
 import ipaddress
