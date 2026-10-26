@@ -30,9 +30,66 @@ mm_dispatch_register(Command, Request, Operation) :-
                        assertz(mm_dispatch_binding(Command,Request,Operation)))).
 mm_dispatch_set_policies(Global, Frame) :-
     ground(Global-Frame),
+    with_mutex(omegaclaw_dispatch, mm_dispatch_install_policies(Global,Frame)).
+
+% Example: revoking task grants retains all global/frame balances and reservations.
+mm_dispatch_install_policies([], []) :- !,
+    mm_dispatch_store_policies([], []).
+mm_dispatch_install_policies(Global, Frame) :-
+    mm_budget_prepare(Global,Frame,Next),
+    oc_dispatch_mutate((mm_dispatch_store_policies(Global,Frame),
+                       mm_budget_install(Next))).
+
+% Example: replacing grants cannot replenish the accounting store.
+mm_dispatch_store_policies(Global, Frame) :-
     oc_dispatch_mutate((retractall(mm_dispatch_policies(_,_)),
                        assertz(mm_dispatch_policies(Global,Frame)),
                        eval(['change-state!','&prepared-host-operation',[]],_))).
+
+% Example: initial configured availability seeds an account once, in host units.
+% Policy status remains a separate restriction; initialization grants no execution.
+mm_budget_seed(Target, ['ResourceBudget',Resource,Unit,Limit,_],
+               ['BudgetAccount',['BudgetAccountId',"host",Target,Resource,Unit],
+                Limit,0,0,'Open',0]).
+mm_budget_scope_seeds(Scope, Target, Seeds) :-
+    eval([tpScopeValid,[quote,Scope],[quote,Target]],true),
+    memberchk([budgets,Budgets],Scope), maplist(mm_budget_seed(Target),Budgets,Seeds).
+
+% Example: an initialized empty store is valid; corrupt storage is never reset.
+mm_budget_existing('BudgetAccountsUninitialized', [], []) :- !.
+mm_budget_existing(Snapshot, Accounts, Records) :-
+    eval([baValidatedSnapshot,[quote,Snapshot]],Validated),
+    Validated=['BudgetAccounts',Accounts,Records].
+
+% Example: task B adds its accounts while preserving task A and the global account.
+mm_budget_prepare(Global, Frame, ['BudgetAccounts',Accounts,Records]) :-
+    Frame=['PolicyScope',[target,Target]|_], Target=['FrameTarget',_],
+    mm_budget_scope_seeds(Global,'Global',GlobalSeeds),
+    mm_budget_scope_seeds(Frame,Target,FrameSeeds),
+    eval(['get-state','&budget-account-state'],Snapshot),
+    mm_budget_existing(Snapshot,Existing,Records),
+    append(GlobalSeeds,FrameSeeds,Seeds),
+    findall(Seed, (member(Seed,Seeds), Seed=['BudgetAccount',Id|_],
+                  \+ member(['BudgetAccount',Id|_],Existing)), Added),
+    append(Existing,Added,Accounts),
+    eval([baAccountsReason,[quote,Accounts],128,[]],'Valid').
+
+% Example: only the first installation initializes; later installs retain records.
+mm_budget_install(['BudgetAccounts',Accounts,Records]) :-
+    eval(['get-state','&budget-account-state'],Current),
+    (Current == 'BudgetAccountsUninitialized'
+     -> eval([initBudgetAccounts,[quote,Accounts]],['BudgetAccountsInitialized',_])
+     ; eval(['change-state!','&budget-account-state',
+             [quote,['BudgetAccounts',Accounts,Records]]],_)).
+
+% Example: both scopes and snapshot revisions come from the same locked read.
+% Rejection stays typed invalid policy; no fallback to configured availability.
+mm_dispatch_live_policies(Global, Frame, Accounting) :-
+    eval(['get-state','&budget-account-state'],Accounting),
+    (mm_dispatch_policies(ConfiguredGlobal,ConfiguredFrame)
+     -> eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredGlobal]],Global),
+        eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredFrame]],Frame)
+     ; Global=[], Frame=[]).
 mm_dispatch_revoke(Command) :-
     oc_dispatch_mutate((retractall(mm_dispatch_binding(Command,_,_)),
                        eval([revokePreparedHostCommand,[quote,Command]],_))).
@@ -47,7 +104,7 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval([frameStateForMetaMo],Current), Current=['FrameStateBundle'|_],
     maplist(mm_dispatch_schedule_field, Current, Bundle),
     eval([constitutionalMode],Mode),
-    (mm_dispatch_policies(Global,Frame) -> true; Global=[], Frame=[]),
+    mm_dispatch_live_policies(Global,Frame,Accounting),
     findall(K-V, (nb_current(K,V), atom(K), sub_atom(K,0,6,_,'&cfv2-')), Unsorted),
     sort(Unsorted,FrameRaw),
     eval([commchannel], Channel),
@@ -62,7 +119,7 @@ mm_dispatch_snapshot(['DispatchContext',Bundle,Global,Frame,Mode,Raw]) :-
     eval(['get-state','&continuation-retries'], Retries),
     (mm_completion_policy(Criterion,Destination) -> Completion=[Criterion,Destination]
      ; Completion=['Disabled',""]),
-    Raw=[completion-policy-Completion,channel-Channel,route-Route,prepared-Prepared,answered-Answered,
+    Raw=[budget-state-Accounting,completion-policy-Completion,channel-Channel,route-Route,prepared-Prepared,answered-Answered,
          requirements-Requirements,continuation-Continuation,continuation-evidence-Evidence,
          continuation-recovery-Recovery,continuation-clarification-Clarification,
          continuation-retries-Retries|FrameRaw].

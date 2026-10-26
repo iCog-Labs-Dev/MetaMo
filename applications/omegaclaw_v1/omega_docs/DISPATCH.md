@@ -41,6 +41,13 @@ Budgets declare resource, unit, available amount, and `Open`, `Closed`, or
 `Exhausted` status. Empty grants stay empty. The gate checks both scopes;
 registration alone does not make an operation feasible.
 
+Configured budget amounts seed host accounts on first allocation and remain
+policy ceilings. Admission and final dispatch now use live
+`limit - spent - reserved` availability from those accounts in both scopes;
+missing or invalid accounting blocks execution. Reprovisioning and new tasks
+preserve existing global consumption. Dispatch reservation and settlement are
+still separate integration work. See [budget lifecycle and publication](BUDGET_ACCOUNTING.md#production-availability-and-lifecycle).
+
 In trusted startup/admission code, after loading composition and dispatch and
 establishing the current frame, initialize dispatch and provision before starting
 the loop:

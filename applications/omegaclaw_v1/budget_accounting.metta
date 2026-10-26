@@ -1,8 +1,8 @@
 ;; Host budget accounting interfaces for the OmegaClaw v1 integration.
 ;; Session initialization, availability, reservation and settlement.
 ;; Load contexts/typed_policy before this module.
-;; Keep this module out of runtime composition until implementation and wiring
-;; are complete. See omega_docs/INTEGRATION_PLAN.md for acceptance criteria.
+;; The production dispatch adapter loads this module for live availability.
+;; Invocation reservation/settlement wiring remains integration item 1.3.
 ;;
 ;; These are trusted host operations, not model-callable skills. Core dispatch
 ;; owns invocation and synchronization; MetaMo reads budget projections only.
@@ -125,6 +125,74 @@
               (Valid $snapshot)
               ($reason (BudgetAccountingRejected $reason)))))
           ($_ (BudgetAccountingRejected InvalidBudgetAccounts))))))
+
+;; Example: a policy ceiling of 10 and accounting availability of 3 publishes 3.
+;; Closed account or policy status remains closed; neither can reopen the other.
+(= (baPolicyBudget $accounts $target $budget)
+    (let*
+        (
+            ((ResourceBudget $resource $unit $ceiling $status) $budget)
+            ($available (baAvailabilityIn $accounts
+                (BudgetAccountId "host" $target $resource $unit)))
+        )
+        (case $available
+            (
+                ((ResourceBudget $_ $_ $amount $accountStatus)
+                    (ResourceBudget $resource $unit
+                        (if (< $amount $ceiling) $amount $ceiling)
+                        (if (== $status Open) $accountStatus $status)))
+                ($rejection $rejection)
+            )
+        )
+    )
+)
+
+;; Example: one missing account rejects the scope, rather than dropping its cost.
+(= (baPolicyScope $accounts $scope)
+    (let*
+        (
+            ((PolicyScope (target $target) $skills $permissions $egress
+                $constraints (budgets $budgets)) $scope)
+            ($projected (map-atom $budgets $budget
+                (baPolicyBudget $accounts $target $budget)))
+            ($rejections (filter-atom $projected $budget
+                (case $budget
+                    (
+                        ((ResourceBudget $_ $_ $_ $_) False)
+                        ($_ True)
+                    )
+                )))
+        )
+        (case $rejections
+            (
+                (() (PolicyScope (target $target) $skills $permissions $egress
+                    $constraints (budgets $projected)))
+                ($_ (car-atom $rejections))
+            )
+        )
+    )
+)
+
+;; Pure host projection from one captured store; never reread balances per scope.
+;; Example: malformed accounting returns BudgetAccountingRejected, never a grant.
+(= (budgetPolicyScopeForSnapshot $snapshot $scope)
+    (case $scope
+        (
+            ((PolicyScope (target $target) $_ $_ $_ $_ $_)
+                (if (tpScopeValid $scope $target)
+                    (case (baValidatedSnapshot $snapshot)
+                        (
+                            ((BudgetAccounts $accounts $_)
+                                (baPolicyScope $accounts $scope))
+                            ($rejection $rejection)
+                        )
+                    )
+                    (BudgetAccountingRejected InvalidBudgetPolicy)
+                ))
+            ($_ (BudgetAccountingRejected InvalidBudgetPolicy))
+        )
+    )
+)
 
 ;; Reservation input:
 ;;   (DispatchTicket "id")

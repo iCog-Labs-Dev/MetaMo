@@ -1,19 +1,66 @@
 # Host budget reservation and accounting contract
 
 MetaMo checks prospective costs; Core owns balances, reservations, meters and
-dispatch. This document defines the required host behavior. The current code
-implements numeric admission, accounting projection, and isolated session
-reservation/settlement. **Production dispatch accounting, usage metering and
-durable recovery remain unimplemented.**
+dispatch. The production adapter now publishes live session availability at
+operation admission, continuation admission and final dispatch revalidation
+(integration item 1.2). **Automatic dispatch reservation/settlement and usage
+metering remain item 1.3.** Durable recovery is outside this integration item.
 
 `budget_accounting.metta` now initializes accounts, publishes availability, and
 reserves complete global/frame costs and settles actual usage with session replay
 protection. It commits balances and the reservation/settlement record in one state
-update under a serialized-caller
-contract. It is not yet imported by production composition or called by Core
-dispatch; it does not acquire the host mutex or authorize execution. See the
+update under a serialized-caller contract. The production `dispatch.metta`
+imports the component; the trusted adapter acquires Core's dispatch mutex around
+provisioning, capture and revalidation. The component itself does not acquire
+that mutex or authorize execution. See the
 [integration plan](INTEGRATION_PLAN.md#budget-accounting-functions-to-implement)
-for interfaces, tests, and remaining wiring.
+for remaining work.
+
+## Production availability and lifecycle
+
+The supported catalog declares one `commands` / `units` cost per read,
+frame inspection or send. No token, byte, monetary or general host-service
+meter is implied. Per-provider output caps remain separate from these accounts.
+
+On first trusted policy installation, `mm_budget_prepare` derives accounts in
+namespace `"host"` from the configured global/frame budget rows, then
+`mm_budget_install` calls `initBudgetAccounts`. Each configured `available`
+amount seeds its account's limit, with zero spent/reserved and revision zero.
+Account status starts Open; configured Closed/Exhausted status independently
+denies operation through the policy projection.
+
+Later provisioning adds only previously unseen account identities. Existing
+limits, spent, reserved, account status, revisions and reservation/settlement
+records are preserved. A new task gets its own frame accounts and shares the
+existing global accounts. Returning to a previous frame, policy revocation,
+changing the command catalog or reinitializing dispatch does not replenish
+balances. Raising a configured ceiling does not raise an existing account limit;
+there is no implicit recharge or reset API. Missing accounts block admission;
+ordinary projection does not create them. Trusted provisioning allocates new
+identities but rejects corrupt existing storage rather than resetting it.
+
+`mm_dispatch_live_policies` captures the accounting store once while the host
+holds the dispatch mutex. `budgetPolicyScopeForSnapshot` projects both scopes
+from that store. For each configured resource it publishes
+`min(configured ceiling, limit - spent - reserved)`; a Closed/Exhausted policy
+or account remains restrictive. Missing, malformed or overcommitted accounting
+returns a typed rejection in place of a policy scope. The existing concrete
+gate consequently returns InvalidGlobalPolicy/InvalidFramePolicy; it cannot
+fall back to a configured amount or an empty cost vector.
+
+The live scopes feed normal pre-score operation admission and read-plan /
+correction admission. Core's final snapshot includes those scopes and the host
+accounting state, so changes invalidate an older ticket even when projected
+availability happens to be unchanged. A fresh ticket must satisfy the current
+availability. Host meter/accounting updates must use the existing Core mutex
+and mutation epoch, including future reservation and settlement callers.
+
+Accounts retain the component's 128-account session bound, including older
+frames; adding accounts beyond it rejects provisioning without changing the
+store. This implementation supplies session availability, not restart recovery.
+Dispatch still does not automatically consume a command unit: item 1.3 must
+connect reservation and observed settlement before cumulative execution cost
+is enforced.
 
 ## Values and publication
 
@@ -102,6 +149,25 @@ implementations must explicitly exclude crash/restart guarantees; they must not
 restore all reserved capacity as available on startup.
 
 ## Evidence and remaining host work
+
+`tests/host_dispatch_config_test.metta` now checks the connected production
+capture/admission and final Core dispatch paths with real account projections.
+It covers both scopes, spent/reserved deductions, policy ceilings, closed
+accounts, stale tickets, native frame identity, retained reservation records,
+new-frame/reprovision/revocation lifecycle, missing accounts and corrupt or
+uninitialized storage. Trusted fixture updates simulate the meter; these tests
+do not claim automatic invocation charging.
+
+Item 1.2 verification on 26 October 2026: all 82 existing MeTTa test files
+passed, and the expanded `host_dispatch_config_test.metta` passed all 58
+assertions after its final additions. Six relevant Python suites passed 118
+tests; all four existing shell boundary guards and five Core dispatch-guard
+tests passed. Providers/transports were doubled; no live external services were
+called. Reproduce the MeTTa suite from the workspace root with:
+
+```bash
+python3 MetaMo/scripts/run-tests.py --root MetaMo/applications/omegaclaw_v1 --jobs 3 --timeout 90
+```
 
 `tests/budget_accounting_test.metta` checks accounting projection, overcommitment,
 pending reservations reducing admission, both scopes, units, missing resources,

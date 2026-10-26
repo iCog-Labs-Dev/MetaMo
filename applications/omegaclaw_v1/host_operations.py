@@ -527,7 +527,7 @@ with_mutex(omegaclaw_dispatch, (
          mm_dispatch_owner_current,
          commitmentSnapshot(['CommitmentSnapshot',_,_OwnerFrame,_,'Open',_]),
          eval(['get-state','&cfv2-current-frame-id'], _OwnerFrame),
-         mm_dispatch_policies(_Global, _Frame),
+         mm_dispatch_live_policies(_Global, _Frame, _Accounting),
          eval([frameStateForMetaMo], _Bundle), _Bundle=['FrameStateBundle'|_]
          -> findall(['HostCommandBinding',_Command,_Request,_Operation],
                     mm_dispatch_binding(_Command,_Request,_Operation), _Bindings),
@@ -709,7 +709,7 @@ with_mutex(omegaclaw_dispatch, (
                        mm_dispatch_gate, mm_dispatch_execute),
      eval([frameStateForMetaMo], _Current), _Current == _Bundle,
      \+ mm_dispatch_busy(['read-file',_]),
-     mm_dispatch_policies(_Global, _Frame)
+     mm_dispatch_live_policies(_Global, _Frame, _Accounting)
      -> findall([_Candidate,_Command,_Operation],
           mm_dispatch_resolve(
             ['AdmissionRequest','propose-candidate','current-frame',_Candidate],
