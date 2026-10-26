@@ -48,7 +48,43 @@ def correction_path(kind='absolute'):
         path = str(Path(path).with_name('unconfigured.txt'))
     elif kind == 'quoted':
         path = _commands[0][1]
+    elif kind == 'replacement':
+        path = str(Path(path).with_name('unrequested.txt'))
     return host.encode(path)
+
+
+# Example: remove only the selected fixture input to obtain a real missing-file outcome.
+def remove_pending_file():
+    import janus
+    from pathlib import Path
+    command = janus.query_once('eval([selectedHostCommand],Command)')['Command']
+    assert command == _commands[1], command
+    Path(command[1]).unlink()
+    return 1
+
+
+# Example: resume itself must neither allocate a ticket nor invoke a handler.
+def resume_ledger():
+    import janus
+    return repr(janus.query_once('''
+        findall([_T,_I,_E,_C],oc_dispatch_ticket(_T,_I,_E,_C),Tickets),
+        findall([_T,_C,_R],oc_dispatch_result(_T,_C,_R),Results)
+    '''))
+
+
+# Example: the answer collector accepts the original first result and corrected second result.
+def verify_resumed_evidence():
+    import janus
+    from pathlib import Path
+    result = janus.query_once('''mm_response_context(_,Owner),
+        mm_response_continuation(Owner,_,Paths,Observations,_),
+        findall([_Command,_Result],oc_dispatch_result(_,_Command,_Result),Results)''')
+    replacement = str(Path(_commands[1][1]).with_name('unrequested.txt'))
+    assert result['truth'] and result['Paths'] == [_commands[0][1], replacement], result
+    assert [row[4][3] for row in result['Observations']] == [
+        'observed local file content', 'unrequested content'], result
+    assert len([row for row in result['Results'] if row[0] == _commands[0]]) == 1, result
+    return 1
 
 
 # Example: ambiguity in the trusted catalog must reject correction admission too.
