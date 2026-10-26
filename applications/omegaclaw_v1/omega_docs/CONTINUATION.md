@@ -1,5 +1,56 @@
 # Explicit session continuation
 
+## Resuming a held read (F4.5)
+
+Trusted host callers pass F4.4's result to `(hostResumeContinuation ADMISSION)`.
+The existing Core dispatch mutex spans fresh correction admission, exact comparison
+with the supplied resolved step, safe-point checks, state changes and dispatch-epoch
+invalidation. Earlier admission grants no durable authority: a replaced owner,
+changed frame/session/revision/recovery, revoked binding or denied policy rejects
+without changing the held plan. Both selection slots must be empty, and Core must
+have no unresolved invocation. Use the ordinary host cycle boundary to clear an
+old selection, even if its result has already been observed.
+
+Success returns `(ContinuationResumed PLAN STEP NEW-REVISION)`. It replaces only
+the held pending step and the same step in the evidence plan. Completed read
+outcomes and their original tickets remain intact, and later pending steps retain
+their order. The complete updated plan must preserve its existing shape and
+unique-path rules. The plan revision advances exactly once; malformed or exhausted
+revisions reject rather than wrap. Commitment identity/revision and task state do
+not change.
+
+The transition clears the resolved read-recovery record, pending correction,
+clarification receipt and prepared-response readiness. It fences the last retained
+operation outcome against continuation consumption, so an old failure or idle
+no-action observation cannot hold or advance the resumed step. Original outcome
+evidence remains in Core; host recovery posture still waits for observed success.
+The projected continuation view is cleared until normal host publication refreshes
+the Ready step. Core's epoch advances once, invalidating previously captured
+decisions. Replaying the consumed correction returns `StaleCorrection` without
+another revision/epoch change.
+
+Resume itself invokes no provider, file handler, send or completion, and allocates
+no ticket. Normal selection/capture still owns execution and final dispatch
+revalidation. This is a trusted session-only API, not a model skill or an automatic
+ingress-resume hook. It supports the existing MissingInput correction target;
+general replanning and resolving uncertain effects remain outside this slice.
+F4.6–F4.8 and full recovery acceptance remain separately tracked.
+
+The existing continuation regression performs a real first read, a missing second
+read, explicit correction ingress, F4.4 admission and F4.5 resume. A normal cycle
+then reads the replacement, and the existing answer collector accepts both actual
+results without rereading the first file. Tests also cover preserved pending tails,
+post-admission revocation, wrong resolved steps, replay, stale ownership/revision/
+session, selected/uncertain invocations, invalid evidence, duplicate paths,
+revision bounds, old-ticket rejection and pre-resume feedback fencing. External
+providers/memory are doubled; no new test files or Core/Prolog edits are needed.
+
+Verified 26 October 2026: all 75 discovered MeTTa files pass, including 418
+continuation test markers; preparation/requirements/ingress Python suites pass
+35/22/11 tests, and all four boundary guards pass. Reproduce from the application
+directory with `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 120`.
+Local full-suite log: `/tmp/f45-metta-suite.log`. No live provider/channel calls.
+
 ## Validating a corrected path (F4.4)
 
 Trusted host callers validate F4.3's retained proposal through
@@ -24,8 +75,9 @@ proof that the file exists. Rechecking after policy revocation can reject an
 earlier success. Neither success nor rejection edits the plan, cursor, revision,
 completed evidence, pending correction, clarification receipt, selection or ticket
 ledger. No provider, file handler, send, reservation or completion is invoked.
-F4.5 must revalidate before applying a correction; resume, fresh retry tickets and
-retry limits remain F4.5–F4.8. No automatic resume hook is installed by F4.4.
+F4.5 revalidates before applying a correction; fresh retry-ticket integration and
+retry limits remain separately tracked in F4.6–F4.8. No automatic resume hook is
+installed by F4.4.
 
 Verification extends the existing continuation fixture with allowed absolute,
 relative and quoted paths, unconfigured paths/symlinks, inert and malformed input,
@@ -80,8 +132,8 @@ or invoke a provider, file handler or send. Proposed paths remain inert data;
 catalog/policy validation and resume are F4.4–F4.5.
 
 Plan installation initializes the session-local plan revision to zero and clears
-pending corrections; session reset does the same. F4.5 must advance this revision
-when changing the plan and invalidate old decisions under the existing mutex.
+pending corrections; session reset does the same. F4.5 advances this revision
+when changing the plan and invalidates old decisions under the existing mutex.
 F4.3 neither edits the plan nor advances its revision. This is not restart-safe
 correction storage or automatic interpretation of free-form replies.
 
@@ -176,7 +228,8 @@ revalidation; a plan grants no permissions.
   is recorded, the pending step remains eligible for a later policy evaluation;
   a recorded blocked attempt holds it.
 
-There is no resume/replan API in this slice. Restarting a host session is an
+F4.5 now provides the bounded trusted correction/resume API above; arbitrary
+replanning remains unsupported. Restarting a host session is an
 explicit operator action, not evidence that uncertain effects can safely repeat.
 There is no durable progress, restart recovery, general task planner, multi-frame
 continuation, budget settlement or arbitrary-handler support.

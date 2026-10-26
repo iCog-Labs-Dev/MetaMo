@@ -243,6 +243,74 @@
            NoContinuationCorrection))
       ($_ NoContinuationCorrection))))
 
+ ;; Example: replace only step "2", preserving completed steps and later pending reads.
+(= (continuationCorrectSteps $steps $replacement)
+   (map-atom $steps $step
+      (if (== (index-atom $step 1) (index-atom $replacement 1)) $replacement $step)))
+
+;; Example: a correction cannot duplicate another required file or change completed evidence.
+;; Preparation performs every check before the first write; callers hold Core's mutex.
+(= (continuationPrepareCorrectedPlan $plan $evidence $replacement)
+   (case ($plan $evidence) (
+      (((HostContinuation $session $owner $frame $ownerRevision $id Held $pending)
+        (ContinuationEvidence $session $commitment $id $all $outcomes))
+       (let* (
+          ($updated (continuationCorrectSteps $all $replacement))
+          ($remaining (cons-atom $replacement (cdr-atom $pending)))
+          ($valid (tpAllTrue ((== $commitment (commitmentSnapshot))
+             (== (index-atom (car-atom $pending) 1) (index-atom $replacement 1))
+             (tpContains $all (car-atom $pending))
+             (continuationPlanValid $id $updated)
+             (tpList ids (map-atom $updated $step (index-atom (index-atom $step 2) 1))))))
+       )
+          (if $valid
+              (ContinuationResumePrepared
+                 (HostContinuation $session $owner $frame $ownerRevision $id Ready $remaining)
+                 (ContinuationEvidence $session $commitment $id $updated $outcomes)
+                 (+ (get-state &continuation-plan-revision) 1))
+              (ContinuationRejected InvalidPlan))))
+      ($_ (ContinuationRejected InvalidResumeState)))))
+
+;; Example: revision 0 advances to 1; malformed or exhausted revisions cannot wrap.
+(= (continuationResumeRevision $revision)
+   (if (if (tpQuantity $revision) (== $revision (floor-math $revision)) False)
+       (if (< $revision 9007199254740991)
+           (ContinuationRevision (+ $revision 1))
+           (ContinuationRejected RevisionExhausted))
+       (ContinuationRejected InvalidPlanRevision)))
+
+;; Example: a selected command or exhausted revision leaves the held plan untouched.
+(= (continuationPrepareResume $replacement)
+   (case (continuationResumeRevision (get-state &continuation-plan-revision)) (
+      ((ContinuationRevision $_)
+       (if (and (== (get-state &selected-operation-decision) ())
+                (== (get-state &selected-host-operation) ()))
+           (continuationPrepareCorrectedPlan (get-state &host-continuation)
+              (get-state &continuation-evidence) $replacement)
+           (ContinuationRejected OutstandingInvocation)))
+      ($rejection $rejection))))
+
+;; Example: successful resume changes only pending work and fences all pre-resume feedback.
+;; The locked bridge advances Core's epoch once after this transition succeeds.
+(= (continuationApplyResume $plan $evidence $revision)
+   (let (HostContinuation $_ $_ $_ $_ $id Ready $pending) $plan
+      (progn
+         (change-state! &host-continuation $plan)
+         (change-state! &continuation-evidence $evidence)
+         (change-state! &continuation-plan-revision $revision)
+         (change-state! &continuation-applied-decision
+            (case (get-state &last-operation-outcome) (
+               ((OperationOutcome $decision $_ $_ $_) $decision)
+               ($_ ()))))
+         (change-state! &continuation-recovery NoContinuationRecovery)
+         (change-state! &continuation-correction NoContinuationCorrection)
+         (change-state! &continuation-clarification NoClarificationObservation)
+         (change-state! &selected-clarification-recovery NoClarificationSelection)
+         (change-state! &prepared-host-operation ())
+         (change-state! &selected-answer-key ())
+         (change-state! &task-continuation-view NoContinuation)
+         (ContinuationResumed $id (index-atom (car-atom $pending) 1) $revision))))
+
 ;; Example: a held missing input can ask once through the configured clarification binding.
 ;; The bundle identifies the held plan; exact owner and failure evidence remain host-owned.
 (= (heldMissingInputForBundle $bundle)

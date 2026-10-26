@@ -36,6 +36,27 @@
 (= (hostAdmitCorrection $correction)
    (sread (py-call (host_operations.admit_correction (repr $correction)))))
 
+;; Example: resume F4.4's admitted correction at a cleared host selection slot.
+;; Revalidation, state replacement and decision invalidation share Core's mutex.
+(= (hostResumeContinuation $admission)
+   (sread (py-call (host_operations.resume_continuation (repr $admission)))))
+
+;; Example: revocation after F4.4 admission cannot make the corrected read Ready.
+;; Called only by the locked host bridge; a changed resolved command is rejected.
+(= (continuationResumeAdmission $admission)
+   (case $admission (
+      ((ContinuationCorrectionAdmitted $correction $step)
+       (let $current (hostAdmitCorrection $correction)
+          (case $current (
+             ($admission
+              (case (continuationPrepareResume $step) (
+                 ((ContinuationResumePrepared $plan $evidence $revision)
+                  (continuationApplyResume $plan $evidence $revision))
+                 ($rejection $rejection))))
+             ((ContinuationCorrectionAdmitted $_ $_) (ContinuationRejected StaleAdmission))
+             ($_ $current)))))
+      ($_ (ContinuationRejected InvalidAdmission)))))
+
 ;; Example: an old correction cannot borrow a successor's read permissions.
 ;; Called under the host lock; the returned step is data, not retry authority.
 (= (continuationAdmitCorrection $correction)

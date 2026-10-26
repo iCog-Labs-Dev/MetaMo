@@ -587,6 +587,27 @@ with_mutex(omegaclaw_dispatch, (
     return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidCorrection)'
 
 
+# Example: a trusted host resumes only a freshly revalidated F4.4 correction.
+def resume_continuation(admission_source):
+    """safe point; preserve completed evidence and invalidate old tickets once."""
+    import janus
+    try:
+        if type(admission_source) is not str or len(admission_source.encode('utf-8')) > 32768:
+            return '(ContinuationRejected InvalidAdmission)'
+    except (ValueError, TypeError):
+        return '(ContinuationRejected InvalidAdmission)'
+    result = janus.query_once(r'''
+with_mutex(omegaclaw_dispatch, (
+    catch(sread(Source, _Admission), _, fail), ground(_Admission),
+    (mm_dispatch_busy -> _Result=['ContinuationRejected','OutstandingInvocation']
+     ; eval([continuationResumeAdmission, [quote,_Admission]], _Result)),
+    (_Result=['ContinuationResumed',_,_,_] -> oc_dispatch_mutate(true) ; true),
+    swrite(_Result, Text)
+))
+''', {'Source': admission_source})
+    return result['Text'] if result.get('truth', False) else '(ContinuationRejected InvalidAdmission)'
+
+
 # Example: cycle-zero and later installation share the same serialized guard.
 def begin_continuation(plan_id, steps_source):
     """Trusted safe point used by the admitted-installation transaction."""
