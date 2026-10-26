@@ -9,6 +9,11 @@ startup = (root / 'MetaMo/applications/omegaclaw_v1/run.metta').read_text()
 assert loop.index('(ctx-maintain-frame)') < loop.index('($_ (coreLoopPrepare))') < loop.index('($prompt (if')
 assert startup.index('!(initMetaMoDispatch)') < startup.index('!(initializeHostStartup)') < startup.index('!(motivatedOmegaclaw)')
 assert '(eval $s)' not in loop
+assert loop.count('(receive)') == 1
+assert '($received (repr (receive)))' in loop
+assert '(coreLoopIngestReceived $msg $received)' in loop
+host_startup = (root / 'MetaMo/applications/omegaclaw_v1/host_startup.metta').read_text()
+assert '(configureCoreLoopIngest ingestHostMessage True)' in host_startup
 assert '(coreLoopDispatchCommand $dispatchTicket $s)' in loop
 assert '(coreLoopDispatchCommand $dispatchTicket (quote (switch-mode)))' in loop
 assert '(if (== (get-state &cfv2-root-mode) Fast) (switch-mode)' not in loop

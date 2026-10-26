@@ -65,6 +65,7 @@ lifecycle = Path(sys.argv[2]).read_text().split('(= (prepareTaskStateForMetaMo)'
 steps = ['(refreshTaskExecutionObserved)', '(refreshTaskCommitment)',
          '(applyOperationOutcome (get-state &cfv2-current-frame-id))',
          '(beginOperationCycleForFrame (get-state &cfv2-current-frame-id))',
+         '(prepareAutomaticContinuationResume)',
          '(prepareAutomaticReadPlan)',
          '(frameStateForMetaMo)', '(setActiveFrameBundle $bundle)']
 positions = [lifecycle.index(step) for step in steps]

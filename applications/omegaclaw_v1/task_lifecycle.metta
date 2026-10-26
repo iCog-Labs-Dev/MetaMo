@@ -132,6 +132,12 @@
       (NoContinuation (legacyContinuationNeeded $bundle))
       ($_ False))))
 
+;; Example: all required reads are observed; this plan no longer needs an input-recovery question.
+(= (continuationAwaitingCompletionForBundle $bundle)
+   (case (frameRuntimeContinuation $bundle) (
+      ((ContinuationView $_ $_ AwaitingCompletion $_) True)
+      ($_ False))))
+
 (= (executionContinuationNeededForBundle $bundle)
    (if (and (frameRuntimeTaskOpen $bundle)
             (not (bundle-runtime-has-new-message $bundle)))
@@ -236,6 +242,8 @@
       ($_ (hostRefreshContinuation))
       ($_ (eval (refreshHostRecovery)))
       ($_ (eval (beginOperationCycleForFrame (get-state &cfv2-current-frame-id))))
+      ;; Explicit corrections resume at the cleared slot, before snapshot/ticket capture.
+      ($_ (eval (prepareAutomaticContinuationResume)))
       ;; The dispatch adapter is optional in pure composition; the live hook runs at the cleared slot.
       ($_ (eval (prepareAutomaticReadPlan)))
       ($bundle (frameStateForMetaMo))

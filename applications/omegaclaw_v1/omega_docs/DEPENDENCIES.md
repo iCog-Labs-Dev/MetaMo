@@ -1,5 +1,14 @@
 # OmegaClaw v1 dependency baseline and workspace layout
 
+**Automatic correction/resume (F4.6), 26 October 2026:** requires matching Core
+`src/loop.metta` and `src/dispatch.metta` overlays. The loop retains original
+received text alongside its legacy sanitized text; the optional two-argument
+`configureCoreLoopIngest` API lets v1 startup opt into original text for strict
+correction JSON. Existing one-argument configuration remains legacy-compatible.
+Deploy these with v1's `host_startup.metta`, lifecycle and dispatch-hook changes;
+older Core sources cannot support the automatic polling-loop correction path.
+See `CONTINUATION.md#automatic-correction-capture-and-fresh-retry-tickets-f46`.
+
 The [live mode-transition verification](LIVE_MODES.md) additionally requires
 Core's updated `src/skills.metta`: pre-open file unavailability returns
 `(Error read-file FileUnavailable)`, allowing real observed failure signals.

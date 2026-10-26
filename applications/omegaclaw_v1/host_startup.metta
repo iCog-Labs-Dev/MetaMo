@@ -22,7 +22,7 @@
 (= (initializeHostStartup)
    (progn
       (py-call (host_dispatch_config.configure_startup))
-      (if (== (eval (configureCoreLoopIngest ingestHostMessage)) True)
+      (if (== (eval (configureCoreLoopIngest ingestHostMessage True)) True)
           True 
           (py-call (host_operations.incompatible_core)))
       (if (== (eval (configureCoreLoopContext metaMoContext)) True)

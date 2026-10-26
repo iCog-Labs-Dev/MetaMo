@@ -75,6 +75,17 @@
               (ContinuationCorrectionAdmitted $correction $resolved))
              ($_ $admission))))))))
 
+;; Example: an explicit recorded correction resumes before normal capture issues its ticket.
+;; F4.5 revalidates under the host lock; absent or rejected corrections never execute.
+(= (prepareAutomaticContinuationResume)
+   (case (hostContinuationCorrection) (
+      (NoContinuationCorrection (ContinuationSkipped NoCorrection))
+      ($correction
+       (let $admission (hostAdmitCorrection $correction)
+          (case $admission (
+             ((ContinuationCorrectionAdmitted $_ $_) (hostResumeContinuation $admission))
+             ($_ $admission))))))))
+
 ;; Example: install F3.3's result only for the context/commitment that requested it.
 ;; Admission is rechecked under the same lock as F3.4 installation and invalidation.
 (= (hostInstallAdmittedContinuation $context $commitment $admission)

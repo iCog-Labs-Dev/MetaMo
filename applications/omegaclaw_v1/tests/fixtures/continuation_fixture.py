@@ -342,6 +342,7 @@ _auto_messages = None
 _auto_scenario = None
 _auto_before = None
 _auto_question_turns = 0
+_auto_correction = None
 
 
 # Example: only input/provider services are doubled; normal startup owns task and plan installation.
@@ -352,6 +353,7 @@ def install_auto_loop(scenario):
     import lib_llm_ext
     from pathlib import Path
     global _auto_calls, _auto_messages, _auto_scenario, _auto_before, _auto_question_turns
+    global _auto_correction
     setup()
     data = host.read_config(with_unrequested_read())
     # Core's text ingress escapes quotes; use ordinary literal paths for this loop scenario.
@@ -383,7 +385,10 @@ def install_auto_loop(scenario):
         if scenario == 'missing-ambiguous':
             data['commands'].append({'skill': 'send', 'candidate': 'ask-clarification',
                                     'arguments': ['A different question?']})
-    if scenario == 'missing-irc':
+    if scenario == 'missing-resume-denied':
+        replacement = str(Path(new_path).with_name('unrequested.txt'))
+        data['frame']['permissions'].remove('files.read:' + replacement)
+    if scenario in ('missing-irc', 'missing-resume-irc'):
         import irc
         import irc_routing_fixture
         irc_routing_fixture.connect()
@@ -399,10 +404,13 @@ def install_auto_loop(scenario):
     os.environ['OMEGACLAW_HOST_CONFIG'] = path
     _auto_scenario = scenario
     _auto_question_turns = 0
+    _auto_correction = dict(sent=False, replay=False, retry=False) if scenario.startswith('missing-resume') else None
+    if scenario == 'missing-resume-irc':
+        _auto_correction['irc_writes'] = irc_routing_fixture.writes()
     _auto_calls = dict(classification=0, extraction=0, answer=0, messages=0)
     paths = auto_paths()
     _auto_messages = iter(('Compare ' + ' and '.join(paths),))
-    if scenario == 'missing-irc':
+    if scenario in ('missing-irc', 'missing-resume-irc'):
         _auto_messages = iter(('Nahom: Compare ' + ' and '.join(paths),))
     _auto_before = janus.query_once('findall(_T,oc_dispatch_result(_T,_,_),Tickets)')['Tickets']
     local_channel.getLastMessage = auto_receive
@@ -422,8 +430,78 @@ def auto_paths():
 # Example: only one polling turn supplies input; idle turns cannot supply the next read.
 def auto_receive():
     message = next(_auto_messages, '')
+    if not message and _auto_correction is not None:
+        message = auto_correction_message()
     _auto_calls['messages'] += int(bool(message))
     return message
+
+
+# Example: supply a real correction only after the actual question has been observed.
+def auto_correction_message():
+    import janus
+    from pathlib import Path
+    if _auto_correction['sent']:
+        if _auto_correction['replay']:
+            return ''
+        _auto_correction['replay'] = True
+        return _auto_correction['message'].replace('correction:', 'CORRECTION:', 1)
+    state = janus.query_once('''
+        eval(['get-state','&continuation-clarification'],Question),
+        eval(['get-state','&continuation-evidence'],Evidence),
+        eval([hostCorrectionTarget],Target)
+    ''')
+    if not isinstance(state['Question'], list) or state['Question'][2] != 'Delivered':
+        return ''
+    replacement = str(Path(_commands[0][1]).with_name('unrequested.txt'))
+    if _auto_scenario == 'missing-resume-same':
+        replacement = _commands[0][1]
+        Path(replacement).write_text('unrequested content', encoding='utf-8')
+    _auto_correction.update(state, sent=True, path=replacement)
+    _auto_correction.update(janus.query_once('''
+        eval([hostContinuationRecovery],_Recovery), _Recovery=['HeldReadRecovery',_,_,_,_,_,_,_,_Outcome],
+        _Outcome=['OperationOutcome',_Decision,_,_,_Result], _Decision=['OperationDecision',_,_,_,_Failed],
+        oc_dispatch_ticket(_Failed,_Intent,_Epoch,_Context),
+        swrite([_Failed,_Intent,_Epoch,_Context,_Result],FailedSource), swrite(_Failed,FailedTicket),
+        oc_dispatch_epoch(_Current),
+        once((oc_dispatch_ticket(_Unused,_,_Current,_), \+ oc_dispatch_result(_Unused,_,_))),
+        swrite(_Unused,UnusedTicket)
+    '''))
+    message = correction_message('path', replacement)
+    if _auto_scenario == 'missing-resume-stale':
+        message = correction_message('revision', '1')
+    if _auto_scenario == 'missing-resume-irc':
+        message = 'Nahom: ' + message
+    _auto_correction['message'] = message
+    return message
+
+
+# Example: the corrected read gets a new ordinary ticket; prior tickets keep their identities/results.
+def verify_retry_selection(result):
+    import janus
+    if _auto_correction is None or not _auto_correction['sent']:
+        return
+    if result['Command'] != ['read-file', _auto_correction['path']]:
+        return
+    assert not _auto_correction['retry'], result
+    _auto_correction['retry'] = True
+    selected = janus.query_once('''eval([selectedHostTicket],Ticket),
+        eval(['get-state','&continuation-plan-revision'],Revision),
+        eval(['get-state','&continuation-evidence'],Evidence), swrite(Ticket,Source)''')
+    assert selected['Source'] != _auto_correction['FailedTicket'] and selected['Revision'] == 1, selected
+    assert selected['Evidence'][5] == _auto_correction['Evidence'][5], selected
+    checked = janus.query_once('''
+        sread(Failed, _Failed), sread(Unused, _Unused), sread(Command, _Command),
+        coreDispatchCommand(_Unused,_Command,Stale),
+        eval([coreLoopDispatchCommand,[quote,_Failed],[quote,_Command]],Substitution),
+        oc_dispatch_ticket(_Failed,_Intent,_Epoch,_Context), oc_dispatch_result(_Failed,_OldCommand,_Result),
+        coreDispatchCommand(_Failed,_OldCommand,Replay),
+        swrite([_Failed,_Intent,_Epoch,_Context,_Result],FailedSource)
+    ''', dict(Failed=_auto_correction['FailedTicket'], Unused=_auto_correction['UnusedTicket'],
+              Command=result['Source']))
+    assert checked['Stale'] == ['DispatchResult','Blocked','StaleSnapshot','none'], checked
+    assert checked['Substitution'] == ['DispatchResult','Blocked','UnselectedOperation','none'], checked
+    assert checked['Replay'] == ['DispatchResult','Executed','Feasible',['Error','read-file','FileUnavailable']], checked
+    assert checked['FailedSource'] == _auto_correction['FailedSource'], checked
 
 
 # Example: the model proposes references, answers from observations, and echoes selected commands.
@@ -449,13 +527,19 @@ def auto_provider(provider, prompt, max_tokens, *args):
     if max_tokens == 1024:
         _auto_calls['answer'] += 1
         payload = json.loads(prompt.split(':-:-:-:', 1)[1])
+        second = ({'path': _auto_correction['path'], 'content': 'unrequested content'}
+                  if _auto_correction is not None else
+                  {'path': _commands[0][1], 'content': 'observed local file content'})
         assert payload['observations'] == [
             {'path': _commands[1][1], 'content': 'other content'},
-            {'path': _commands[0][1], 'content': 'observed local file content'}]
+            second]
+        if _auto_correction is not None:
+            return '{"text":"Both files were inspected: other content; unrequested content."}'
         return '{"text":"Both files were inspected: other content; observed local file content."}'
     result = janus.query_once('eval([selectedHostCommand],Command), swrite(Command,Source)')
+    verify_retry_selection(result)
     if _auto_scenario.startswith('missing'):
-        if result['Command'] == _commands[0]:
+        if result['Command'] == _commands[0] and (_auto_correction is None or not _auto_correction['sent']):
             from pathlib import Path
             Path(_commands[0][1]).unlink()
         if result['Command'] and result['Command'][0] == 'send':
@@ -482,6 +566,8 @@ def verify_auto_loop():
     import janus
     records = janus.query_once('findall([_T,_C,_R],oc_dispatch_result(_T,_C,_R),Rows)')['Rows']
     fresh = [row for row in records if row[0] not in _auto_before]
+    if _auto_correction is not None:
+        return verify_automatic_resume(fresh)
     assert _auto_calls == dict(classification=1, extraction=1,
                               answer=int(_auto_scenario in ('answer', 'sleep')), messages=1), _auto_calls
     state = janus.query_once("commitmentSnapshot(Owner), eval(['get-state','&host-continuation'],Plan)")
@@ -499,6 +585,46 @@ def verify_auto_loop():
     assert len(sends) == 1 and sends[0][2] == [
         'DispatchResult', 'Executed', 'Feasible', ['SendObservation', 'local:stdout', 'Accepted']], sends
     assert state['Owner'][4] == 'Completed', state
+    return 1
+
+
+# Example: actual polling routes correction ingress, resumes, captures and executes without host API calls.
+def verify_automatic_resume(records):
+    import janus
+    state = janus.query_once('''commitmentSnapshot(Owner),
+        eval(['get-state','&host-continuation'],Plan),
+        eval(['get-state','&continuation-evidence'],Evidence),
+        eval(['get-state','&continuation-plan-revision'],Revision),
+        eval(['get-state','&continuation-correction'],Correction),
+        eval(['get-state','&cfv2-current-frame-id'],CurrentFrame),
+        eval(['get-state','&last-host-input'],Input), eval(['get-state','&prevmsg'],Raw)''')
+    success = _auto_scenario in ('missing-resume', 'missing-resume-same', 'missing-resume-irc')
+    assert _auto_calls == dict(classification=1, extraction=1, answer=int(success), messages=3), (_auto_calls, state)
+    assert _auto_correction['sent'] and _auto_correction['replay'], _auto_correction
+    reads = [row for row in records if row[1][0] == 'read-file' and row[2][1] == 'Executed']
+    expected = auto_paths() + ([_auto_correction['path']] if success else [])
+    assert [row[1][1] for row in reads] == expected, reads
+    assert reads[0][2][3] == 'other content', reads
+    assert reads[1][2][3] == ['Error','read-file','FileUnavailable'], reads
+    assert _auto_correction['retry'] == success and state['Revision'] == int(success), state
+    assert state['Evidence'][5][-1] == _auto_correction['Evidence'][5][0], state
+    sends = [row for row in records if row[1][0] == 'send' and row[2][1] == 'Executed']
+    assert len(sends) == (2 if success else 1), sends
+    if not success:
+        assert state['Plan'][6] == 'Held' and state['Owner'][4] == 'Open', state
+        assert state['Evidence'] == _auto_correction['Evidence'], state
+        return 1
+    assert reads[2][2][3] == 'unrequested content', reads
+    assert len({repr(row[0]) for row in reads}) == 3, reads
+    assert len(state['Evidence'][5]) == 2, state
+    assert state['Correction'] == 'NoContinuationCorrection', state
+    if _auto_scenario == 'missing-resume-irc':
+        import irc_routing_fixture
+        assert irc_routing_fixture.writes() - _auto_correction['irc_writes'] == 2, state
+        assert state['Owner'][4] == 'Open', state
+        assert state['Plan'][6] == 'AwaitingCompletion', state
+    else:
+        assert state['Owner'][4] == 'Completed' and state['CurrentFrame'] == [], state
     return 1
 
 

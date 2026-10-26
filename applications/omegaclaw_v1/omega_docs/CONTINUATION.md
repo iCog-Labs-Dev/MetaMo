@@ -1,5 +1,49 @@
 # Explicit session continuation
 
+## Automatic correction capture and fresh retry tickets (F4.6)
+
+`prepareTaskStateForMetaMo` now calls `prepareAutomaticContinuationResume` after
+consuming prior feedback and clearing the old selection through
+`beginOperationCycleForFrame`. Before publishing the cycle's one frame bundle,
+the hook checks a recorded correction through F4.4 and F4.5. No correction is a
+no-op; stale, denied or unsupported corrections leave the read held. The existing
+planning hook refreshes the resulting continuation view before snapshot capture.
+No model proposal, correction text or plan grants permission.
+
+A successful resume enters ordinary `captureCandidateOperations`, pending-read
+filtering, admission, scoring and Core dispatch. The selected command retains
+its newly captured ticket. The failed ticket's identity, epoch, captured context
+and result remain immutable; replay returns the recorded failure without reading
+again. Unexecuted pre-resume tickets are stale, and substituting the failed ticket
+for the new selected ticket is rejected. This also applies when the corrected
+command has exactly the same arguments as the failed command.
+
+The real polling loop requires the matching Core `src/loop.metta` and
+`src/dispatch.metta` changes: Core receives once and retains original text alongside
+its legacy sanitized text. V1 startup opts into original text with
+`configureCoreLoopIngest ingestHostMessage True`, preserving correction JSON quotes
+without guessing how to reverse `_quote_` substitutions. One-argument callback
+configuration and standalone Core retain legacy input handling. Channel
+authentication and host ownership checks remain in their existing paths.
+
+Existing Core-loop fixtures supply a task, an explicit correction after observed
+clarification and a repeated correction. They never call plan/admission/resume APIs
+to advance the task. Local scenarios cover a replacement path, identical-argument
+retry, denied permission and stale revision. Positive runs retain the first read,
+execute the corrected read once with a fresh ticket, answer from actual evidence,
+complete the local task/frame and remain idle. A plan awaiting completion cannot
+select its obsolete input-recovery clarification. The IRC socket-double scenario
+uses the same hook and submits one question and one answer; its read commitment
+stays open under the existing local-only read-completion contract. F4.7 retry
+limits, F4.8 uncertainty resolution and live acceptance remain separate work.
+
+Verified 26 October 2026: all 75 MeTTa files pass (428 continuation test markers),
+97 preparation/requirements/ingress/configuration Python tests, all four boundary
+guards and Core dispatch's 20 declared tests / 22 generated cases pass. Run
+`python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 60` from the
+application directory. Local full-suite log: `/tmp/f46-metta-suite.log`.
+Providers/memory/sockets are doubled; no live requests/messages were sent.
+
 ## Resuming a held read (F4.5)
 
 Trusted host callers pass F4.4's result to `(hostResumeContinuation ADMISSION)`.
@@ -31,10 +75,11 @@ another revision/epoch change.
 
 Resume itself invokes no provider, file handler, send or completion, and allocates
 no ticket. Normal selection/capture still owns execution and final dispatch
-revalidation. This is a trusted session-only API, not a model skill or an automatic
-ingress-resume hook. It supports the existing MissingInput correction target;
+revalidation. This is a trusted session-only API, not a model skill. F4.6 now
+connects it to the automatic host cycle above. It supports the existing MissingInput
+correction target;
 general replanning and resolving uncertain effects remain outside this slice.
-F4.6–F4.8 and full recovery acceptance remain separately tracked.
+F4.7–F4.8 and full recovery acceptance remain separately tracked.
 
 The existing continuation regression performs a real first read, a missing second
 read, explicit correction ingress, F4.4 admission and F4.5 resume. A normal cycle
@@ -75,9 +120,9 @@ proof that the file exists. Rechecking after policy revocation can reject an
 earlier success. Neither success nor rejection edits the plan, cursor, revision,
 completed evidence, pending correction, clarification receipt, selection or ticket
 ledger. No provider, file handler, send, reservation or completion is invoked.
-F4.5 revalidates before applying a correction; fresh retry-ticket integration and
-retry limits remain separately tracked in F4.6–F4.8. No automatic resume hook is
-installed by F4.4.
+F4.5 revalidates before applying a correction and F4.6 connects normal ticket
+capture. Retry limits and uncertainty resolution remain F4.7–F4.8. F4.4 itself
+does not resume or execute a read.
 
 Verification extends the existing continuation fixture with allowed absolute,
 relative and quoted paths, unconfigured paths/symlinks, inert and malformed input,

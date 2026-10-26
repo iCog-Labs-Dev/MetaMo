@@ -14,6 +14,13 @@
 !(coreLoopIngest "Standalone Core input")
 !(test (!= (get-state &cfv2-last-admitted-frame-id) ()) True)
 !(test (commitmentSnapshot) NoCommitment)
+;; Original input is delivered only to explicitly opted-in adapters; one-argument setup stays legacy.
+(= (ingressEcho $message) $message)
+!(configureCoreLoopIngest ingressEcho)
+!(test (coreLoopIngestReceived "legacy _quote_text_quote_" "original \"text\"") "legacy _quote_text_quote_")
+!(configureCoreLoopIngest ingressEcho True)
+!(test (coreLoopIngestReceived "legacy _quote_text_quote_" "original \"text\"") "original \"text\"")
+!(configureCoreLoopIngest ctx-ingest-user-message)
 !(initContextFrame)
 !(fullLoopStartSession)
 !(py-call (host_startup_fixture.configure))

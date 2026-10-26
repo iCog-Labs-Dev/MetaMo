@@ -921,9 +921,12 @@
 !(change-state! &continuation-correction (get-state &resume-correction))
 
 ;; Fence a retained idle/no-action outcome as well as the original failed read.
+;; Keep this explicit F4.5 API scenario independent of F4.6's automatic cycle hook.
+!(change-state! &continuation-correction NoContinuationCorrection)
 !(motivationContextBlock)
 !(coreLoopDispatchCommand (coreLoopDispatchBegin) ())
 !(prepareTaskStateForMetaMo)
+!(change-state! &continuation-correction (get-state &resume-correction))
 !(bind! &resume-epoch (new-state (commitmentFixtureEpoch)))
 !(bind! &resume-ledger (new-state (py-call (continuation_fixture.resume_ledger))))
 !(bind! &resume-old-ticket (new-state
@@ -974,7 +977,7 @@
 (= (maxFeedback) 512)
 (= (addToHistory $message $response $commands $new) True)
 !(import! &self (library OmegaClaw-Core src/loop))
-!(configure maxSessionCycles 8)
+!(configure maxSessionCycles 10)
 !(configure maxNewInputLoops 7)
 !(configure maxWakeLoops 1)
 !(configure spamShield True)
@@ -1042,6 +1045,24 @@
 !(test (get-state &continuation-clarification) NoClarificationObservation)
 !(py-call (host_config_fixture.cleanup))
 
+;; F4.6: channel input supplies the correction; only normal lifecycle/selection dispatches the retry.
+!(test (runAutomaticReadScenario "missing-resume") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+;; Identical command arguments still require a new ticket after the missing file is restored.
+!(test (runAutomaticReadScenario "missing-resume-same") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "missing-resume-denied") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
+!(test (runAutomaticReadScenario "missing-resume-stale") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
+!(py-call (host_config_fixture.cleanup))
+
 ;; Selection without a send is not delivery and does not suppress a later valid question.
 !(test (runAutomaticReadScenario "missing-no-action") True)
 !(test (py-call (continuation_fixture.verify_auto_loop)) 1)
@@ -1077,5 +1098,11 @@
 !(test (runAutomaticReadScenario "missing-irc") True)
 !(test (py-call (continuation_fixture.verify_auto_loop)) 1)
 !(test (py-call (continuation_fixture.verify_correction_ingress)) 1)
+!(py-call (irc_routing_fixture.disconnect))
+!(py-call (host_config_fixture.cleanup))
+
+;; Read-task completion remains local-only; IRC observes submission without inventing completion.
+!(test (runAutomaticReadScenario "missing-resume-irc") True)
+!(test (py-call (continuation_fixture.verify_auto_loop)) 1)
 !(py-call (irc_routing_fixture.disconnect))
 !(py-call (host_config_fixture.cleanup))
