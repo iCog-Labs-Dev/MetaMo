@@ -98,7 +98,9 @@
 !(test (policyOutputFeasibility (car-atom (get-state &multi-second))) Admitted)
 !(test (multiCandidateNames (candidatesToActions))
    (multiCandidateNames (get-state &multi-generated)))
-!(test (== (activeFrameBundle) (get-state &multi-bundle)) True)
+;; Fresh observation identities may differ; the compared factual payload stays equal.
+!(test (== (signalBundleBase (activeFrameBundle))
+   (signalBundleBase (get-state &multi-bundle))) True)
 !(test (lastAttentionDirective)
    (schedulerAttentionDirective (get-state &multi-bundle)
       (car-atom (get-state &multi-second))))

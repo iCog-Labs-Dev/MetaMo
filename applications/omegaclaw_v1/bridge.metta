@@ -51,7 +51,7 @@
       ($stimulus (eval (appraisalToStimulus)))
 
       ($_ (generateCandidates $bundle))
-      ($actions (eval (candidatesToActions)))
+      ($actions (if (signalCycleReady) (eval (candidatesToActions)) ()))
       ;; Hard feasibility is complete before the MetaMo decision/mode step.
       ((CandidatePruning (admitted $baseActions) (rejected $rejections))
          (pruneActionsForBundle $bundle $actions))

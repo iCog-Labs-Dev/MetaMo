@@ -40,7 +40,9 @@
 !(test (frameRuntimeTaskOpen (get-state &continued-snapshot)) True)
 !(test (frameRuntimeExecutionObserved (get-state &continued-snapshot))
        (cfv2-compact-limited (py-call (helper.merge_observed_execution_commands "first execution" "second execution")) 1200))
-!(test (prepareTaskStateForMetaMo) (get-state &continued-snapshot))
+;; A new publication may have a fresh reference even when its factual payload agrees.
+!(test (signalBundleBase (prepareTaskStateForMetaMo))
+   (signalBundleBase (get-state &continued-snapshot)))
 
 ;; A newly ingested task cannot be closed by the previous response's result.
 !(change-state! &new-msg-flag True)

@@ -91,7 +91,9 @@
 !(test (motivosToMetamoState) (get-state &initial-motivation))
 !(bind! &observed-first (new-state (fullLoopCycle scoring)))
 !(test (get-state &observed-first) (get-state &control-first))
-!(test (activeFrameBundle) (get-state &control-first-bundle))
+;; Matched branches have different session provenance, but identical input facts.
+!(test (signalBundleBase (activeFrameBundle))
+   (signalBundleBase (get-state &control-first-bundle)))
 !(test (motivosToMetamoState) (get-state &control-state))
 !(test (scoringDecisionScores (get-state &initial-motivation)) (get-state &first-scores))
 !(test (scoringNames) (respond ask-clarification))

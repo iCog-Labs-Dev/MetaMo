@@ -7,6 +7,7 @@
 !(bind! &operation-context (new-state ()))
 !(bind! &selected-operation-decision (new-state ()))
 !(bind! &selected-operation-commitment (new-state ()))
+!(bind! &selected-signal-owner (new-state NoOwner))
 !(bind! &last-operation-outcome (new-state ()))
 ;; One generated command, owned by its capture cycle and host commitment.
 ;; It is data, never a policy grant or a replacement dispatch ledger.
@@ -85,9 +86,12 @@
        (progn
           (change-state! &operation-context
              (OperationContext (sread (py-call (host_operations.new_session))) 0 ()))
+          (eval (let (OperationContext $session $_ $_) (get-state &operation-context)
+              (resetSignalObservations $session)))
           (change-state! &selected-host-operation ())
           (change-state! &selected-operation-decision ())
           (change-state! &selected-operation-commitment ())
+          (change-state! &selected-signal-owner NoOwner)
           (change-state! &last-operation-outcome ())
           (change-state! &prepared-host-operation ())
           (change-state! &host-response-input ())
@@ -195,6 +199,7 @@
 (= (retainSelectedOperation $candidate $rows)
    (let* (
       ($_ (change-state! &selected-operation-commitment (get-state &task-commitment-id)))
+      ($_ (change-state! &selected-signal-owner (eval (hostSignalOwner))))
       ($_ (change-state! &selected-host-operation
          (if (or (== $rows LegacyCandidateAdmission) (== $candidate none)) ()
              (let $matches (hostRowsForCandidate $candidate $rows)
@@ -320,6 +325,7 @@
    (if (not (operationFeedbackEnabled))
        (change-state! &operation-feedback LegacyFeedback)
        (let* (
+          ($_ (change-state! &signal-feedback-reference None))
           ($_ (change-state! &operation-feedback
                  (OperationFeedback NoOutcome (get-state &operation-failure-streak))))
           ($outcome (get-state &last-operation-outcome)))
@@ -343,7 +349,8 @@
                            (if (== $status Failure) (+ (get-state &operation-failure-streak) 1)
                                (if (== $status Success) 0 (get-state &operation-failure-streak))))
                         (change-state! &operation-feedback
-                           (OperationFeedback $status (get-state &operation-failure-streak))))
+                           (OperationFeedback $status (get-state &operation-failure-streak)))
+                        (eval (recordSignalOutcome (quote $outcome))))
                      False)))
              ($_ False))))))
 

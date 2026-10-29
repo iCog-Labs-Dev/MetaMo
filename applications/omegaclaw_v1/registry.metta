@@ -1,5 +1,5 @@
 
-;; R2 / 2.1: factual shapes only. Legacy production signals migrate in 2.2.
+;; R2: producer facts and classifier estimates have no motivational intensities.
 ;; Classifier scores report a model estimate, never execution or permission.
 (FactualSignalSpec failure Boolean None observation)
 (FactualSignalSpec repeated-failure Boolean None observation)
@@ -21,9 +21,12 @@
 (FactualSignalRange user-angry 0 1)
 (FactualSignalRange execution-request 0 1)
 
-;; Future producer migration must preserve what these heuristics actually test.
+;; Compatibility readers retain old names until their 2.3/2.4 conversion.
 (FactualSignalLegacyKind task-drift message-differs-from-task)
 (FactualSignalLegacyKind ambiguity new-input-without-outcome)
+
+;; Semantic and confirmation classifiers support one request estimate per input.
+(SignalReduction execution-request maximum)
 
 (MotiveSpec clarity 0.45)
 (MotiveSpec progress 0.55)

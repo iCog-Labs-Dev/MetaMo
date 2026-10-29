@@ -248,7 +248,8 @@
       ($_ (eval (prepareAutomaticContinuationResume)))
       ;; The dispatch adapter is optional in pure composition; the live hook runs at the cleared slot.
       ($_ (eval (prepareAutomaticReadPlan)))
-      ($bundle (frameStateForMetaMo))
+      ($captured (frameStateForMetaMo))
+      ($bundle (eval (publishSignalObservations $captured)))
       ;; The decision module providing this setter loads after lifecycle.
       ($_ (eval (setActiveFrameBundle $bundle)))
    ) $bundle))
