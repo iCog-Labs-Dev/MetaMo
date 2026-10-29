@@ -1,4 +1,30 @@
 
+;; R2 / 2.1: factual shapes only. Legacy production signals migrate in 2.2.
+;; Classifier scores report a model estimate, never execution or permission.
+(FactualSignalSpec failure Boolean None observation)
+(FactualSignalSpec repeated-failure Boolean None observation)
+(FactualSignalSpec progress-made Boolean None observation)
+(FactualSignalSpec stalled-progress Boolean None observation)
+(FactualSignalSpec user-waiting Boolean None observation)
+(FactualSignalSpec message-differs-from-task Boolean None observation)
+(FactualSignalSpec new-input-without-outcome Boolean None observation)
+(FactualSignalSpec verified-success Boolean None observation)
+(FactualSignalSpec frame-blocked Boolean None observation)
+(FactualSignalSpec failure-streak Quantity count observation)
+(FactualSignalSpec danger Ratio classifier-score estimate)
+(FactualSignalSpec user-angry Ratio classifier-score estimate)
+(FactualSignalSpec execution-request Ratio classifier-score estimate)
+
+;; Numeric domains are factual units/ranges, not motivational coefficients.
+(FactualSignalRange failure-streak 0 9007199254740991)
+(FactualSignalRange danger 0 1)
+(FactualSignalRange user-angry 0 1)
+(FactualSignalRange execution-request 0 1)
+
+;; Future producer migration must preserve what these heuristics actually test.
+(FactualSignalLegacyKind task-drift message-differs-from-task)
+(FactualSignalLegacyKind ambiguity new-input-without-outcome)
+
 (MotiveSpec clarity 0.45)
 (MotiveSpec progress 0.55)
 (MotiveSpec reliability 0.50)

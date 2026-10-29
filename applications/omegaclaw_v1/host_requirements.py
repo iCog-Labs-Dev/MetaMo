@@ -218,12 +218,10 @@ def propose_read_request(provider, request):
 
 # Example: extract_read_request('Offline', 'Compare a.txt and b.txt') proposes two reads.
 def extract_read_request(provider, request):
-    """Interpret admitted task text supplied by a trusted host caller (F3.1).
+    """Interpret admitted task text supplied by a trusted host caller .
 
     Returns Proposed/Unsupported data only. The caller retains task ownership;
     this helper neither authenticates admission nor publishes runtime state.
-    F3.2 constructs steps; F3.3 resolves catalog paths and checks permissions.
-    No filesystem access, plan installation, binding or dispatch occurs here.
     """
     from host_dispatch_config import ConfigError, identifier
     try:
