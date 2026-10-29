@@ -10,6 +10,7 @@
 !(bind! &operation-feedback (new-state LegacyFeedback))
 !(bind! &host-recovery (new-state NoRecovery))
 !(bind! &recovery-view (new-state NoRecovery))
+!(bind! &signal-observation-view (new-state NoSignalObservations))
 !(bind! &host-continuation (new-state ()))
 ;; Bounded, owner-scoped outcomes for the installed plan; never model evidence.
 !(bind! &continuation-evidence (new-state ()))
@@ -114,6 +115,7 @@
       ($index (frameStateIndexProjection))
       ($runtime
          (FrameStateRuntime
+            (signal-observations (get-state &signal-observation-view))
             (operation-feedback (get-state &operation-feedback))
             (recovery (get-state &recovery-view))
             (task-continuation (get-state &task-continuation-view))

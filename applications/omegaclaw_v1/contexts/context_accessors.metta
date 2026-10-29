@@ -93,6 +93,10 @@
 (= (frameRuntimeOperationFeedback $bundle)
    (frameRuntimeField $bundle operation-feedback LegacyFeedback))
 
+;; Example: old offline fixtures have no producing observation until host adoption.
+(= (frameRuntimeSignalObservations $bundle)
+   (frameRuntimeField $bundle signal-observations NoSignalObservations))
+
 (= (frameRuntimeText $value)
    ;; Example: `(frameRuntimeText ())` returns the safe empty string `""`,
    ;; while `(frameRuntimeText "result")` returns `"result"`.
