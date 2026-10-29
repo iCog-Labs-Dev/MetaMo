@@ -73,18 +73,26 @@
       ($_ False))))
 
 
+;; Validate shape before reading a key. Duplicate constraints remain permitted.
+;; Example: (tpListEntryValid ids "files.read" ("files.read")) -> False.
+(= (tpListEntryValid $kind $entry $seen)
+   (if (tpEntryValid $kind $entry)
+       (not (and (!= $kind constraints) (tpContains $seen (tpKey $kind $entry))))
+       False))
+
+;; Guard list shape and capacity before decomposing or validating its head.
+;; Example: (tpListValid ids () 0 ()) -> True; a nonempty list at zero rejects.
 (= (tpListValid $kind $items $remaining $seen)
-   (if (== (get-metatype $items) Expression)
-       (if (== $items ()) True
-           (if (<= $remaining 0) False
-               (let ($head $tail) (decons-atom $items)
-                  (if (tpEntryValid $kind $head)
-                      (let $key (tpKey $kind $head)
-                         (if (and (!= $kind constraints) (tpContains $seen $key))
-                             False
-                             (tpListValid $kind $tail (- $remaining 1)
-                                (cons-atom $key $seen))))
-                      False)))) False))
+   (case ((get-metatype $items) (== $items ())) (
+      ((Expression True) True)
+      ((Expression False)
+       (if (<= $remaining 0) False
+           (let ($head $tail) (decons-atom $items)
+              (case (tpListEntryValid $kind $head $seen) (
+                 (True (tpListValid $kind $tail (- $remaining 1)
+                    (cons-atom (tpKey $kind $head) $seen)))
+                 ($_ False))))))
+      ($_ False))))
 
 
 (= (tpList $kind $items) (tpListValid $kind $items 128 ()))
@@ -172,22 +180,38 @@
                      (if (!= $reason Feasible) $reason (tpBudgets $costs $budgets))))))))
 
 
+;; Both scopes are already validated. A global denial precedes frame checks.
+;; Example: a globally denied skill returns SkillNotAllowed immediately.
+(= (tpOperationScopesReason $global $frame $operation)
+   (let $reason (tpScopeReason $global $operation)
+      (if (!= $reason Feasible) $reason (tpScopeReason $frame $operation))))
+
+;; Validate each scope before evaluating its permissions, constraints or budgets.
+;; Example: malformed global and frame scopes return InvalidGlobalPolicy first.
+(= (tpOperationPolicyReason $global $frame $operation $target)
+   (case (tpScopeValid $global Global) (
+      (False InvalidGlobalPolicy)
+      (True (case (tpScopeValid $frame (FrameTarget $target)) (
+         (False InvalidFramePolicy)
+         (True (tpOperationScopesReason $global $frame $operation))))))))
+
+;; The operation shape is valid before its identity fields are inspected.
+;; Example: candidate and target mismatches return OperationMismatch first.
+(= (tpOperationBindingReason $global $frame $operation $candidate $target)
+   (let (PolicyOperation (candidate $actual) (target $actualTarget) $_ $_ $_ $_) $operation
+      (case ((== $actual $candidate) (== $actualTarget $target)) (
+         ((False $_) OperationMismatch)
+         ((True False) TargetMismatch)
+         ((True True) (tpOperationPolicyReason $global $frame $operation $target))))))
+
+;; Guard groundness and shape before dispatching to the ordered binding checks.
+;; Example: non-ground input returns InvalidPolicy without inspecting the operation.
 (= (tpOperationReason $global $frame $operation $candidate $target)
-   (if (not (is-ground ($global $frame $operation $candidate $target))) InvalidPolicy
-       (if (not (tpOperationValid $operation)) InvalidOperation
-           (let (PolicyOperation (candidate $actual) (target $actualTarget) $_ $_ $_ $_) $operation
-              (if (!= $actual $candidate) 
-                  OperationMismatch
-                  (if (!= $actualTarget $target) 
-                     TargetMismatch
-                      (if (not (tpScopeValid $global Global)) 
-                           InvalidGlobalPolicy
-                           (if (not (tpScopeValid $frame (FrameTarget $target))) 
-                              InvalidFramePolicy
-                              (let $reason (tpScopeReason $global $operation)
-                                 (if (!= $reason Feasible) 
-                                       $reason
-                                     (tpScopeReason $frame $operation)))))))))))
+   (case (is-ground ($global $frame $operation $candidate $target)) (
+      (False InvalidPolicy)
+      (True (case (tpOperationValid $operation) (
+         (False InvalidOperation)
+         (True (tpOperationBindingReason $global $frame $operation $candidate $target))))))))
 
 
 (= (typedOperationPolicyGate $global $frame $operation $candidate $target)

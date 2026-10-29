@@ -190,11 +190,12 @@
    (taskResultReadyForBundle (activeFrameBundle)))
 
 (= (taskResultReadyForBundle $bundle)
-   (and (frameRuntimeTaskOpen $bundle)
-        (and (not (bundle-runtime-has-new-message $bundle))
-             (and (not (awaitingClarificationResponseForBundle $bundle))
-                  (and (or (hasResults) (eval (preparedResponseReadyForBundle $bundle)))
-                       (not (hasErrors)))))))
+   (tpAllTrue (
+      (frameRuntimeTaskOpen $bundle)
+      (not (bundle-runtime-has-new-message $bundle))
+      (not (awaitingClarificationResponseForBundle $bundle))
+      (or (hasResults) (eval (preparedResponseReadyForBundle $bundle)))
+      (not (hasErrors)))))
 
 (= (resultQuestionNeedsResponse)
    (resultQuestionNeedsResponseForBundle (activeFrameBundle)))
