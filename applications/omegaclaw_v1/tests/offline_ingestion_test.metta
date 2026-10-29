@@ -59,6 +59,7 @@
 ;; No persistence, command dispatch, or full bridge-cycle claim is made here.
 !(refreshSignals (get-state &offline-bundle))
 !(test (py-call (lib_llm_ext.call_count "confirmation")) 1)
+
 !(test (py-call (lib_llm_ext.call_count "semantics")) 1)
 !(test (hasSignal failure) True)
 !(refreshConstitutionalMode (get-state &offline-bundle))
@@ -88,3 +89,78 @@
 !(test (feasibilityGate (get-state &offline-completed) execute-skill)
    (GateDecision Rejected InactiveFrame))
 !(test (py-call (offline_guard.optional_modules_absent)) 1)
+
+;; R2 / 2.2: classifier observations are estimates with cached, inspectable sources.
+(= (r22ClassifierFact $kind)
+   (car-atom (filter-atom (getFactualSignals) $fact
+      (== (factualSignalField kind $fact) $kind))))
+!(change-state! &error "")
+!(change-state! &lastresults "")
+!(change-state! &prevmsg "Proceed with this task")
+!(change-state! &new-msg-flag True)
+!(bind! &r22-classified (new-state (prepareTaskStateForMetaMo)))
+!(py-call (lib_llm_ext.reset))
+!(py-call (lib_llm_ext.semantic_response (frameStateRuntimeSummary "Proceed with this task" 1200)
+   "((signal execution-request 0.8) (signal danger 0.2))"))
+!(py-call (lib_llm_ext.confirmation_response (frameStateRuntimeSummary "Proceed with this task" 1200) 0.9))
+!(refreshSignals (get-state &r22-classified))
+!(test (factualSignalField value (r22ClassifierFact execution-request)) (quote (RatioFact 0.9 classifier-score)))
+!(test (size-atom (filter-atom (getFactualSignals) $fact
+   (== (factualSignalField kind $fact) execution-request))) 1)
+!(test (let $ref (car-atom (factualSignalField provenance (r22ClassifierFact danger)))
+   (let (SourceObservation $_ $_ (ClassifierObservation $_ $provider $confirmation $semantics) $_)
+      (resolveSignalObservation $ref)
+      ($provider $confirmation $semantics)))
+   ("Offline" 0.9 ((signal execution-request 0.8) (signal danger 0.2))))
+!(bind! &r22-classifier-facts (new-state (getFactualSignals)))
+!(bind! &r22-classifier-store (new-state (get-state &signal-observation-state)))
+!(refreshSignals (get-state &r22-classified))
+!(test (getFactualSignals) (get-state &r22-classifier-facts))
+!(test (get-state &signal-observation-state) (get-state &r22-classifier-store))
+!(test (py-call (lib_llm_ext.call_count "semantics")) 1)
+!(test (py-call (lib_llm_ext.call_count "confirmation")) 1)
+
+;; Source retention outlives the small call cache without another provider request.
+!(change-state! &signal-classifications ())
+!(refreshSignals (get-state &r22-classified))
+!(test (getFactualSignals) (get-state &r22-classifier-facts))
+!(test (py-call (lib_llm_ext.call_count "semantics")) 1)
+!(test (py-call (lib_llm_ext.call_count "confirmation")) 1)
+
+;; Producer facts remain identical when a compatibility appraisal intensity changes.
+!(remove-atom &self (SignalStrength user-waiting 0.30))
+!(add-atom &self (SignalStrength user-waiting 0.99))
+!(refreshSignals (get-state &r22-classified))
+!(test (getFactualSignals) (get-state &r22-classifier-facts))
+!(remove-atom &self (SignalStrength user-waiting 0.99))
+!(add-atom &self (SignalStrength user-waiting 0.30))
+!(test (signalExecutionRequestScore 0.8 0.9) 0.9)
+!(add-atom &self (SignalReduction execution-request maximum))
+!(test (signalExecutionRequestScore 0.8 0.9) (FactualSignalRejected InvalidSignalReduction))
+!(remove-atom &self (SignalReduction execution-request maximum))
+!(add-atom &self (SignalReduction execution-request maximum))
+
+;; Provider expressions are inert data; an invalid response rejects the cycle.
+!(change-state! &prevmsg "Malformed classification")
+!(py-call (lib_llm_ext.semantic_response (frameStateRuntimeSummary "Malformed classification" 1200)
+   "((signal danger (change-state! &failure-streak 99)))"))
+!(bind! &r22-malformed (new-state (prepareTaskStateForMetaMo)))
+!(test (refreshSignals (get-state &r22-malformed)) (FactualSignalRejected InvalidClassifierObservation))
+!(test (get-state &failure-streak) 0)
+!(test (signalCycleReady) False)
+!(test (getFactualSignals) ())
+!(test (refreshSignals (get-state &r22-malformed)) (FactualSignalRejected InvalidClassifierObservation))
+!(test (py-call (lib_llm_ext.call_count "semantics")) 2)
+!(test (hostSemanticListValid (quote (1))) False)
+!(test (hostSemanticListValid (quote ((signal danger 0.5) (signal danger 0.7)))) False)
+!(test (hostSemanticListValid (quote ((signal verified-success 1)))) False)
+
+;; A well-typed source from one input cannot be reused as another input's estimate.
+!(change-state! &prevmsg "Another request")
+!(bind! &r22-next (new-state (prepareTaskStateForMetaMo)))
+!(test (let (SignalObservationView $next $_ $_) (frameRuntimeSignalObservations (get-state &r22-next))
+   (let $ref (car-atom (factualSignalField provenance (car-atom (filter-atom
+      (get-state &r22-classifier-facts) $fact (== (factualSignalField kind $fact) danger)))))
+      (hostCheckedClassifications $next (ClassifierResults $ref 0.9
+         ((signal execution-request 0.8) (signal danger 0.2))))))
+   (FactualSignalRejected MismatchedClassifierObservation))
