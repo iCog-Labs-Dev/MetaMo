@@ -346,7 +346,7 @@ def enable_answers(mode='answer'):
 def answer_provider(provider, prompt, max_tokens):
     global _response_calls
     _response_calls += 1
-    assert provider == 'Offline' and max_tokens == 1024
+    assert provider == 'Offline' and max_tokens == 16384
     payload = json.loads(prompt.split(':-:-:-:', 1)[1])
     assert payload['observations'] == [
         {'path': _commands[1][1], 'content': 'other content'},
@@ -586,7 +586,7 @@ def auto_provider(provider, prompt, max_tokens, *args):
             import host_ingress
             assert 'Cancelled' in host_ingress.ingest('cancel: stop during extraction')
         return json.dumps({'files': auto_paths()})
-    if max_tokens == 1024:
+    if max_tokens == 16384:
         _auto_calls['answer'] += 1
         payload = json.loads(prompt.split(':-:-:-:', 1)[1])
         second = ({'path': _auto_correction['path'], 'content': 'unrequested content'}

@@ -11,6 +11,10 @@ import re
 import stat
 
 
+# Shared configured/prepared reply bound, measured in Unicode characters.
+MAX_SEND_TEXT_CHARS = 15_000
+
+
 class ConfigError(ValueError):
     pass
 
@@ -161,9 +165,9 @@ def destination_metadata(value):
 
 def validate_send_text(text):
     """Shared bounds for configured and prepared send text; no execution."""
-    if (type(text) is not str or not text.strip() or len(text) > 1200
+    if (type(text) is not str or not text.strip() or len(text) > MAX_SEND_TEXT_CHARS
             or any(ord(c) < 32 and c not in "\n\t" for c in text)):
-        raise ConfigError("send requires nonblank text of at most 1200 characters")
+        raise ConfigError(f"send requires nonblank text of at most {MAX_SEND_TEXT_CHARS} characters")
     return text
 
 

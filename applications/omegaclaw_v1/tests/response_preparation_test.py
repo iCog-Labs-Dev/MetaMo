@@ -110,9 +110,10 @@ class ResponsePreparationTests(unittest.TestCase):
         self.assertEqual(self.prepare(), '(ResponsePrepared "File content summary.")')
         args, kwargs = self.llm.callProvider.call_args
         self.assertEqual(args[0], 'ASICloud')
-        self.assertEqual(kwargs, {'max_tokens': 1024})
+        self.assertEqual(kwargs, {'max_tokens': 16384})
         system, payload = args[1].split(self.llm.PROMPT_DELIMITER, 1)
         self.assertIn('Do not invent', system)
+        self.assertIn('at most 15000 characters', system)
         value = json.loads(payload)
         self.assertEqual(value['observations'], [
             {'path': '/allowed/input.txt', 'content': 'observed file content'},
@@ -124,7 +125,7 @@ class ResponsePreparationTests(unittest.TestCase):
             with self.subTest(rows=rows):
                 self.assertEqual(host.prepare_response('ASICloud', 'Question', self.context, rows),
                                  '(ResponseNoAction InvalidInput)')
-        for request in ('', '  ', 'x' * 1201, None, [], 'bad\x00'):
+        for request in ('', '  ', 'x' * 15001, None, [], 'bad\x00'):
             self.assertEqual(self.prepare(request=request), '(ResponseNoAction InvalidInput)')
         self.llm.callProvider.assert_not_called()
 
@@ -193,14 +194,14 @@ class ResponsePreparationTests(unittest.TestCase):
                     '{"text":"hello","no_action":true}', '{"no_action":1}',
                     '{"no_action":false}', '[]', 'null', '{"text":null}',
                     '{"text":NaN}', '{"text":[]}', '{"text":"  "}',
-                    '{"text":"bad\\u0000"}', '{"text":"\\ud800"}', json.dumps({'text': 'x' * 1201}),
-                    json.dumps({'text': 'x'}) + ' ' * 8192, None):
+                    '{"text":"bad\\u0000"}', '{"text":"\\ud800"}', json.dumps({'text': 'x' * 15001}),
+                    json.dumps({'text': 'x'}) + ' ' * (12 * 15000 + 1024), None):
             with self.subTest(raw=raw):
                 self.llm.callProvider.return_value = raw
                 self.assertEqual(self.prepare(), '(ResponseNoAction InvalidResponse)')
 
     def test_output_is_escaped_text_and_matches_send_limits(self):
-        for text in ('x' * 1200, 'Observed "quotes"\nsecond line\tend', '(send "inert text")'):
+        for text in ('x' * 1200, 'x' * 15000, '界' * 15000, '🙂' * 15000, 'Observed "quotes"\nsecond line\tend', '(send "inert text")'):
             self.llm.callProvider.return_value = json.dumps({'text': text})
             self.assertEqual(self.prepare(), config.encode(config.record('ResponsePrepared', text)))
             config.binding({'skill': 'send', 'arguments': [text]}, 'frame', [],
@@ -256,7 +257,7 @@ class ResponsePreparationTests(unittest.TestCase):
         too_long = request + 'a'
         self.assertEqual(host.prepare_response('Offline', too_long, self.context, [],
             requirements=conversation_contract(too_long)), '(ResponseNoAction InvalidInput)')
-        self.llm.callProvider.return_value = json.dumps({'text': 'a' * 1201})
+        self.llm.callProvider.return_value = json.dumps({'text': 'a' * 15001})
         self.assertEqual(host.prepare_response('Offline', request, self.context, [],
             requirements=conversation_contract(request)), '(ResponseNoAction InvalidResponse)')
 
@@ -285,7 +286,7 @@ class ResponsePreparationTests(unittest.TestCase):
         client.chat.completions.create.assert_called_once()
         request = client.chat.completions.create.call_args.kwargs
         self.assertEqual(request['model'], 'minimax/minimax-m3')
-        self.assertEqual(request['max_tokens'], 1024)
+        self.assertEqual(request['max_tokens'], 16384)
         self.assertEqual(json.loads(request['messages'][1]['content'])['observations'][0]['content'],
                          'observed file content')
 

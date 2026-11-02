@@ -136,7 +136,7 @@ def provider(name, prompt, max_tokens, *args):
     import janus
     global _calls, _changed, _request, _changed_request_calls
     assert name == 'Offline'
-    if max_tokens == 1024:
+    if max_tokens == 16384:
         return prepare_answer(prompt)
     if max_tokens != 512:
         if _scenario == 'before_dispatch' and not _changed:

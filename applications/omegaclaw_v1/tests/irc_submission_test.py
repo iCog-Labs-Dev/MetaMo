@@ -79,7 +79,7 @@ class IrcSubmissionTests(unittest.TestCase):
         self.assertIsNotNone(self.irc._last_submission)
 
     def test_multibyte_wire_bounds_and_content_preservation(self):
-        for text in ('x' * 1200, '界' * 1200, '🙂' * 1200, ('A界🙂 ' * 240)):
+        for text in ('x' * 15000, '界' * 15000, '🙂' * 15000, ('A界🙂 ' * 3750)):
             with self.subTest(text=text[:8]):
                 self.sock.sendall.reset_mock()
                 result = self.irc.send_message(text)

@@ -78,7 +78,7 @@ def call_provider(provider, prompt, max_tokens):
     import janus
     global _calls
     _calls += 1
-    assert provider == 'Offline' and max_tokens == 1024
+    assert provider == 'Offline' and max_tokens == 16384
     data = json.loads(prompt.split(':-:-:-:', 1)[1])
     assert data['observations'][0]['content'] == _observations[0][4][3]
     if _mode == 'route-change':

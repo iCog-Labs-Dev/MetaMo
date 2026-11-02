@@ -495,7 +495,7 @@ With the destination above, append an exact command to `commands`:
 ```
 
 The catalog derives one `respond` binding for this exact text. Text must be a
-nonblank string of at most 1200 characters; control characters below U+0020 are
+nonblank string of at most 15,000 characters; control characters below U+0020 are
 rejected except newline and tab. Candidate selection is restricted to the catalog
 mappings below; permissions, destination and cost cannot be overridden. Missing destination metadata rejects the
 configuration before installation.
@@ -591,7 +591,7 @@ valid sources. Gathering retained observations is subsequent host integration.
 
 Input bounds and checks:
 
-- Nonblank request of at most 1200 characters, using the send-text control rules.
+- Nonblank request of at most 15,000 characters, using the send-text control rules.
 - One to sixteen successful `read-file` outcomes for the supplied session/frame.
   Observed cycles must be positive and no later than the supplied current cycle;
   cycles and ticket IDs must be unique. Earlier read cycles may support a later answer.
@@ -605,13 +605,13 @@ Input bounds and checks:
 The provider receives separate instructions and a JSON data payload containing
 the request and exact read paths/contents. It is asked to use only those
 observations and avoid invented execution, delivery and task-completion claims.
-One provider call requests at most 1024 output tokens. The helper adds no retry;
+One provider call requests at most 16,384 output tokens. The helper adds no retry;
 transport timeouts/retries remain the existing provider's behavior.
 
 The provider must return exactly `{"text":"..."}` or `{"no_action":true}`.
 The parser rejects duplicate keys, extra fields, markdown-wrapped JSON, malformed
-responses and output above 8192 UTF-8 bytes. Text uses the same nonblank,
-1200-character/control-character checks as the send catalog and is safely quoted
+responses and output above 181,024 UTF-8 bytes (allowing JSON Unicode escapes). Text uses the same nonblank,
+15,000-character/control-character checks as the send catalog and is safely quoted
 as data in the returned MeTTa record:
 
 ```metta
@@ -1357,9 +1357,9 @@ The configured provider receives only bounded conversational request text and
 `{"kind":"Conversation","tools":"None"}`. It may answer from that text and
 stable model knowledge or return explicit no-action for missing/unsupported
 context. Requests retain the classification limit of 4096 characters/16384 UTF-8
-bytes; output remains JSON containing only `text` (nonblank, at most 1200
-characters) or `no_action: true`, with a 1024-token provider limit and an 8192-byte
-raw response bound. Provider failure, malformed output and uncertain answers
+bytes; output remains JSON containing only `text` (nonblank, at most 15,000
+characters) or `no_action: true`, with a 16,384-token provider limit and a 181,024-byte
+raw response bound that accommodates JSON Unicode escapes. Provider failure, malformed output and uncertain answers
 produce no-action. No provider text is evaluated as a command or treated as
 read, execution, delivery or completion evidence.
 

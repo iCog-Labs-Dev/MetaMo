@@ -168,11 +168,11 @@ class HostDispatchConfigTests(unittest.TestCase):
     def test_send_argument_bounds_and_no_authority_overrides(self):
         destination = {"channel": "local", "recipient": "stdout"}
         for arguments in ([], ["one", "two"], [None], [True], [["shell", "pwd"]],
-                          [""], [" \n\t"], ["x" * 1201], ["text\x00"], ["text\r"]):
+                          [""], [" \n\t"], ["x" * 15001], ["text\x00"], ["text\r"]):
             with self.subTest(arguments=arguments), self.assertRaises(config.ConfigError):
                 config.binding({"skill": "send", "arguments": arguments}, "frame-1", [], destination)
-        self.assertEqual(config.binding({"skill": "send", "arguments": ["x" * 1200]},
-                                        "frame-1", [], destination)[1][1], "x" * 1200)
+        self.assertEqual(config.binding({"skill": "send", "arguments": ["x" * 15000]},
+                                        "frame-1", [], destination)[1][1], "x" * 15000)
         for field in ("candidate", "recipient", "permissions", "egress", "costs"):
             command = {"skill": "send", "arguments": ["hello"], field: []}
             with self.subTest(field=field), self.assertRaises(config.ConfigError):

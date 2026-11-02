@@ -425,7 +425,7 @@ def prepare_response(provider, request, context, observations, *, requirements=N
     or complete tasks. The trusted queue/capture path above calls this helper
     before exposing a cycle-owned command to ordinary gated selection.
     """
-    from host_dispatch_config import (ConfigError, Symbol, encode, identifier,
+    from host_dispatch_config import (ConfigError, MAX_SEND_TEXT_CHARS, Symbol, encode, identifier,
                                       record, unique_object, validate_send_text)
 
     def no_action(reason):
@@ -468,19 +468,21 @@ def prepare_response(provider, request, context, observations, *, requirements=N
         'Do not invent file contents, execution, delivery or task-completion claims. '
         'If answering requires current information, private data, missing context or external actions, return no_action. '
         'Do not call tools or produce executable commands. '
-        'Return only a JSON object {"text":"answer"} with nonblank text of at most 1200 '
+        f'Return only a JSON object {{"text":"answer"}} with nonblank text of at most {MAX_SEND_TEXT_CHARS} '
         'characters, or {"no_action":true} if the supplied data cannot support an answer. '
         'Do not use markdown fences around the JSON.'
     )
     try:
         import lib_llm_ext
         raw = lib_llm_ext.callProvider(
-            provider, system + lib_llm_ext.PROMPT_DELIMITER + payload, max_tokens=1024)
+            provider, system + lib_llm_ext.PROMPT_DELIMITER + payload, max_tokens=16384)
     except Exception:
         # Do not include provider exception text (which can contain credentials).
         return no_action("ProviderUnavailable")
     try:
-        if type(raw) is not str or len(raw.encode("utf-8")) > 8192:
+        # JSON may use two six-byte surrogate escapes per Unicode character.
+        response_byte_limit = 12 * MAX_SEND_TEXT_CHARS + 1024
+        if type(raw) is not str or len(raw.encode("utf-8")) > response_byte_limit:
             return no_action("InvalidResponse")
         value = json.loads(raw, object_pairs_hook=unique_object)
         if type(value) is not dict:

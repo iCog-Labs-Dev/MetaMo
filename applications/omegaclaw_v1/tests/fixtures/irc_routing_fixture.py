@@ -67,7 +67,7 @@ def queue(mode='answer'):
 
 
 def provider(provider_name, prompt, max_tokens):
-    assert provider_name == 'Offline' and max_tokens == 1024
+    assert provider_name == 'Offline' and max_tokens == 16384
     if _mode == 'reconnect':
         connect()
     return json.dumps({'text': 'observed reply'})

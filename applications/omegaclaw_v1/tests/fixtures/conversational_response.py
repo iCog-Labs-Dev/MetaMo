@@ -57,7 +57,7 @@ def provider(name, prompt, max_tokens, *args):
         data = json.loads(prompt.split(':-:-:-:', 1)[1])
         assert 'read /secret' in data['request']
         return '{"kind":"External","needs":["Files"]}'
-    if max_tokens == 1024:
+    if max_tokens == 16384:
         _calls += 1
         data = json.loads(prompt.split(':-:-:-:', 1)[1])
         assert data == {'request': 'hello', 'requirements': {'kind': 'Conversation', 'tools': 'None'}}
