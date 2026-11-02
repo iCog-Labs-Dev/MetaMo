@@ -1,6 +1,6 @@
 ;; Signal extraction and signal-to-appraisal conversion.
-;; R2 / 2.2: production emits typed facts with host-resolved observation support.
-;; The legacy read projection remains until appraisal and trigger migration.
+;; R2 / 2.3: production facts are appraised directly with explicit registry rules.
+;; The legacy read projection remains for mode/trigger migration in 2.4.
 !(import_prolog_function string_length)
 
 ;; Example: (fsContains (True False) True) -> True.
@@ -180,6 +180,8 @@
 
 !(bind! &signal-space    (new-space))
 !(bind! &appraisal-space (new-space))
+!(bind! &last-appraisal-contributions (new-state ()))
+!(bind! &appraisal-status (new-state AppraisalReady))
 !(bind! &failure-streak  (new-state 0))
 
 !(bind! &new-msg-flag (new-state False))
@@ -204,14 +206,14 @@
 (= (signalRefreshStatus) (get-state &signal-refresh-status))
 (= (signalCycleReady)
     (case (signalRefreshStatus) (
-        ((SignalRefreshReady $_) True)
-        (LegacySignalCycle True)
+        ((SignalRefreshReady $_) (== (get-state &appraisal-status) AppraisalReady))
+        (LegacySignalCycle (== (get-state &appraisal-status) AppraisalReady))
         ($_ False))))
 
 ;; Example: clearing a cycle does not erase its retained factual diagnostics.
 (= (clearSignals) (clearSpace &signal-space))
 
-;; Temporary 2.3/2.4 adapter: old names/weights exist only in this read view.
+;; Temporary 2.4 adapter: old names/weights exist only in this read view.
 ;; Example: message-differs-from-task still appears as task-drift to old readers.
 (= (legacySignalKind $kind)
     (case (collapse (match &self (FactualSignalLegacyKind $old $kind) $old)) (
@@ -232,7 +234,7 @@
             (if (> $score 0) (signal $kind $score) (empty)))
         ($_ (empty)))))
 
-;; Example: modes/appraisal consume a projection, never weighted producer records.
+;; Example: modes consume a projection; appraisal reads the typed records directly.
 (= (getSignals)
     (collapse (let $record (match &signal-space $entry $entry)
         (legacySignalView $record))))
@@ -265,6 +267,7 @@
     (progn
         (clearSignals)
         (change-state! &last-factual-signals ())
+        (change-state! &last-appraisal-contributions ())
         (change-state! &signal-refresh-status $reason)
         $reason))
 
@@ -416,40 +419,137 @@
 (= (refreshSignals $bundle)
     (progn
         (clearSignals)
+        (change-state! &appraisal-status AppraisalReady)
         (case (eval (hostSignalInput (quote $bundle))) (
             ((FactualSignalRejected $reason) (rejectSignalRefresh (FactualSignalRejected $reason)))
             ($admitted (refreshSignalsForObservation $admitted))))))
 
-;; Convert the current signals into the six appraisal dimensions.
-(= (signalDimContrib $kind $strength $dim)
-   (let $weights (collapse (match &self (SignalAppraisal $kind $dim $w) $w))
-      (if (== $weights ()) 0.0 (* $strength (car-atom $weights)))))
+;; Example: False is an explicit zero; counts have no appraisal rule yet.
+(= (appraisalTransform $transform $value)
+    (case ($transform $value) (
+        ((BooleanIndicator (BooleanFact True)) 1)
+        ((BooleanIndicator (BooleanFact False)) 0)
+        ((IdentityRatio (RatioFact $score classifier-score)) $score)
+        ($_ (AppraisalRejected InvalidAppraisalTransform)))))
 
-(= (sumDimFromSignals $dim () $acc) $acc)
-(= (sumDimFromSignals $dim $signals $acc)
-   (let* (
-      (($head $tail) (decons-atom $signals))
-      ((signal $kind $strength) $head)
-      ($contrib (signalDimContrib $kind $strength $dim))
-   )
-      (sumDimFromSignals $dim $tail (+ $acc $contrib))))
+;; Example: a negative progress coefficient is valid; duplicate rules reject.
+(= (appraisalRuleValid $rule)
+    (let (SignalAppraisalRule $kind $dim $transform $coefficient) $rule
+        (and (fsContains (novelty risk importance uncertainty opportunity progress) $dim)
+            (and (fsNumberIn $coefficient -1 1)
+                (== (collapse (match &self
+                    (SignalAppraisalRule $kind $dim $t $c)
+                    (SignalAppraisalRule $kind $dim $t $c))) ($rule))))))
 
+;; Example: the trace captures the rule by value, including a negative result.
+(= (appraiseFactualRule $kind $value $refs $rule)
+    (let (SignalAppraisalRule $kind $dim $transform $coefficient) $rule
+        (case (appraisalRuleValid $rule) (
+            (False (AppraisalRejected InvalidAppraisalRule))
+            (True (let $input (appraisalTransform $transform $value)
+                (if (== (get-type $input) Number)
+                    (let $contribution (* $input $coefficient)
+                        (AppraisalContribution (kind $kind) (dimension $dim)
+                            (value $value) (rule $rule)
+                            (contribution $contribution) (provenance $refs)))
+                    $input)))))))
+
+;; Example: failure True contributes 0.56 risk, without a SignalStrength lookup.
+;; Publication already authenticates support; this function validates representation.
+(= (appraiseFactualSignal $fact)
+    (case (validateFactualSignal $fact) (
+        ((FactualSignalValid $_ $_ $_)
+            (let* (
+                ((FactualSignal (kind $kind) (value $value) (provenance $refs)) $fact)
+                ($rules (collapse (match &self (SignalAppraisalRule $kind $d $t $c)
+                    (SignalAppraisalRule $kind $d $t $c))))
+            )
+                (map-atom $rules $rule (appraiseFactualRule $kind $value $refs $rule))))
+        ($_ ((AppraisalRejected InvalidFactualSignal))))))
+
+;; Example: manual legacy fixtures normalize by their old baseline, then use
+;; the same effective rule. Production never publishes these strength records.
+;; Legacy diagnostics explicitly carry no observation provenance.
+(= (appraiseLegacySignal $old $strength)
+    (let* (
+        ($kind (case (collapse (match &self (FactualSignalLegacyKind $old $new) $new)) (
+            (() $old) (($only) $only) ($_ InvalidSignalKind))))
+        ($baseline (case (factualSignalSpec $kind) (
+            ((FactualSignalSpec $_ Boolean $_ $_)
+                (case (collapse (match &self (SignalStrength $old $s) $s)) (
+                    (() 1) (($only) $only) ($_ 0))))
+            ($_ 1))))
+    )
+        (if (and (fsNumberIn $strength 0 1) (fsNumberIn $baseline 0.000001 1))
+            (let* (
+                ($value (case (factualSignalSpec $kind) (
+                    ((FactualSignalSpec $_ Boolean $_ $_) (BooleanFact True))
+                    ($_ (RatioFact $strength classifier-score)))))
+                ($rules (collapse (match &self (SignalAppraisalRule $kind $d $t $c)
+                    (SignalAppraisalRule $kind $d $t $c))))
+                ($facts (map-atom $rules $rule (appraiseFactualRule $kind $value () $rule)))
+            )
+                (map-atom $facts $row
+                    (case $row (
+                        ((AppraisalContribution $k $d $_ $r (contribution $c) $_)
+                            (let $contribution (case (factualSignalSpec $kind) (
+                                    ((FactualSignalSpec $_ Boolean $_ $_) (* $c (/ $strength $baseline)))
+                                    ($_ $c)))
+                                (LegacyAppraisalContribution $k $d (value (LegacySignalStrength $strength))
+                                    $r (contribution $contribution) (provenance ()))))
+                        ($_ $row)))))
+            ((AppraisalRejected InvalidLegacySignal)))))
+
+;; Example: flatten a bounded cycle into per-rule contributions, preserving False.
+(= (currentAppraisalContributions)
+    (collapse (let* (
+        ($entry (match &signal-space $record $record))
+        ($rows (case $entry (
+            ((signal $kind $strength) (appraiseLegacySignal $kind $strength))
+            ($_ (appraiseFactualSignal $entry)))))
+    ) (superpose $rows))))
+
+;; Example: diagnostics survive transient signal cleanup until the next appraisal.
+(= (lastAppraisalContributions) (get-state &last-appraisal-contributions))
+(= (appraisalStatus) (get-state &appraisal-status))
+
+;; Example: sum numeric contributions without clamping each individual row.
+(= (sumAppraisalValues () $sum) $sum)
+(= (sumAppraisalValues $values $sum)
+    (let ($head $tail) (decons-atom $values)
+        (sumAppraisalValues $tail (+ $sum $head))))
+
+;; Example: negative and positive contributions sum before the existing clamp.
+(= (appraisalDimensionFromTrace $dim $trace)
+    (let* (
+        ($rows (filter-atom $trace $row (== (index-atom $row 2) (dimension $dim))))
+        ($values (map-atom $rows $row (index-atom (index-atom $row 5) 1)))
+    ) (clampValue (sumAppraisalValues $values 0.0))))
+
+;; Example: invalid rules reject the whole appraisal, never leave partial weights.
+(= (appraisalTraceRejection $trace)
+    (filter-atom $trace $row
+        (case $row (
+            ((AppraisalRejected $_) True)
+            ($_ False)))))
+
+;; Example: computeDimension is a pure diagnostic read of the current facts.
 (= (computeDimension $dim)
-   (let $signals (getSignals)
-      (clampValue (sumDimFromSignals $dim $signals 0.0))))
+    (let $trace (currentAppraisalContributions)
+        (case (appraisalTraceRejection $trace) (
+            (() (appraisalDimensionFromTrace $dim $trace))
+            ($errors (car-atom $errors))))))
 
+;; Example: one snapshot of rules supplies all six dimensions and its retained trace.
 (= (computeAllDimensions)
-   (let* (
-      ($novelty (computeDimension novelty))
-      ($risk (computeDimension risk))
-      ($importance (computeDimension importance))
-      ($uncertainty (computeDimension uncertainty))
-      ($opportunity (computeDimension opportunity))
-      ($progress (computeDimension progress))
-      ($_ (add-atom &appraisal-space (appraisal novelty $novelty)))
-      ($_ (add-atom &appraisal-space (appraisal risk $risk)))
-      ($_ (add-atom &appraisal-space (appraisal importance $importance)))
-      ($_ (add-atom &appraisal-space (appraisal uncertainty $uncertainty)))
-      ($_ (add-atom &appraisal-space (appraisal opportunity $opportunity)))
-      ($_ (add-atom &appraisal-space (appraisal progress $progress)))
-   ) True))
+    (let* (
+        ($trace (currentAppraisalContributions))
+        ($errors (appraisalTraceRejection $trace))
+        ($_ (clearSpace &appraisal-space))
+        ($_ (change-state! &last-appraisal-contributions (if (== $errors ()) $trace ())))
+        ($_ (change-state! &appraisal-status
+            (if (== $errors ()) AppraisalReady (car-atom $errors))))
+        ($_ (map-atom (novelty risk importance uncertainty opportunity progress) $dim
+            (let $value (if (== $errors ()) (appraisalDimensionFromTrace $dim $trace) 0.0)
+                (add-atom &appraisal-space (appraisal $dim $value)))))
+    ) (== $errors ())))

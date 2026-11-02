@@ -140,6 +140,64 @@
 !(remove-atom &self (SignalReduction execution-request maximum))
 !(add-atom &self (SignalReduction execution-request maximum))
 
+
+;; Example: floating-point appraisal comparisons tolerate arithmetic rounding.
+(= (r23Near $actual $expected)
+   (and (< (- $actual $expected) 0.000000001)
+        (> (- $actual $expected) -0.000000001)))
+
+;; R2 / 2.3: real producer facts bypass compatibility intensities in appraisal.
+!(refreshSignals (get-state &r22-classified))
+!(computeAllDimensions)
+!(bind! &r23-original-stimulus (new-state (appraisalToStimulus)))
+!(bind! &r23-original-trace (new-state (lastAppraisalContributions)))
+!(test (r23Near (computeDimension risk) 0.16) True)
+!(test (computeDimension opportunity) 0.81)
+!(test (appraisalStatus) AppraisalReady)
+!(test (size-atom (filter-atom (lastAppraisalContributions) $row
+   (== (index-atom $row 1) (kind execution-request)))) 3)
+!(test (let $row (car-atom (filter-atom (lastAppraisalContributions) $row
+   (and (== (index-atom $row 1) (kind user-waiting))
+        (== (index-atom $row 2) (dimension importance)))))
+   (index-atom $row 5)) (quote (contribution 0.18)))
+!(test (let $row (car-atom (filter-atom (lastAppraisalContributions) $row
+   (== (index-atom $row 1) (kind danger))))
+   (index-atom $row 6)) (let $refs (factualSignalField provenance (r22ClassifierFact danger)) (provenance $refs)))
+
+!(remove-atom &self (SignalStrength user-waiting 0.30))
+!(add-atom &self (SignalStrength user-waiting 0.99))
+!(test (computeDimension importance) (extractAppraisalDim importance))
+!(remove-atom &self (SignalStrength user-waiting 0.99))
+!(add-atom &self (SignalStrength user-waiting 0.30))
+
+;; Editing the sole effective coefficient changes appraisal, leaving facts intact.
+!(remove-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator 0.18))
+!(add-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator -0.5))
+!(test (getFactualSignals) (get-state &r22-classifier-facts))
+!(test (lastAppraisalContributions) (get-state &r23-original-trace))
+!(computeAllDimensions)
+!(test (!= (appraisalToStimulus) (get-state &r23-original-stimulus)) True)
+!(test (py-call (lib_llm_ext.call_count "semantics")) 1)
+!(remove-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator -0.5))
+!(add-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator 0.18))
+!(computeAllDimensions)
+!(test (appraisalToStimulus) (get-state &r23-original-stimulus))
+
+;; A duplicate or incompatible transform rejects the complete appraisal and selection.
+!(add-atom &self (SignalAppraisalRule danger risk IdentityRatio 0.7))
+!(test (computeAllDimensions) False)
+!(test (appraisalStatus) (AppraisalRejected InvalidAppraisalRule))
+!(test (signalCycleReady) False)
+!(test (lastAppraisalContributions) ())
+!(test (appraisalToStimulus) (stimulus (0.0 0.0 0.0 0.0 0.0 0.0)))
+!(remove-atom &self (SignalAppraisalRule danger risk IdentityRatio 0.7))
+!(add-atom &self (SignalAppraisalRule failure-streak risk BooleanIndicator 0.1))
+!(test (computeAllDimensions) False)
+!(test (appraisalStatus) (AppraisalRejected InvalidAppraisalTransform))
+!(remove-atom &self (SignalAppraisalRule failure-streak risk BooleanIndicator 0.1))
+!(computeAllDimensions)
+!(test (signalCycleReady) True)
+
 ;; Provider expressions are inert data; an invalid response rejects the cycle.
 !(change-state! &prevmsg "Malformed classification")
 !(py-call (lib_llm_ext.semantic_response (frameStateRuntimeSummary "Malformed classification" 1200)
@@ -164,3 +222,93 @@
       (hostCheckedClassifications $next (ClassifierResults $ref 0.9
          ((signal execution-request 0.8) (signal danger 0.2))))))
    (FactualSignalRejected MismatchedClassifierObservation))
+
+
+;; Pure arithmetic regressions use explicit fixture references, without asserting
+;; host authentication. Validate all migrated boolean contributions and ratios.
+(= (r23FixtureFact $kind $value)
+   (makeFactualSignal $kind $value ((SessionObservationRef "appraisal-fixture" 0))))
+
+(= (r23FixtureDimension $kind $value $dim)
+   (appraisalDimensionFromTrace $dim (appraiseFactualSignal (r23FixtureFact $kind $value))))
+
+!(test (r23FixtureDimension failure (quote (BooleanFact True)) risk) 0.56)
+!(test (r23FixtureDimension failure (quote (BooleanFact False)) risk) 0.0)
+!(test (r23FixtureDimension repeated-failure (quote (BooleanFact True)) risk) 0.7225)
+!(test (r23FixtureDimension message-differs-from-task (quote (BooleanFact True)) novelty) 0.27)
+!(test (r23FixtureDimension new-input-without-outcome (quote (BooleanFact True)) uncertainty) 0.36)
+!(test (r23FixtureDimension progress-made (quote (BooleanFact True)) opportunity) 0.12)
+!(test (r23FixtureDimension stalled-progress (quote (BooleanFact True)) importance) 0.175)
+!(test (r23FixtureDimension user-waiting (quote (BooleanFact True)) importance) 0.18)
+!(test (r23FixtureDimension verified-success (quote (BooleanFact True)) progress) 0.7)
+!(test (r23FixtureDimension danger (quote (RatioFact 0.5 classifier-score)) risk) 0.4)
+!(test (r23FixtureDimension user-angry (quote (RatioFact 0.5 classifier-score)) risk) 0.3)
+!(test (r23FixtureDimension execution-request (quote (RatioFact 0.5 classifier-score)) opportunity) 0.45)
+!(test (appraiseFactualSignal (r23FixtureFact failure-streak (quote (QuantityFact 5 count)))) ())
+!(test (appraiseFactualSignal (r23FixtureFact frame-blocked (quote (BooleanFact True)))) ())
+!(test (appraiseFactualSignal (quote (FactualSignal (kind failure) (value (BooleanFact 1))
+   (provenance ((SessionObservationRef "appraisal-fixture" 0))))))
+   ((AppraisalRejected InvalidFactualSignal)))
+
+;; Sum signed contributions before clamping. Failure + success = 0.46 progress;
+;; failure + repeated failure exceed the risk ceiling while both progress terms < 0.
+!(clearSignals)
+!(let $fact (r23FixtureFact failure (quote (BooleanFact True))) (add-atom &signal-space $fact))
+!(let $fact (r23FixtureFact verified-success (quote (BooleanFact True))) (add-atom &signal-space $fact))
+!(test (r23Near (computeDimension progress) 0.46) True)
+!(clearSignals)
+!(let $fact (r23FixtureFact failure (quote (BooleanFact True))) (add-atom &signal-space $fact))
+!(let $fact (r23FixtureFact repeated-failure (quote (BooleanFact True))) (add-atom &signal-space $fact))
+!(test (computeDimension risk) 1.0)
+!(test (computeDimension progress) 0.0)
+!(computeAllDimensions)
+!(bind! &r23-retained (new-state (lastAppraisalContributions)))
+!(test (let $row (car-atom (filter-atom (lastAppraisalContributions) $row
+   (and (== (index-atom $row 1) (kind failure))
+        (== (index-atom $row 2) (dimension progress)))))
+   (index-atom $row 5)) (quote (contribution -0.24)))
+!(clearSignals)
+!(test (lastAppraisalContributions) (get-state &r23-retained))
+
+;; Explicit fixture compatibility preserves the old strength convention.
+!(addSignal failure 0.8)
+!(test (computeDimension risk) 0.56)
+!(clearSignals)
+!(resetSignalObservations "appraisal-reset")
+!(test (lastAppraisalContributions) ())
+!(test (appraisalStatus) AppraisalReady)
+
+
+;; Frozen pre-migration dimension vectors cover every registry coefficient.
+;; This checks both renamed heuristics and every signed contribution before clamp.
+(R23Expected failure (0 0.56 0.4 0.32 0 -0.24))
+(R23Expected repeated-failure (0 0.7225 0.595 0.51 0 -0.425))
+(R23Expected new-input-without-outcome (0.18 0 0.24 0.36 0 0))
+(R23Expected verified-success (0 -0.3 0 0 0.5 0.7))
+(R23Expected progress-made (0 0 0 0 0.12 0.18))
+(R23Expected stalled-progress (0 0 0.175 0 0 -0.07))
+(R23Expected user-waiting (0 0 0.18 0 0 0))
+(R23Expected message-differs-from-task (0.27 0 0 0.18 0 0))
+(R23Expected user-angry (0 0.6 0.5 0 0 0))
+(R23Expected danger (0 0.8 0.7 0.4 0 0))
+(R23Expected execution-request (0 0 0.7 0 0.9 0.6))
+
+;; Example: compare all six raw sums against the old strength × weight table.
+(= (r23MigrationMatches $kind $expected)
+   (let* (
+      ($value (case (factualSignalSpec $kind) (
+         ((FactualSignalSpec $_ Boolean $_ $_) (BooleanFact True))
+         ($_ (RatioFact 1 classifier-score)))))
+      ($trace (appraiseFactualSignal (r23FixtureFact $kind $value)))
+      ($dimensions (novelty risk importance uncertainty opportunity progress))
+      ($invalid (filter-atom (0 1 2 3 4 5) $index
+         (let* (
+            ($dim (index-atom $dimensions $index))
+            ($rows (filter-atom $trace $row (== (index-atom $row 2) (dimension $dim))))
+            ($values (map-atom $rows $row (index-atom (index-atom $row 5) 1)))
+         ) (not (r23Near (sumAppraisalValues $values 0) (index-atom $expected $index))))))
+   ) (== $invalid ())))
+
+!(test (collapse (match &self (R23Expected $kind $vector)
+   (r23MigrationMatches $kind $vector)))
+   (True True True True True True True True True True True))

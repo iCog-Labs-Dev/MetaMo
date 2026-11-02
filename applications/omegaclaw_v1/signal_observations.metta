@@ -16,6 +16,8 @@
         (change-state! &signal-recovery-reference None)
         (change-state! &signal-classifications ())
         (change-state! &last-factual-signals ())
+        (change-state! &last-appraisal-contributions ())
+        (change-state! &appraisal-status AppraisalReady)
         (change-state! &signal-last-legacy-reference None)
         (change-state! &signal-refresh-status LegacySignalCycle)
         True))
@@ -102,7 +104,11 @@
         ($diagnosticRoots (collapse (let* (
             ($fact (superpose $facts)) ($refs (factualSignalField provenance $fact)))
             (superpose $refs))))
-        ($roots (union-atom $viewRoots $diagnosticRoots))
+        ($trace (lastAppraisalContributions))
+        ($traceRoots (collapse (let* (
+            ($row (superpose $trace)) ($refs (index-atom (index-atom $row 6) 1)))
+            (superpose $refs))))
+        ($roots (union-atom $viewRoots (union-atom $diagnosticRoots $traceRoots)))
         ($pins (cons-atom (get-state &signal-feedback-reference)
             (cons-atom (get-state &signal-recovery-reference) $roots)))
         ($kept (filter-atom $entries $entry

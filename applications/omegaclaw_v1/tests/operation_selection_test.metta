@@ -430,6 +430,11 @@
    (if (== $remaining 0) True
       (progn (prepareTaskStateForMetaMo) (r22PublishMany (- $remaining 1)))))
 !(refreshSignals (get-state &r22-current))
+!(computeAllDimensions)
+!(bind! &r23-host-trace (new-state (lastAppraisalContributions)))
+;; A newer factual diagnostic must not release the still-retained appraisal source.
+!(bind! &r23-new-facts (new-state (prepareTaskStateForMetaMo)))
+!(refreshSignals (get-state &r23-new-facts))
 !(bind! &r22-unreviewed (new-state (prepareTaskStateForMetaMo)))
 !(r22PublishMany 80)
 !(test (resolveSignalObservation (r22SnapshotReference (get-state &r22-unreviewed)))
@@ -438,6 +443,11 @@
    ((SourceObservation $_ $_ $_ $_) True) ($_ False))) True)
 !(test (let (SignalObservationState $_ $_ $entries) (get-state &signal-observation-state)
    (<= (size-atom $entries) 12)) True)
+
+!(test (lastAppraisalContributions) (get-state &r23-host-trace))
+!(test (!= (lastAppraisalContributions) ()) True)
+!(test (case (resolveSignalObservation (r22SnapshotReference (get-state &r23-new-facts))) (
+   ((SourceObservation $_ $_ $_ $_) True) ($_ False))) True)
 
 ;; The spec's blocked-frame example comes from actual captured native status.
 !(bind! &r22-native-status (new-state (get-state &cfv2-current-status)))
