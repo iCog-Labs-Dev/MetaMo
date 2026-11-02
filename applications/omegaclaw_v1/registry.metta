@@ -21,9 +21,6 @@
 (FactualSignalRange user-angry 0 1)
 (FactualSignalRange execution-request 0 1)
 
-;; Compatibility readers retain old names until their 2.3/2.4 conversion.
-(FactualSignalLegacyKind task-drift message-differs-from-task)
-(FactualSignalLegacyKind ambiguity new-input-without-outcome)
 
 ;; Semantic and confirmation classifiers support one request estimate per input.
 (SignalReduction execution-request maximum)
@@ -43,16 +40,15 @@
 (ConstitutionalMode Sleep)
 (ConstitutionalModeDefault Engaged)
 
-;; Trigger rows read the existing (signal kind strength) facts. Entry and exit
-;; thresholds are inclusive; zero preserves the previous presence semantics.
-;; Exit thresholds apply while holding the rule's constitutional target mode.
-(ModeSignalTrigger threat danger 0.0 0.0)
-(ModeSignalTrigger threat user-angry 0.0 0.0)
-(ModeSignalTrigger recovery failure 0.0 0.0)
-(ModeSignalTrigger recovery repeated-failure 0.0 0.0)
-(ModeSignalTrigger recovery stalled-progress 0.0 0.0)
-(ModeSignalTrigger wake user-waiting 0.0 0.0)
-(ModeSignalTrigger wake execution-request 0.0 0.0)
+;; Boolean triggers read truth; ratio thresholds use classifier-score units.
+;; Entry/exit comparisons are inclusive and independent of appraisal weights.
+(ModeRatioTrigger threat danger classifier-score 0.0 0.0)
+(ModeRatioTrigger threat user-angry classifier-score 0.0 0.0)
+(ModeFactTrigger recovery failure IsTrue)
+(ModeFactTrigger recovery repeated-failure IsTrue)
+(ModeFactTrigger recovery stalled-progress IsTrue)
+(ModeFactTrigger wake user-waiting IsTrue)
+(ModeRatioTrigger wake execution-request classifier-score 0.0 0.0)
 (ModeContextTrigger wake frame-present)
 (ModeContextTrigger sleep frame-absent)
 
@@ -151,88 +147,8 @@
 
 
 ;; SIGNAL EFFECTS
-;; (SignalEffect <signal-kind> <target-type> <target-name> <scale>)
-;;   target-type: motive | modulator
-;;   scale > 0 → raises target; scale < 0 → lowers target
-
-;; ambiguity
-(SignalEffect ambiguity        motive    clarity         0.40)
-(SignalEffect ambiguity        modulator caution         0.15)
-(SignalEffect ambiguity        modulator context_depth   0.20)
-
-;; failure
-(SignalEffect failure          motive    reliability     0.35)
-(SignalEffect failure          motive    adaptivity      0.25)
-(SignalEffect failure          modulator caution         0.20)
-(SignalEffect failure          modulator urgency         0.15)
-
-;; repeated-failure
-(SignalEffect repeated-failure motive    adaptivity      0.40)
-(SignalEffect repeated-failure motive    reliability     0.15)
-(SignalEffect repeated-failure modulator persistence    -0.30)
-(SignalEffect repeated-failure modulator exploration_bias 0.30)
-
-;; stalled-progress
-(SignalEffect stalled-progress motive    progress        0.30)
-(SignalEffect stalled-progress motive    adaptivity      0.20)
-(SignalEffect stalled-progress modulator urgency         0.15)
-
-;; verified-success
-(SignalEffect verified-success motive    reliability    -0.30)
-(SignalEffect verified-success motive    clarity        -0.20)
-(SignalEffect verified-success modulator caution        -0.15)
-
-;; progress-made
-(SignalEffect progress-made    motive    progress       -0.25)
-(SignalEffect progress-made    modulator persistence     0.10)
-
-;; task-drift
-(SignalEffect task-drift       motive    coherence       0.35)
-(SignalEffect task-drift       modulator context_depth   0.10)
-(SignalEffect task-drift       modulator human_deference 0.10)
-
-;; user-waiting
-(SignalEffect user-waiting     motive    responsiveness  0.35)
-(SignalEffect user-waiting     modulator urgency         0.15)
-(SignalEffect user-waiting     modulator human_deference 0.10)
-
-;; user-angry
-(SignalEffect user-angry       motive    reliability     0.20)
-(SignalEffect user-angry       modulator human_deference 0.15)
-(SignalEffect user-angry       modulator caution         0.20)
-(SignalEffect user-angry       modulator urgency         0.10)
-
-;; danger
-(SignalEffect danger            modulator securing        0.40)
-(SignalEffect danger            modulator caution         0.25)
-(SignalEffect danger            modulator threshold       0.30)
-(SignalEffect danger            modulator persistence    -0.25)
-(SignalEffect danger            modulator arousal        -0.15)
-
-
-;; SIGNAL MODE OVERRIDES
-;; (SignalMode <signal-kind> <mode>)
-(SignalMode ambiguity        orient)
-(SignalMode failure          verify)
-(SignalMode repeated-failure recover)
-(SignalMode verified-success execute)
-(SignalMode task-drift       orient)
-(SignalMode user-angry       orient)
-(SignalMode danger           verify)
-
-
-;; Legacy mode/condition projection and manual fixtures only (pending 2.4).
-;; Production factual appraisal does not use these strengths.
-;; (SignalStrength <signal-kind> <default-strength>)
-(SignalStrength repeated-failure 0.85)
-(SignalStrength failure          0.80)
-(SignalStrength task-drift       0.45)
-(SignalStrength ambiguity        0.60)
-(SignalStrength stalled-progress 0.35)
-(SignalStrength progress-made    0.40)
-(SignalStrength user-waiting     0.30)
-(SignalStrength execution-request 0.85)
-
+;; Retired unused SignalEffect/SignalMode and compatibility SignalStrength rows.
+;; Appraisal evaluation is declared solely through SignalAppraisalRule below.
 
 ;; DIRECTIVE GUIDANCE TEXT
 ;; (DirectiveText <directive> <guidance-string>)
