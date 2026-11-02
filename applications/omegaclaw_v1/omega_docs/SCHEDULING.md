@@ -43,13 +43,13 @@ utility remains a score-only path; v1 runtime decisions use a bound frame bundle
 ## Candidate mapping
 
 The registry declares each candidate's base class and the fixed class ranks.
-Scheduling reads existing signal facts; it maintains no additional signal or
+Scheduling reads typed factual signal records; it maintains no additional signal or
 numeric salience state.
 
 | Class | Existing candidate mapping |
 | --- | --- |
-| Threat-remediation | `verify-frame-state`, `defer`, and `ask-clarification` are promoted here when `danger` or `user-angry` is present. |
-| Recovery | `repair-failure`; also `self-improve` when `failure`, `repeated-failure`, or `stalled-progress` is present. |
+| Threat-remediation | `verify-frame-state`, `defer`, and `ask-clarification` are promoted here when `danger` or `user-angry` meets its declared ratio entry threshold. |
+| Recovery | `repair-failure`; also `self-improve` when `failure`, `repeated-failure`, or `stalled-progress` is True. |
 | Interactive | `respond`, `ask-clarification` unless promoted for threat remediation. |
 | Orienting | `retrieve-memory`, `search-knowledge`, `recall-goals`, and `verify-frame-state` unless promoted. |
 | Engaged | `execute-skill`, `learn`, `background-work`, `invent-goal`, `plan-goal`. |
@@ -57,8 +57,10 @@ numeric salience state.
 | Sleep | `defer` without a threat trigger, and `none`. These are current fallback candidates; this change does not implement a maintenance sweep. |
 
 Signal triggers and promotion mappings now live in registry data shared with the
-mode layer. Scheduling uses their entry thresholds; the default threshold of zero
-preserves presence semantics for nonnegative signals. Removing a trigger removes
+mode layer. Scheduling tests boolean truth and uses ratio entry thresholds in
+their declared units. False and absent observations do not promote work. Production
+omits zero classifier scores from signal facts; appraisal weights cannot change
+trigger matching. Removing a trigger removes
 its promotion on the next selection. See [MODE_TRANSITIONS.md](MODE_TRANSITIONS.md)
 for thresholds, wake, recovery, and constitutional transition timing. A
 constitutional Threat mode alone does not promote every

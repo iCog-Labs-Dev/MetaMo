@@ -1,185 +1,10 @@
 ;; Signal extraction and signal-to-appraisal conversion.
 ;; R2 / 2.3: production facts are appraised directly with explicit registry rules.
-;; The legacy read projection remains for mode/trigger migration in 2.4.
-!(import_prolog_function string_length)
-
-;; Example: (fsContains (True False) True) -> True.
-(= (fsContains $items $value)
-    (!= (filter-atom $items $item (== $item $value)) ())
-)
-
-;; Example: (fsNumberIn 0.9 0 1) -> True; strings/booleans/nonfinite reject.
-(= (fsNumberIn $value $lower $upper)
-    (if (== (get-type $value) Number)
-        (== (catch (and (>= $value $lower) (<= $value $upper))) True)
-        False
-    )
-)
-
-;; Example: (fsCount 2) -> True; a fractional count is invalid.
-(= (fsCount $value)
-    (if (fsNumberIn $value 0 9007199254740991)
-        (== (floor-math $value) $value)
-        False
-    )
-)
-
-;; Example: (fsSession "session-A") -> True. Host ownership is checked in 2.2.
-(= (fsSession $session)
-    (if (== (get-type $session) String)
-        (and (> (string_length $session) 0) (<= (string_length $session) 256))
-        False
-    )
-)
-
-;; Example: (fsReference (quote (SessionObservationRef "session-A" 17))) -> True.
-(= (fsReference $reference)
-    (case $reference (
-        ((SessionObservationRef $session $sequence)
-            (and (fsSession $session) (fsCount $sequence)))
-        ($_ False)
-    ))
-)
-
-;; Example: duplicate or mixed-session references cannot form one provenance set.
-(= (fsReferencesAgree $references)
-    (let* (
-        ($session (index-atom (index-atom $references 0) 1))
-        ($invalid (filter-atom $references $ref
-            (or (!= (index-atom $ref 1) $session)
-                (!= (size-atom (filter-atom $references $other (== $other $ref))) 1))))
-    )
-        (== $invalid ())
-    )
-)
-
-;; Example: a signal cites 1..16 unique references, all from one session.
-(= (fsReferenceList $references)
-    (if (!= (get-metatype $references) Expression)
-        False
-        (let $count (size-atom $references)
-            (if (and (> $count 0) (<= $count 16))
-                (if (== (filter-atom $references $ref (fsReference $ref)) $references)
-                    (fsReferencesAgree $references)
-                    False
-                )
-                False
-            )
-        )
-    )
-)
-
-;; Example: numeric ranges must be unique; boolean kinds have no numeric range.
-(= (fsRangeValid $kind $type)
-    (let $ranges (collapse (match &self (FactualSignalRange $kind $low $high) ($low $high)))
-        (case ($type $ranges) (
-            ((Boolean ()) True)
-            ((Ratio ((0 1))) True)
-            ((Quantity (($low $high)))
-                (if (and (fsCount $low) (fsCount $high)) (<= $low $high) False))
-            ($_ False)
-        ))
-    )
-)
-
-;; Example: estimate is reserved for classifier ratios in the initial inventory.
-(= (fsSpecValid $spec)
-    (let (FactualSignalSpec $kind $type $unit $source) $spec
-        (and (== (get-metatype $kind) Symbol)
-            (and (fsContains
-                    ((Boolean None observation) (Quantity count observation)
-                     (Ratio classifier-score estimate)) ($type $unit $source))
-                (fsRangeValid $kind $type)))
-    )
-)
-
-;; Example: (factualSignalSpec danger) returns the unique declared classifier domain.
-(= (factualSignalSpec $kind)
-    (let $specs (collapse (match &self
-            (FactualSignalSpec $kind $type $unit $source)
-            (FactualSignalSpec $kind $type $unit $source)))
-        (case $specs (
-            (() (FactualSignalRejected UnknownSignalKind))
-            (($spec) (if (fsSpecValid $spec) $spec (FactualSignalRejected InvalidSignalSpec)))
-            ($_ (FactualSignalRejected InvalidSignalSpec))
-        ))
-    )
-)
-
-;; Example: numeric facts use the declared range and exact unit; no coercions.
-(= (fsValueValid $kind $type $unit $value)
-    (case ($type $value) (
-        ((Boolean (BooleanFact $boolean)) (fsContains (True False) $boolean))
-        ((Ratio (RatioFact $number $actual))
-            (and (== $actual $unit) (fsNumberIn $number 0 1)))
-        ((Quantity (QuantityFact $number $actual))
-            (let ($low $high) (match &self (FactualSignalRange $kind $low $high) ($low $high))
-                (and (== $actual $unit)
-                    (and (fsCount $number) (fsNumberIn $number $low $high)))
-            ))
-        ($_ False)
-    ))
-)
-
-;; Example: a well-formed reference is not proof that an observation exists.
-(= (fsValidateFields $kind $value $references)
-    (case (factualSignalSpec $kind) (
-        ((FactualSignalSpec $kind $type $unit $source)
-            (case ((fsValueValid $kind $type $unit $value) (fsReferenceList $references)) (
-                ((False $_) (FactualSignalRejected InvalidSignalValue))
-                ((True False) (FactualSignalRejected InvalidSignalProvenance))
-                ((True True) (FactualSignalValid $type $unit $source))
-            )))
-        ($rejection $rejection)
-    ))
-)
-
-;; Example: validateFactualSignal consumes quoted data with exact ordered fields.
-;; It neither inserts into &signal-space nor resolves/authenticates provenance.
-(= (validateFactualSignal $record)
-    (if (not (is-ground $record))
-        (FactualSignalRejected NonGroundSignal)
-        (case $record (
-            ((FactualSignal (kind $kind) (value $value) (provenance $references))
-                (fsValidateFields $kind $value $references))
-            ($_ (FactualSignalRejected InvalidSignalRecord))
-        ))
-    )
-)
-
-;; Example: (makeFactualSignal failure (quote (BooleanFact False)) refs).
-;; Explicit False remains a record, while malformed data returns a rejection.
-(= (makeFactualSignal $kind $value $references)
-    (let* (
-        ($record (FactualSignal (kind $kind) (value $value) (provenance $references)))
-        ($validation (validateFactualSignal $record))
-    )
-        (case $validation (
-            ((FactualSignalValid $_ $_ $_) $record)
-            ($_ $validation)
-        ))
-    )
-)
-
-;; Example: field value returns (BooleanFact False), distinct from no record ().
-;; Rejected records never expose partially validated fields.
-(= (factualSignalField $field $record)
-    (case (validateFactualSignal $record) (
-        ((FactualSignalValid $_ $_ $_)
-            (let (FactualSignal (kind $kind) (value $value) (provenance $refs)) $record
-                (case $field (
-                    (kind $kind)
-                    (value $value)
-                    (provenance $refs)
-                    ($_ (FactualSignalRejected UnknownSignalField))
-                ))
-            ))
-        ($rejection $rejection)
-    ))
-)
-
+;; Mode, scheduling, lifecycle and appraisal consumers all read the same typed facts.
 !(bind! &signal-space    (new-space))
 !(bind! &appraisal-space (new-space))
+;; Shared retained cycle diagnostics are rooted by the session source store.
+!(bind! &last-mode-observation (new-state NoModeObservation))
 !(bind! &last-appraisal-contributions (new-state ()))
 !(bind! &appraisal-status (new-state AppraisalReady))
 !(bind! &failure-streak  (new-state 0))
@@ -213,48 +38,21 @@
 ;; Example: clearing a cycle does not erase its retained factual diagnostics.
 (= (clearSignals) (clearSpace &signal-space))
 
-;; Temporary 2.4 adapter: old names/weights exist only in this read view.
-;; Example: message-differs-from-task still appears as task-drift to old readers.
-(= (legacySignalKind $kind)
-    (case (collapse (match &self (FactualSignalLegacyKind $old $kind) $old)) (
-        (() $kind)
-        (($only) $only)
-        ($_ InvalidSignalKind))))
+;; Example: explicit False remains in the public typed signal snapshot.
+(= (getSignals) (getFactualSignals))
 
-;; Example: a false fact contributes no legacy presence; counts have no old reader.
-(= (legacySignalView $record)
-    (case $record (
-        ((signal $_ $_) $record)
-        ((FactualSignal (kind $kind) (value (BooleanFact True)) $_)
-            (let $old (legacySignalKind $kind)
-                (case (collapse (match &self (SignalStrength $old $weight) $weight)) (
-                    (($weight) (signal $old $weight))
-                    ($_ (empty))))))
-        ((FactualSignal (kind $kind) (value (RatioFact $score classifier-score)) $_)
-            (if (> $score 0) (signal $kind $score) (empty)))
-        ($_ (empty)))))
+;; Example: (signalFact failure) returns its typed record or explicit absence.
+(= (signalFact $kind) (signalFactIn (getSignals) $kind))
+(= (signalTrue $kind) (signalTrueIn (getSignals) $kind))
+(= (signalRatioAtLeast $kind $threshold)
+    (signalRatioAtLeastIn (getSignals) $kind classifier-score $threshold))
+(= (signalQuantityAtLeast $kind $unit $threshold)
+    (signalQuantityAtLeastIn (getSignals) $kind $unit $threshold))
+(= (signalProvenance $kind) (signalProvenanceIn (getSignals) $kind))
 
-;; Example: modes consume a projection; appraisal reads the typed records directly.
-(= (getSignals)
-    (collapse (let $record (match &signal-space $entry $entry)
-        (legacySignalView $record))))
-
-;; Legacy fixture API only; refreshSignals never calls it.
-(= (addSignal $kind $strength)
-    (progn
-        (collapse (let $entry (match &signal-space $entry $entry)
-            (case $entry (
-                ((signal $kind $_) (remove-atom &signal-space $entry))
-                ((FactualSignal (kind $actual) $_ $_)
-                    (if (== (legacySignalKind $actual) $kind)
-                        (remove-atom &signal-space $entry) (empty)))
-                ($_ (empty))))))
-        (add-atom &signal-space (signal $kind $strength))))
-
-(= (hasSignal $kind)
-    (!= (filter-atom (getSignals) $row (== (index-atom $row 1) $kind)) ()))
-(= (hasErrors) (or (hasSignal failure) (hasSignal repeated-failure)))
-(= (hasResults) (or (hasSignal progress-made) (hasSignal verified-success)))
+;; Example: False failure and progress records do not imply errors or results.
+(= (hasErrors) (or (signalTrue failure) (signalTrue repeated-failure)))
+(= (hasResults) (or (signalTrue progress-made) (signalTrue verified-success)))
 
 ;; Example: a repeat threshold counts actual consumed failures, not importance.
 (= (signalThreshold $key $default)
@@ -362,7 +160,8 @@
                 ($semantic (if (== $intent ()) 0 (index-atom (car-atom $intent) 2)))
                 ($confirmed (if (> $confirmation 0.75) $confirmation 0))
                 ($score (signalExecutionRequestScore $semantic $confirmed))
-                ($others (filter-atom $rows $row (!= (index-atom $row 1) execution-request)))
+                ($others (filter-atom $rows $row
+                    (and (!= (index-atom $row 1) execution-request) (> (index-atom $row 2) 0))))
                 ($facts (map-atom $others $row
                     (let (signal $kind $value) $row
                         (FactualSignal (kind $kind) (value (RatioFact $value classifier-score))
@@ -467,46 +266,11 @@
                 (map-atom $rules $rule (appraiseFactualRule $kind $value $refs $rule))))
         ($_ ((AppraisalRejected InvalidFactualSignal))))))
 
-;; Example: manual legacy fixtures normalize by their old baseline, then use
-;; the same effective rule. Production never publishes these strength records.
-;; Legacy diagnostics explicitly carry no observation provenance.
-(= (appraiseLegacySignal $old $strength)
-    (let* (
-        ($kind (case (collapse (match &self (FactualSignalLegacyKind $old $new) $new)) (
-            (() $old) (($only) $only) ($_ InvalidSignalKind))))
-        ($baseline (case (factualSignalSpec $kind) (
-            ((FactualSignalSpec $_ Boolean $_ $_)
-                (case (collapse (match &self (SignalStrength $old $s) $s)) (
-                    (() 1) (($only) $only) ($_ 0))))
-            ($_ 1))))
-    )
-        (if (and (fsNumberIn $strength 0 1) (fsNumberIn $baseline 0.000001 1))
-            (let* (
-                ($value (case (factualSignalSpec $kind) (
-                    ((FactualSignalSpec $_ Boolean $_ $_) (BooleanFact True))
-                    ($_ (RatioFact $strength classifier-score)))))
-                ($rules (collapse (match &self (SignalAppraisalRule $kind $d $t $c)
-                    (SignalAppraisalRule $kind $d $t $c))))
-                ($facts (map-atom $rules $rule (appraiseFactualRule $kind $value () $rule)))
-            )
-                (map-atom $facts $row
-                    (case $row (
-                        ((AppraisalContribution $k $d $_ $r (contribution $c) $_)
-                            (let $contribution (case (factualSignalSpec $kind) (
-                                    ((FactualSignalSpec $_ Boolean $_ $_) (* $c (/ $strength $baseline)))
-                                    ($_ $c)))
-                                (LegacyAppraisalContribution $k $d (value (LegacySignalStrength $strength))
-                                    $r (contribution $contribution) (provenance ()))))
-                        ($_ $row)))))
-            ((AppraisalRejected InvalidLegacySignal)))))
-
-;; Example: flatten a bounded cycle into per-rule contributions, preserving False.
+;; Example: each typed cycle record produces its declared contributions once.
 (= (currentAppraisalContributions)
     (collapse (let* (
         ($entry (match &signal-space $record $record))
-        ($rows (case $entry (
-            ((signal $kind $strength) (appraiseLegacySignal $kind $strength))
-            ($_ (appraiseFactualSignal $entry)))))
+        ($rows (appraiseFactualSignal $entry))
     ) (superpose $rows))))
 
 ;; Example: diagnostics survive transient signal cleanup until the next appraisal.

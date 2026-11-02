@@ -19,6 +19,8 @@
 !(import! &self (library MetaMo core/registry))
 !(import! &self (library MetaMo applications/omegaclaw_v1/utils))
 !(import! &self (library MetaMo applications/omegaclaw_v1/registry))
+;; Pure typed readers precede triggers; mode definitions precede policy gates.
+!(import! &self (library MetaMo applications/omegaclaw_v1/factual_signals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/adapter))
 !(import! &self (library MetaMo applications/omegaclaw_v1/mode_layer))
 ;; Signal extraction calls bundle accessors; compile those before its definitions.

@@ -1,8 +1,8 @@
 # Registry-driven mode transitions
 
 Constitutional mode selection and scheduling promotion read the same trigger
-definitions in `registry.metta`. They consume the existing `(signal kind strength)`
-facts and, for mode selection, the bounded snapshot's current-frame presence.
+definitions in `registry.metta`. They consume typed `FactualSignal`
+records with values and session provenance and, for mode selection, the bounded snapshot's current-frame presence.
 No trigger evaluator creates signals, calls a provider, or mutates host frames.
 
 Constitutional modes remain **Engaged, Threat, Rumination, Sleep**. Recovery,
@@ -13,7 +13,8 @@ modes remain host-owned. A mode transition cannot relax policy admission.
 
 | Record | Meaning |
 | --- | --- |
-| `(ModeSignalTrigger group kind enter exit)` | The named existing signal activates this group when its strength is at least the applicable threshold. Entries within a group are alternatives: any match suffices. |
+| `(ModeFactTrigger group kind IsTrue)` | The boolean fact must be True; explicit False and absence do not match. |
+| `(ModeRatioTrigger group kind unit enter exit)` | A valid ratio activates the group when its score meets the inclusive threshold in the declared unit. Entries within a group are alternatives. |
 | `(ModeContextTrigger group condition)` | Activate the group from `frame-present` or `frame-absent` in the supplied snapshot. This is a computed condition, not a new signal. |
 | `(ModeTransitionRule group mode priority)` | An active group proposes a constitutional mode. The highest numeric transition priority wins. |
 | `(ConstitutionalModeDefault mode)` | Fallback when no transition rule matches. Also used by motivational initialization. |
@@ -41,9 +42,10 @@ ambiguous required rows cannot produce a normal transition update.
 | `wake` | `user-waiting`, `execution-request`, or a current frame | Engaged | 20 |
 | `sleep` | No current frame | Sleep | 10 |
 
-All default signal entry/exit thresholds are zero. This retains presence semantics
-for the existing nonnegative signal strengths: an absent signal does not match,
-while a present zero-strength signal does. Each mode defaults to `(1 0 0)` timing:
+Default ratio entry/exit thresholds are zero; boolean rules test truth. Missing
+ratios never match. Production omits zero classifier estimates from factual rows
+while retaining them in their source; an explicitly supplied valid zero ratio
+meets a zero threshold in the pure reader. Each mode defaults to `(1 0 0)` timing:
 one observation, no minimum hold, and no cooldown.
 
 - **Wake:** from Sleep, a current frame or a qualifying wake signal selects
@@ -79,13 +81,13 @@ stronger evidence than remaining in a mode.
 For example, replace the default danger trigger with:
 
 ```metta
-(ModeSignalTrigger threat danger 0.8 0.4)
+(ModeRatioTrigger threat danger classifier-score 0.8 0.4)
 (ModeTransitionParameters Threat 2 2 2)
 ```
 
 With that configuration:
 
-1. Danger strength at least `0.8` must win selection on two consecutive refreshes
+1. Danger score at least `0.8` must win selection on two consecutive refreshes
    to enter Threat. Clearing the evidence or changing the winning target resets
    its confirmation count.
 2. Once in Threat, danger at least `0.4` still supports staying there.
@@ -234,14 +236,17 @@ Each rule, including losing and inactive rules, has:
 ```metta
 (ModeRuleEvidence (ModeTransitionRule group mode priority) active
   (TriggerEvidence
-    ((SignalTriggerEvidence kind phase threshold observations matched) ...)
+    ((FactTriggerEvidence (kind kind) (predicate IsTrue)
+       (observed value) (provenance refs) (matched matched)) ...
+     (RatioTriggerEvidence (kind kind) (predicate (AtLeast unit threshold))
+       (phase phase) (observed value) (provenance refs) (matched matched)) ...)
     ((ContextTriggerEvidence condition matched) ...)))
 ```
 
 `phase` is `Exit` for a rule targeting the before-mode and `Enter` otherwise.
-`threshold` is the applicable inclusive bound; `observations` contains that
-kind's actual `(signal kind strength)` records, or `()` for absence. This
-separates missing evidence from present evidence below its threshold. Context
+`threshold` is the applicable inclusive ratio bound; `value` is the exact typed
+value or `NoObservation`. `refs` contains its accepted source references or `()`
+for absence. False, missing evidence, and a ratio below threshold remain distinct. Context
 checks retain the evaluated frame-presence condition. Active groups that lose
 on priority remain visible, making collisions inspectable.
 
@@ -271,3 +276,12 @@ the exact boundaries, just-below values, and `0.6` retaining Threat while being
 insufficient to enter it. They assert the retained phase/threshold and match,
 winning and losing groups, confirmation and hold/cooldown checks, absence after
 input consumption, and historical trace stability after a registry edit.
+
+
+## R2 typed-consumer migration
+
+The completed increment 2.4 retires the strength projection. Mode and scheduling
+matching are independent of `SignalAppraisalRule` coefficients. The same typed
+predicates generate retained evidence and matching results. Latest mode evidence
+pins its session sources; reset clears it and expires old references. September
+JSON/JSONL artifacts remain historical and have not been rewritten.

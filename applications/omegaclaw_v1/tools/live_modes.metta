@@ -55,12 +55,12 @@
 !(test (modeLiveTransition) (Engaged Rumination))
 !(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Failure 1))
 !(test (frameRuntimeRecovery (activeFrameBundle)) RecoveryPending)
-!(test (modeSignalMeetsThreshold failure 0.0 (modeLiveSignals)) True)
+!(test (signalTrueIn (modeLiveSignals) failure) True)
 !(test (get-state &failure-count) 1)
 !(test (modeLiveCycle "pending-recovery") 1)
 !(test (constitutionalMode) Rumination)
-!(test (modeSignalMeetsThreshold failure 0.0 (modeLiveSignals)) False)
-!(test (modeSignalMeetsThreshold stalled-progress 0.0 (modeLiveSignals)) True)
+!(test (signalTrueIn (modeLiveSignals) failure) False)
+!(test (signalTrueIn (modeLiveSignals) stalled-progress) True)
 !(test (get-state &failure-count) 1)
 
 !(test (py-call (live_cycle_probe.change_file 1)) 1)
@@ -76,7 +76,7 @@
 !(test (modeLiveTransition) (Rumination Engaged))
 !(test (frameRuntimeRecovery (activeFrameBundle)) NoRecovery)
 !(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Success 0))
-!(test (modeSignalMeetsThreshold stalled-progress 0.0 (modeLiveSignals)) False)
+!(test (signalTrueIn (modeLiveSignals) stalled-progress) False)
 !(test (get-state &failure-count) 1)
 
 ;; Policy is revoked before real provider anger extraction; Threat cannot grant it.
@@ -84,8 +84,8 @@
 !(modeLiveInput)
 !(test (modeLiveCycle "threat-input") 1)
 !(test (modeLiveTransition) (Engaged Threat))
-!(test (or (modeSignalMeetsThreshold user-angry 0.0 (modeLiveSignals))
-           (modeSignalMeetsThreshold danger 0.0 (modeLiveSignals))) True)
+!(test (or (signalRatioAtLeastIn (modeLiveSignals) user-angry classifier-score 0.0)
+           (signalRatioAtLeastIn (modeLiveSignals) danger classifier-score 0.0)) True)
 !(test (selectedHostCommand) ())
 !(test (modeLiveDispatch "threat-denied" (get-state &live-success-ticket) (get-state &live-read))
    (DispatchResult Blocked MissingDecision none))
@@ -95,8 +95,8 @@
 !(change-state! &core-loop-new-message False)
 !(test (modeLiveCycle "cleared-threat") 1)
 !(test (modeLiveTransition) (Threat Engaged))
-!(test (modeSignalMeetsThreshold user-angry 0.0 (modeLiveSignals)) False)
-!(test (modeSignalMeetsThreshold danger 0.0 (modeLiveSignals)) False)
+!(test (signalRatioAtLeastIn (modeLiveSignals) user-angry classifier-score 0.0) False)
+!(test (signalRatioAtLeastIn (modeLiveSignals) danger classifier-score 0.0) False)
 !(test (frameRuntimeRecovery (activeFrameBundle)) NoRecovery)
 
 ;; Host confirms the exact recorded successful read fulfilled this bounded task.

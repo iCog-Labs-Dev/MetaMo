@@ -38,13 +38,13 @@
 
 ;; Existing signals elevate only applicable work, without changing a mode.
 !(test (schedulingPriorityForCandidate () verify-frame-state) Orienting)
-!(test (schedulingPriorityForCandidate ((signal danger 1)) verify-frame-state) Threat-remediation)
-!(test (schedulingPriorityForCandidate ((signal user-angry 1)) defer) Threat-remediation)
-!(test (schedulingPriorityForCandidate ((signal danger 1)) execute-skill) Engaged)
+!(test (schedulingPriorityForCandidate ((FactualSignal (kind danger) (value (RatioFact 1 classifier-score)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))) verify-frame-state) Threat-remediation)
+!(test (schedulingPriorityForCandidate ((FactualSignal (kind user-angry) (value (RatioFact 1 classifier-score)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))) defer) Threat-remediation)
+!(test (schedulingPriorityForCandidate ((FactualSignal (kind danger) (value (RatioFact 1 classifier-score)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))) execute-skill) Engaged)
 !(test (schedulingPriorityForCandidate () self-improve) Rumination)
-!(test (schedulingPriorityForCandidate ((signal failure 1)) self-improve) Recovery)
-!(test (schedulingPriorityForCandidate ((signal repeated-failure 1)) self-improve) Recovery)
-!(test (schedulingPriorityForCandidate ((signal stalled-progress 1)) self-improve) Recovery)
+!(test (schedulingPriorityForCandidate ((FactualSignal (kind failure) (value (BooleanFact True)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))) self-improve) Recovery)
+!(test (schedulingPriorityForCandidate ((FactualSignal (kind repeated-failure) (value (BooleanFact True)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))) self-improve) Recovery)
+!(test (schedulingPriorityForCandidate ((FactualSignal (kind stalled-progress) (value (BooleanFact True)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))) self-improve) Recovery)
 !(test (scheduleAdmittedActions () ()) ())
 !(test (scheduleAdmittedActions () ((action unknown poison poison ()))) ())
 
@@ -67,18 +67,19 @@
 
 ;; A low-scoring higher class beats every lower class in either input order.
 ;; Only danger is present: self-improve remains Rumination, not Recovery.
-!(addSignal danger 1)
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/factual_signals))
+!(fixturePutSignal danger (quote (RatioFact 1 classifier-score)))
 
 ;; Multiple triggers coexist: threat work beats recovery, which beats response.
-!(addSignal repeated-failure 1)
-!(addSignal user-waiting 1)
-!(addSignal ambiguity 1)
+!(fixturePutSignal repeated-failure (quote (BooleanFact True)))
+!(fixturePutSignal user-waiting (quote (BooleanFact True)))
+!(fixturePutSignal new-input-without-outcome (quote (BooleanFact True)))
 !(test (schedulingTestWinner Fast Open
    ((schedulingTestAction respond 1.0) (schedulingTestAction self-improve 1.0)
     (schedulingTestAction verify-frame-state 0.0))) verify-frame-state)
 ;; Removing the threat releases recovery, then removing recovery releases response.
 !(clearSignals)
-!(addSignal repeated-failure 1)
+!(fixturePutSignal repeated-failure (quote (BooleanFact True)))
 !(test (schedulingTestWinner Fast Open
    ((schedulingTestAction respond 1.0) (schedulingTestAction self-improve 0.0))) self-improve)
 !(clearSignals)
@@ -98,7 +99,7 @@
 !(test (constitutionalMode) Threat)
 
 ;; Admission comes first: even threat/recovery cannot revive rejected work.
-!(addSignal danger 1)
+!(fixturePutSignal danger (quote (RatioFact 1 classifier-score)))
 !(test (schedulingTestWinner Fast Exhausted
    ((action verify-frame-state poison poison ())
     (action repair-failure poison poison ()) (schedulingTestAction respond 0.0))) respond)
@@ -118,7 +119,7 @@
    ((schedulingTestAction respond 1.0) (schedulingTestAction verify-frame-state 0.0))))) verify-frame-state)
 !(setActiveFrameBundle ())
 !(clearSignals)
-!(addSignal danger 1)
+!(fixturePutSignal danger (quote (RatioFact 1 classifier-score)))
 
 ;; Threat-remediation > Recovery
 !(test (schedulingPriorityPreempts Threat-remediation Recovery) True)

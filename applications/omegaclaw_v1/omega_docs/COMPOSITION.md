@@ -46,9 +46,17 @@ error on `omegaclawScoreForBundle`.
 ## Composition and initialization
 
 `composition.metta` owns the application import order: shared core, configuration
-and state adapters, modes/signals/appraisal, homeostasis/lifecycle, context facade,
-candidate generation, decision scoring, persistence, and bridge. It does not
+and state adapters, pure factual schema/readers, modes, context facade, signal
+production/appraisal, homeostasis/lifecycle, candidate generation, decision
+scoring, persistence, and bridge. It does not
 import the optional proposal adapter or inference engines.
+
+`factual_signals.metta` contains representation validators and pure typed snapshot
+readers without allocating state. It loads before mode/scheduling triggers, while
+mode definitions load before the context policy gates that call them. Signal
+producers still load after the context accessors they use. Focused module imports
+must preserve this dependency order; moving the context facade ahead of modes while moving the complete signal
+module would compile policy dependencies as unresolved data.
 
 Reasoner integration is deferred. `reasoner_integration.metta` is an opt-in
 extension loaded after composition; it owns `reasoner_proposals` and engine

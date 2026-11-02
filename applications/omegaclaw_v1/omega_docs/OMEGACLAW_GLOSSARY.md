@@ -78,7 +78,7 @@ times. Dispatch takes fresh context later to check that execution is still allow
 | **Motive** | A local drive, such as clarity, progress, reliability, adaptivity, coherence, or responsiveness. |
 | **Anti-goal** | Something the scoring system tries to avoid. It contributes a penalty; a penalty alone is not an execution prohibition. |
 | **Modulator** | A numeric setting that changes how the system responds or chooses, such as urgency or caution. |
-| **Signal** | An interpreted observation such as failure, stalled progress, ambiguity, or a waiting user. |
+| **Signal** | A typed factual observation or classifier estimate with provenance, such as failure True, a failure-streak count, or a danger score. Its motivational weight belongs to appraisal. |
 | **Stimulus** | The compact appraisal input: novelty, risk, importance, uncertainty, opportunity, and progress. |
 | **Appraisal** | Evaluating what observations mean for motivation. A failure can increase the drive for reliability and caution. |
 | **Candidate** | A possible kind of next action. `respond`, `execute-skill`, and `verify-frame-state` are examples. A candidate is less specific than an executable command. |

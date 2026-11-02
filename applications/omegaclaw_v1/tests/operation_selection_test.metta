@@ -78,7 +78,7 @@
    (let (OperationContext $session $_ $_) (get-state &first-context)
       (OperationContext $session 2 "configured-frame")))
 !(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Blocked 0))
-!(test (hasSignal progress-made) False)
+!(test (signalTrue progress-made) False)
 !(test (hasErrors) False)
 !(bind! &selected-decision (new-state (get-state &selected-operation-decision)))
 !(bind! &prior-outcome (new-state (get-state &last-operation-outcome)))
@@ -108,7 +108,7 @@
 !(test (policyOutputOperation (motivationContextBlock)) none)
 !(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback Success 0))
 !(refreshSignals (activeFrameBundle))
-!(test (hasSignal progress-made) True)
+!(test (signalTrue progress-made) True)
 !(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
 
 ;; Current host frame can move after selection; the blocked observation still
@@ -118,7 +118,7 @@
    (DispatchResult Blocked UnselectedOperation none))
 !(test (get-state &last-operation-outcome) (get-state &first-outcome))
 !(test (frameRuntimeOperationFeedback (activeFrameBundle)) (OperationFeedback NoOutcome 0))
-!(test (hasSignal progress-made) False)
+!(test (signalTrue progress-made) False)
 !(bind! &origin-decision (new-state (get-state &selected-operation-decision)))
 !(change-state! &cfv2-current-frame-id "different-frame")
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
@@ -243,7 +243,7 @@
 !(bind! &failure-bundle (new-state (prepareTaskStateForMetaMo)))
 !(test (frameRuntimeOperationFeedback (get-state &failure-bundle)) (OperationFeedback Failure 1))
 !(refreshSignals (get-state &failure-bundle))
-!(test (hasSignal progress-made) False)
+!(test (signalTrue progress-made) False)
 !(test (hasErrors) True)
 ;; R2 / 2.2: real consumed outcomes produce booleans with resolvable provenance.
 (= (r22Fact $kind)
@@ -278,8 +278,8 @@
 !(bind! &bundle (new-state (prepareTaskStateForMetaMo)))
 !(test (frameRuntimeOperationFeedback (get-state &bundle)) (OperationFeedback Failure 2))
 !(refreshSignals (get-state &bundle))
-!(test (hasSignal repeated-failure) True)
-!(test (hasSignal progress-made) False)
+!(test (signalTrue repeated-failure) True)
+!(test (signalTrue progress-made) False)
 ;; Rereading the same snapshot must not increment its failure streak.
 !(bind! &r22-before-source-store (new-state (get-state &signal-observation-state)))
 !(bind! &r22-before-facts (new-state (getFactualSignals)))
@@ -339,7 +339,7 @@
 !(bind! &second-failure (new-state (prepareTaskStateForMetaMo)))
 !(test (frameRuntimeOperationFeedback (get-state &second-failure)) (OperationFeedback Failure 3))
 !(refreshSignals (get-state &second-failure))
-!(test (hasSignal repeated-failure) True)
+!(test (signalTrue repeated-failure) True)
 !(test (frameRuntimeTaskOpen (get-state &second-failure)) True)
 ;; Stale formatted output cannot manufacture progress or another failure.
 !(change-state! &lastresults "Task completed successfully")
@@ -456,5 +456,48 @@
 !(refreshSignals (get-state &r22-blocked))
 !(test (factualSignalField value (r22Fact frame-blocked)) (quote (BooleanFact True)))
 !(test (hostSignalFactSupported (get-state &r22-blocked) (r22Fact frame-blocked)) True)
+
+;; A blocked-frame coefficient affects appraisal only: captured facts, trigger
+;; evidence, scheduling and the hard command gate preserve their exact values.
+!(bind! &r24-blocked-facts (new-state (getSignals)))
+!(bind! &r24-blocked-dimension (new-state (computeDimension novelty)))
+!(bind! &r24-blocked-mode (new-state (modeEvaluationForContext
+   (ModeTransitionState Engaged 0 none 0 0) (getSignals) True)))
+!(bind! &r24-blocked-scheduling (new-state
+   (schedulingPriorityForCandidate (getSignals) verify-frame-state)))
+!(bind! &r24-blocked-gate (new-state (feasibilityGate (get-state &r22-blocked) execute-skill)))
+!(add-atom &self (SignalAppraisalRule frame-blocked novelty BooleanIndicator 0.25))
+!(test (> (computeDimension novelty) (get-state &r24-blocked-dimension)) True)
+!(test (getSignals) (get-state &r24-blocked-facts))
+!(test (signalTrue frame-blocked) True)
+!(test (modeEvaluationForContext (ModeTransitionState Engaged 0 none 0 0) (getSignals) True)
+   (get-state &r24-blocked-mode))
+!(test (schedulingPriorityForCandidate (getSignals) verify-frame-state)
+   (get-state &r24-blocked-scheduling))
+!(test (feasibilityGate (get-state &r22-blocked) execute-skill) (get-state &r24-blocked-gate))
+!(remove-atom &self (SignalAppraisalRule frame-blocked novelty BooleanIndicator 0.25))
 !(change-state! &cfv2-current-status (get-state &r22-native-status))
+
+;; R2 / 2.4: real bridge mode evidence pins its own source after both factual
+;; and appraisal diagnostics advance to a different publication.
+!(motivationContextBlockForBundle (prepareTaskStateForMetaMo))
+!(bind! &r24-retained-mode (new-state (lastModeObservation)))
+!(bind! &r24-mode-source (new-state
+   (let (ModeObservation $_ $_ $facts $_ $_ $_) (lastModeObservation)
+      (car-atom (signalProvenanceIn $facts failure)))))
+!(bind! &r24-new-publication (new-state (prepareTaskStateForMetaMo)))
+!(refreshSignals (get-state &r24-new-publication))
+!(computeAllDimensions)
+!(r22PublishMany 80)
+!(test (lastModeObservation) (get-state &r24-retained-mode))
+!(test (case (resolveSignalObservation (get-state &r24-mode-source)) (
+   ((SourceObservation $_ $_ $_ $_) True) ($_ False))) True)
+!(test (let (SignalObservationState $_ $_ $entries) (get-state &signal-observation-state)
+   (<= (size-atom $entries) 16)) True)
+!(test (initOperationSession) True)
+!(test (lastModeObservation) NoModeObservation)
+!(test (getSignals) ())
+!(test (lastAppraisalContributions) ())
+!(test (resolveSignalObservation (get-state &r24-mode-source))
+   (FactualSignalRejected MissingObservation))
 !(test (py-call (host_config_fixture.cleanup)) 1)

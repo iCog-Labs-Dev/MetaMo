@@ -60,14 +60,15 @@
 ;; The production refreshSignals predicate also performs optional semantic and
 ;; execution-confirmation provider calls. Those calls would make this demo
 ;; dependent on external providers, so the fixture directly supplies the three
-;; facts implied by its fixed input: the user is waiting, the request is
-;; ambiguous, and no progress has yet been observed.
+;; typed conditions for its fixed input: user-waiting, new-input-without-outcome,
+;; and stalled-progress. These fixture values are not host-authenticated evidence.
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/factual_signals))
 (= (minimalRefreshSignals $bundle)
    (let* (
       ($_ (clearSignals))
-      ($_ (addSignal user-waiting 0.30))
-      ($_ (addSignal ambiguity 0.60))
-      ($_ (addSignal stalled-progress 0.35)))
+      ($_ (fixturePutSignal user-waiting (quote (BooleanFact True))))
+      ($_ (fixturePutSignal new-input-without-outcome (quote (BooleanFact True))))
+      ($_ (fixturePutSignal stalled-progress (quote (BooleanFact True)))))
       (getSignals)))
 
 ;; ---------------------------------------------------------------------------

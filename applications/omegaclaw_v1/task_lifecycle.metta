@@ -159,7 +159,7 @@
    (directUserResponseNeededForBundle (activeFrameBundle)))
 
 (= (directUserResponseNeededForBundle $bundle)
-   (and (hasSignal user-waiting)
+   (and (signalTrue user-waiting)
         (< (extractAppraisalDim opportunity) (executionIntentThreshold))))
 
 (= (executionCautionBlocks)
@@ -183,7 +183,7 @@
    (freshExecutionRequestNeededForBundle (activeFrameBundle)))
 
 (= (freshExecutionRequestNeededForBundle $bundle)
-   (and (hasSignal user-waiting)
+   (and (signalTrue user-waiting)
         (> (extractAppraisalDim opportunity) (executionIntentThreshold))))
 
 (= (taskResultReady)
@@ -201,7 +201,7 @@
    (resultQuestionNeedsResponseForBundle (activeFrameBundle)))
 
 (= (resultQuestionNeedsResponseForBundle $bundle)
-   (if (hasSignal user-waiting)
+   (if (signalTrue user-waiting)
         (frameRuntimeStatusQuestion $bundle)
         False))
 

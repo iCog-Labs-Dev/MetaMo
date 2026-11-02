@@ -61,7 +61,7 @@
 !(test (py-call (lib_llm_ext.call_count "confirmation")) 1)
 
 !(test (py-call (lib_llm_ext.call_count "semantics")) 1)
-!(test (hasSignal failure) True)
+!(test (signalTrue failure) True)
 !(refreshConstitutionalMode (get-state &offline-bundle))
 !(clearSpace &appraisal-space)
 !(computeAllDimensions)
@@ -127,13 +127,7 @@
 !(test (py-call (lib_llm_ext.call_count "semantics")) 1)
 !(test (py-call (lib_llm_ext.call_count "confirmation")) 1)
 
-;; Producer facts remain identical when a compatibility appraisal intensity changes.
-!(remove-atom &self (SignalStrength user-waiting 0.30))
-!(add-atom &self (SignalStrength user-waiting 0.99))
-!(refreshSignals (get-state &r22-classified))
-!(test (getFactualSignals) (get-state &r22-classifier-facts))
-!(remove-atom &self (SignalStrength user-waiting 0.99))
-!(add-atom &self (SignalStrength user-waiting 0.30))
+;; The classifier reducer is independent of appraisal.
 !(test (signalExecutionRequestScore 0.8 0.9) 0.9)
 !(add-atom &self (SignalReduction execution-request maximum))
 !(test (signalExecutionRequestScore 0.8 0.9) (FactualSignalRejected InvalidSignalReduction))
@@ -164,11 +158,12 @@
    (== (index-atom $row 1) (kind danger))))
    (index-atom $row 6)) (let $refs (factualSignalField provenance (r22ClassifierFact danger)) (provenance $refs)))
 
-!(remove-atom &self (SignalStrength user-waiting 0.30))
-!(add-atom &self (SignalStrength user-waiting 0.99))
-!(test (computeDimension importance) (extractAppraisalDim importance))
-!(remove-atom &self (SignalStrength user-waiting 0.99))
-!(add-atom &self (SignalStrength user-waiting 0.30))
+
+!(bind! &r24-mode-before (new-state (modeEvaluationForContext
+   (ModeTransitionState Engaged 0 none 0 0) (getSignals) True)))
+!(bind! &r24-scheduling-before (new-state
+   (schedulingPriorityForCandidate (getSignals) verify-frame-state)))
+!(bind! &r24-gate-before (new-state (feasibilityGate (get-state &r22-classified) execute-skill)))
 
 ;; Editing the sole effective coefficient changes appraisal, leaving facts intact.
 !(remove-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator 0.18))
@@ -177,6 +172,11 @@
 !(test (lastAppraisalContributions) (get-state &r23-original-trace))
 !(computeAllDimensions)
 !(test (!= (appraisalToStimulus) (get-state &r23-original-stimulus)) True)
+!(test (modeEvaluationForContext (ModeTransitionState Engaged 0 none 0 0) (getSignals) True)
+   (get-state &r24-mode-before))
+!(test (schedulingPriorityForCandidate (getSignals) verify-frame-state)
+   (get-state &r24-scheduling-before))
+!(test (feasibilityGate (get-state &r22-classified) execute-skill) (get-state &r24-gate-before))
 !(test (py-call (lib_llm_ext.call_count "semantics")) 1)
 !(remove-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator -0.5))
 !(add-atom &self (SignalAppraisalRule user-waiting importance BooleanIndicator 0.18))
@@ -270,8 +270,9 @@
 !(clearSignals)
 !(test (lastAppraisalContributions) (get-state &r23-retained))
 
-;; Explicit fixture compatibility preserves the old strength convention.
-!(addSignal failure 0.8)
+;; Pure fixtures now use the same typed boolean path as production.
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/factual_signals))
+!(fixturePutSignal failure (quote (BooleanFact True)))
 !(test (computeDimension risk) 0.56)
 !(clearSignals)
 !(resetSignalObservations "appraisal-reset")
@@ -312,3 +313,19 @@
 !(test (collapse (match &self (R23Expected $kind $vector)
    (r23MigrationMatches $kind $vector)))
    (True True True True True True True True True True True))
+
+
+;; Zero semantic estimates remain in their classifier source, but never appear
+;; as mode-triggering ratio facts at the inclusive zero default threshold.
+!(change-state! &prevmsg "No classified danger")
+!(change-state! &new-msg-flag True)
+!(py-call (lib_llm_ext.semantic_response (frameStateRuntimeSummary "No classified danger" 1200)
+   "((signal danger 0) (signal user-angry 0) (signal execution-request 0))"))
+!(bind! &r24-zero-bundle (new-state (prepareTaskStateForMetaMo)))
+!(refreshSignals (get-state &r24-zero-bundle))
+!(test (signalFact danger) (FactualSignalAbsent danger))
+!(test (signalFact user-angry) (FactualSignalAbsent user-angry))
+!(test (signalFact execution-request) (FactualSignalAbsent execution-request))
+!(test (modeSignalGroupActive threat Enter (getSignals)) False)
+!(test (signalTrue user-waiting) True)
+!(test (signalCycleReady) True)

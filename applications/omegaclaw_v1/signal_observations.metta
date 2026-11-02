@@ -9,6 +9,8 @@
 ;; Example: initOperationSession supplies its fresh UUID, never a reused counter.
 (= (resetSignalObservations $session)
     (progn
+        (clearSignals)
+        (clearSpace &appraisal-space)
         (change-state! &signal-observation-state (SignalObservationState $session 0 ()))
         (change-state! &signal-observation-view NoSignalObservations)
         (change-state! &signal-previous-view NoSignalObservations)
@@ -16,6 +18,7 @@
         (change-state! &signal-recovery-reference None)
         (change-state! &signal-classifications ())
         (change-state! &last-factual-signals ())
+        (change-state! &last-mode-observation NoModeObservation)
         (change-state! &last-appraisal-contributions ())
         (change-state! &appraisal-status AppraisalReady)
         (change-state! &signal-last-legacy-reference None)
@@ -108,7 +111,14 @@
         ($traceRoots (collapse (let* (
             ($row (superpose $trace)) ($refs (index-atom (index-atom $row 6) 1)))
             (superpose $refs))))
-        ($roots (union-atom $viewRoots (union-atom $diagnosticRoots $traceRoots)))
+        ($modeFacts (case (get-state &last-mode-observation) (
+            ((ModeObservation $_ $_ $signals $_ $_ $_) $signals)
+            ($_ ()))))
+        ($modeRoots (collapse (let* (
+            ($fact (superpose $modeFacts)) ($refs (factualSignalField provenance $fact)))
+            (superpose $refs))))
+        ($roots (union-atom $viewRoots
+            (union-atom $diagnosticRoots (union-atom $traceRoots $modeRoots))))
         ($pins (cons-atom (get-state &signal-feedback-reference)
             (cons-atom (get-state &signal-recovery-reference) $roots)))
         ($kept (filter-atom $entries $entry

@@ -16,7 +16,6 @@
 
 
 ;; Last-cycle diagnostics survive signal cleanup; no dispatch authority.
-!(bind! &last-mode-observation (new-state NoModeObservation))
 (= (lastModeObservation) (get-state &last-mode-observation))
 
 ;; Run one motivational cycle and return the decision injected into the LLM.

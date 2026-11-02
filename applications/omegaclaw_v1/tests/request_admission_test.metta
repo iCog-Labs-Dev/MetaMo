@@ -97,7 +97,8 @@
 
 ;; Native generation uses normal availability and individually applies the
 ;; common gate. Denied rows cannot become scored actions.
-!(addSignal user-waiting 0.3)
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/factual_signals))
+!(fixturePutSignal user-waiting (quote (BooleanFact True)))
 !(generateCandidatesForOperations (originBundle)
    ((CandidateOperation respond (readOp respond "origin") (requestScope Global) (requestScope (FrameTarget "origin")))
     (CandidateOperation execute-skill (readOp execute-skill "origin") () (requestScope (FrameTarget "origin")))))
