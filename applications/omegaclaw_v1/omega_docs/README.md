@@ -58,6 +58,58 @@ superseded events; see [COMMITMENTS.md](COMMITMENTS.md) for host APIs and scope.
 Blocked/deferred live frames resurface through a bounded MeTTa review queue;
 see [RESURFACING.md](RESURFACING.md) for cycle bounds and multi-cycle tests.
 
+## Declared self-model schema — integration item 3.1
+
+`registry.metta` declares the R5 allowlist independently of the legacy runtime
+defaults. Each `SelfModelFieldSpec` names a field, its motivational/physiological
+class, unit, inclusive numeric bounds and bootstrap default:
+
+| Field | Class | Unit and bounds | Seed default | Meaning |
+| --- | --- | --- | --- | --- |
+| `energy` | physiological | normalized, 0–1 | 1.0 | Internal estimate of available activity capacity. |
+| `fatigue` | physiological | normalized, 0–1 | 0.0 | Internal estimate of accumulated activity strain. |
+| `urgency` | motivational | normalized, 0–1 | 0.5 | Internal pressure to attend to work. |
+
+These defaults are declared seeds, not observed measurements. No new producer,
+resource meter, or synchronization with the existing urgency modulator is
+installed by 3.1. Numeric domains constrain representation; they are not
+homeostatic correction targets (item 3.4). Fields absent from this allowlist,
+including capability, knowledge and belief fields, are outside the declared S
+schema.
+
+The existing five runtime fields are exhaustively classified by
+`LegacySelfMetricClass`:
+
+| Legacy field | Destination | Existing calculation and interpretation |
+| --- | --- | --- |
+| `success_rate` | Observation | Smoothed cumulative successful-result cycles / all cycles; not a capability claim or calibrated success probability. |
+| `failure_rate` | Observation | Smoothed cumulative error cycles / all cycles; not a capability claim. |
+| `resource_usage` | Observation | `cycles / (cycles + 50)`; a cycle-count proxy, not measured resource consumption. |
+| `memory_confidence` | Adjudicated claim | Currently `clamp(success_rate * 1.4)`; that heuristic cannot establish memory reliability. Any retained reliability claim requires host adjudication and evidence. |
+| `identity_continuity` | Observation | `clamp(0.90 - failure_streak * 0.08)`; a failure-streak proxy, not evidence about identity or beliefs. |
+
+Classification does not publish observations, migrate values, or write claims
+to the adjudicated store. In particular, the current `memory_confidence` value
+must not be promoted into an authoritative claim by copying or renaming it.
+Observation provenance and dependent-rule migration remain item 3.3 work.
+
+`homeostasis.metta` supplies pure `selfModelFieldSpec`,
+`selfModelFieldSpecValid`, and `selfModelMetricValid` checks. For example,
+`(selfModelMetricValid (quote (self-metric energy 0.5)))` returns `True`;
+unknown fields, invalid/duplicate declarations, nonnumeric or nonfinite values,
+and values outside the declared bounds reject. These checks inspect data and
+do not mutate state or evaluate supplied metric expressions.
+
+**Runtime enforcement remains pending.** `SelfModelSpec` still initializes the
+legacy fields, and the existing update/restore paths and dependent rules remain
+active until items 3.2–3.3 migrate them together. The new schema and pure checks
+alone do not establish R5 compliance. Regression coverage lives in the existing
+`tests/provider_helpers_test.metta`, including its real save/restore fixture.
+Validation on 2 November 2026: all 82 v1 MeTTa test files passed, including
+139 provider-helper assertions (26 added for 3.1), plus all four boundary guards.
+External services were doubled; no live-service run was needed for this schema
+declaration.
+
 ## Installation
 
 For the verified ASICloud, local-memory and local-test-channel profile, see

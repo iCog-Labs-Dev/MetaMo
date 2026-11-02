@@ -142,6 +142,82 @@
 !(test (getSignals) ((FactualSignal (kind user-waiting) (value (BooleanFact True)) (provenance ((SessionObservationRef "typed-signal-fixture" 0))))))
 !(clearSignals)
 
+;; R5 / 3.1: S declares internal condition only; legacy metrics are classified.
+!(test (collapse (match &self (SelfModelFieldSpec $n $c $u $lo $hi $seed) $n))
+   (energy fatigue urgency))
+
+!(test (filter-atom (collapse (match &self
+   (SelfModelFieldSpec $n $c $u $lo $hi $seed)
+   (SelfModelFieldSpec $n $c $u $lo $hi $seed))) $spec
+      (not (selfModelFieldSpecValid $spec))) ())
+
+!(test (selfModelFieldSpec energy)
+   (SelfModelFieldSpec energy physiological normalized 0 1 1.0))
+
+!(test (selfModelFieldSpec memory_confidence) (SelfModelFieldRejected UnknownField))
+
+!(test (selfModelFieldSpec capabilities) (SelfModelFieldRejected UnknownField))
+
+!(test (selfModelMetricValid (quote (self-metric energy 0))) True)
+
+!(test (selfModelMetricValid (quote (self-metric fatigue 1))) True)
+
+!(test (selfModelMetricValid (quote (self-metric urgency 0.5))) True)
+
+!(test (selfModelMetricValid (quote (self-metric energy -0.1))) False)
+
+!(test (selfModelMetricValid (quote (self-metric energy 1.1))) False)
+
+!(test (selfModelMetricValid (quote (self-metric energy "0.5"))) False)
+
+!(test (selfModelMetricValid (quote (self-metric energy True))) False)
+
+!(test (selfModelMetricValid (self-metric energy
+   (py-call (provider_helpers_fixture.numeric_anomaly "nan")))) False)
+
+!(test (selfModelMetricValid (self-metric energy
+   (py-call (provider_helpers_fixture.numeric_anomaly "inf")))) False)
+
+!(test (selfModelMetricValid (quote (self-metric knowledge 0.5))) False)
+
+!(test (selfModelMetricValid (quote (self-metric beliefs 0.5))) False)
+
+!(test (selfModelMetricValid (quote (self-metric energy 0.5 extra))) False)
+
+!(test (selfModelFieldSpecValid
+   (quote (SelfModelFieldSpec capability cognitive normalized 0 1 0.5))) False)
+
+!(test (selfModelFieldSpecValid
+   (quote (SelfModelFieldSpec energy physiological normalized 0 1 2))) False)
+
+;; Every legacy default has exactly one destination and is excluded from S.
+!(test (filter-atom
+   (collapse (match &self (SelfModelSpec $name $_) $name)) $name
+   (or (!= (size-atom (collapse (match &self
+      (LegacySelfMetricClass $name $destination $meaning)
+      ($destination $meaning)))) 1)
+      (selfModelMetricValid (self-metric $name 0.5)))) ())
+
+!(test (collapse (match &self
+   (LegacySelfMetricClass memory_confidence $destination $meaning)
+   ($destination $meaning))) ((adjudicated-claim memory-reliability)))
+
+;; Ambiguous declarations reject; inspection never mutates the current S store.
+!(bind! &r31-self-before (new-state (getSelfModel)))
+!(add-atom &self (SelfModelFieldSpec energy motivational normalized 0 1 0.5))
+
+!(test (selfModelFieldSpec energy) (SelfModelFieldRejected InvalidFieldSpec))
+
+!(test (selfModelMetricValid (quote (self-metric energy 0.5))) False)
+!(remove-atom &self (SelfModelFieldSpec energy motivational normalized 0 1 0.5))
+
+!(test (selfModelMetricValid (quote (self-metric energy
+   (change-state! &failure-streak 99)))) False)
+
+!(test (get-state &failure-streak) 0)
+
+!(test (getSelfModel) (get-state &r31-self-before))
+
 ;; R2 / 2.4: typed readers distinguish false, absence, quantities and scores.
 !(fixturePutSignal failure (quote (BooleanFact False)))
 !(test (signalFact failure) (fixtureSignalFact failure (quote (BooleanFact False))))

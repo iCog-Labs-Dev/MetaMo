@@ -4,6 +4,46 @@
 !(bind! &failure-count (new-state 0))
 !(bind! &cycle-count   (new-state 0))
 
+;; Example: a normalized physiological or motivational field has a bounded seed.
+;; Pure schema checks do not authorize or perform runtime writes (item 3.2).
+(= (selfModelFieldSpecValid $spec)
+    (case $spec (
+        ((SelfModelFieldSpec $name $class normalized 0 1 $seed)
+            (and (== (get-metatype $name) Symbol)
+                (and (fsContains (motivational physiological) $class)
+                    (fsNumberIn $seed 0 1))))
+        ($_ False)
+    ))
+)
+
+;; Example: (selfModelFieldSpec energy) returns one declaration; unknowns reject.
+(= (selfModelFieldSpec $name)
+    (case (collapse (match &self
+            (SelfModelFieldSpec $name $class $unit $low $high $seed)
+            (SelfModelFieldSpec $name $class $unit $low $high $seed))) (
+        (() (SelfModelFieldRejected UnknownField))
+        (($spec) (if (selfModelFieldSpecValid $spec)
+            $spec (SelfModelFieldRejected InvalidFieldSpec)))
+        ($_ (SelfModelFieldRejected InvalidFieldSpec))
+    ))
+)
+
+;; Example: (selfModelMetricValid (quote (self-metric energy 0.5))) -> True.
+;; Legacy performance fields, nonfinite numbers and executable data are invalid S.
+(= (selfModelMetricValid $metric)
+    (if (not (is-ground $metric)) False
+        (case $metric (
+            ((self-metric $name $value)
+                (case (selfModelFieldSpec $name) (
+                    ((SelfModelFieldSpec $_ $_ $_ $low $high $_)
+                        (fsNumberIn $value $low $high))
+                    ($_ False)
+                )))
+            ($_ False)
+        ))
+    )
+)
+
 (= (selfModelAlpha)
    (let $v (collapse (match &self (DynamicsConfig self_model_alpha $x) $x))
       (if (== $v ()) 0.20 (car-atom $v))))
