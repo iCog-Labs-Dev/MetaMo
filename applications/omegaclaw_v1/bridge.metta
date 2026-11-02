@@ -254,6 +254,7 @@
       ($_ (add-atom &motivation-space (mode orient)))
 
       ($_ (initializeSelfModel))
+      ($_ (change-state! &last-homeostatic-corrections ()))
    )
       (println! "OmegaClaw Motivation Initialized via MetaMo Adapter")))
       ($rejection $rejection))))

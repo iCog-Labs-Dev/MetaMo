@@ -470,6 +470,20 @@
 
 ;; HOMEOSTATIC GOVERNANCE RULES
 
+;; R6 / 3.4: enumerate regulated motivational variables and directional set-points.
+;; (HomeostaticTarget <kind> <name> normalized (set-point <value>))
+;; Seed policy: retain bounded deliberation/stability reserves under pressure;
+;; dampen arousal/exploration/growth without forcing them to zero.
+;; These are correction destinations, separate from the 0–1 representation domain.
+(HomeostaticTarget modulator threshold        normalized (set-point 0.75))
+(HomeostaticTarget modulator arousal          normalized (set-point 0.30))
+(HomeostaticTarget modulator exploration_bias normalized (set-point 0.20))
+(HomeostaticTarget modulator persistence      normalized (set-point 0.35))
+(HomeostaticTarget modulator caution          normalized (set-point 0.75))
+(HomeostaticTarget modulator securing         normalized (set-point 0.70))
+(HomeostaticTarget goal      gTrans_over      normalized (set-point 0.30))
+(HomeostaticTarget goal      gInd_over        normalized (set-point 0.85))
+
 ;; (HomeostaticRule <condition-type> <metric-name> <threshold>
 ;;                  <action-type> <target> <delta>)
 ;;   condition-type: modulator-exceeds | signal-true | signal-count-at-least

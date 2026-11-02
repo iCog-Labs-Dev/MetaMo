@@ -57,6 +57,14 @@
 (= (modeTestProvision)
    (py-call (host_mode_fixture.provision (get-state &cfv2-current-frame-id))))
 
+;; Example: inspect the actual bridge tail's caution correction without rerunning it.
+(= (r34HostCautionCorrections)
+   (filter-atom (lastHomeostaticCorrections) $row
+      (case $row (
+         ((HomeostaticRuleResult $_
+            (HomeostaticCorrection (variable modulator caution) $_ $_ $_)) True)
+         ($_ False)))))
+
 ;; Enter Sleep from real empty host state, then admit a real user task.
 !(test (modeTestCycle) 1)
 !(test (constitutionalMode) Sleep)
@@ -385,7 +393,21 @@
 !(test (== (fullLoopDispatch modes (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible (Error test-handler failed))) True)
 !(change-state! &new-msg-flag False)
-!(bind! &r33-host-bundle (new-state (prepareTaskStateForMetaMo)))
+
+;; R6 / 3.4: the production bridge applies a declared target before signal cleanup.
+!(test (modeTestCycle) 1)
+
+!(test (modeTestHas repeated-failure) True)
+
+!(test (size-atom (r34HostCautionCorrections)) 1)
+
+!(test (let (HomeostaticRuleResult $_ (HomeostaticCorrection
+   (variable modulator caution) (from $before) (to $after) (set-point 0.75)))
+      (car-atom (r34HostCautionCorrections))
+   (and (== $after (extractModulatorValue caution))
+      (if (< $before 0.75) (and (>= $after $before) (<= $after 0.75))
+          (== $after $before)))) True)
+!(bind! &r33-host-bundle (new-state (activeFrameBundle)))
 !(refreshSignals (get-state &r33-host-bundle))
 
 !(test (frameRuntimeOperationFeedback (get-state &r33-host-bundle))
@@ -411,18 +433,27 @@
 !(computeAllDimensions)
 
 !(test (registryCandidateAvailable (get-state &r33-host-bundle) self-improve) False)
-!(replaceModulator caution 0.2)
+!(replaceModulator caution 0.74)
 !(replaceModulator context_depth 0.5)
 !(replaceModulator securing 0.3)
-!(replaceGoal gTrans_over 0.4)
+!(replaceGoal gTrans_over 0.31)
 !(bind! &r33-host-self (new-state (getSelfModel)))
 !(bind! &r33-host-commitment (new-state (commitmentSnapshot)))
 !(runHomeostasis)
 
-!(test (extractModulatorValue caution) 0.4)
+!(test (extractModulatorValue caution) 0.75)
 
-!(test (and (> (extractGoalValue gTrans_over) 0.349999999)
-            (< (extractGoalValue gTrans_over) 0.350000001)) True)
+!(test (extractGoalValue gTrans_over) 0.3)
+
+!(test (lastHomeostaticCorrections)
+   ((HomeostaticRuleResult
+      (HomeostaticRule signal-true repeated-failure IsTrue raise-modulator caution 0.2)
+      (HomeostaticCorrection (variable modulator caution)
+         (from 0.74) (to 0.75) (set-point 0.75)))
+    (HomeostaticRuleResult
+      (HomeostaticRule signal-true repeated-failure IsTrue lower-goal gTrans_over 0.05)
+      (HomeostaticCorrection (variable goal gTrans_over)
+         (from 0.31) (to 0.3) (set-point 0.3)))))
 
 !(test (getSelfModel) (get-state &r33-host-self))
 

@@ -586,3 +586,178 @@
 !(test (homeostaticRuleTriggered unsupported memory_confidence 0.2) False)
 
 !(test (getSelfModel) (get-state &r33-self))
+
+;; R6 / 3.4: every existing rule resolves to one declared regulated variable/target.
+!(test (size-atom (collapse (match &self
+   (HomeostaticTarget $kind $name $unit $point) ($kind $name)))) 8)
+
+!(test (filter-atom (collapse (match &self
+   (HomeostaticRule $_ $_ $_ $action $name $_) ($action $name))) $row
+   (let* (
+      (($action $name) $row)
+      ((HomeostaticAction $kind $_) (homeostaticActionSpec $action))
+   ) (case (homeostaticTarget $kind $name) (
+      ((HomeostaticTarget $_ $_ normalized (set-point $_)) False)
+      ($_ True))))) ())
+
+;; All four action kinds stop at their set-point and never pull back from beyond it.
+!(replaceModulator caution 0.74)
+!(applyHomeostaticAction raise-modulator caution 0.2)
+
+!(test (extractModulatorValue caution) 0.75)
+
+!(test (applyHomeostaticAction raise-modulator caution 0.2)
+   (HomeostaticCorrection (variable modulator caution)
+      (from 0.75) (to 0.75) (set-point 0.75)))
+!(replaceModulator caution 0.9)
+!(applyHomeostaticAction raise-modulator caution 0.2)
+
+!(test (extractModulatorValue caution) 0.9)
+!(replaceModulator arousal 0.31)
+!(applyHomeostaticAction lower-modulator arousal 0.2)
+
+!(test (extractModulatorValue arousal) 0.3)
+!(replaceModulator arousal 0.1)
+!(applyHomeostaticAction lower-modulator arousal 0.2)
+
+!(test (extractModulatorValue arousal) 0.1)
+!(replaceGoal gInd_over 0.84)
+!(applyHomeostaticAction raise-goal gInd_over 0.05)
+
+!(test (extractGoalValue gInd_over) 0.85)
+!(replaceGoal gInd_over 0.9)
+!(applyHomeostaticAction raise-goal gInd_over 0.05)
+
+!(test (extractGoalValue gInd_over) 0.9)
+!(replaceGoal gTrans_over 0.31)
+!(applyHomeostaticAction lower-goal gTrans_over 0.05)
+
+!(test (extractGoalValue gTrans_over) 0.3)
+!(replaceGoal gTrans_over 0.2)
+!(applyHomeostaticAction lower-goal gTrans_over 0.05)
+
+!(test (extractGoalValue gTrans_over) 0.2)
+
+;; Target edits are registry data; malformed or ambiguous declarations preserve values.
+!(replaceModulator caution 0.6)
+!(remove-atom &self (HomeostaticTarget modulator caution normalized (set-point 0.75)))
+
+!(test (applyHomeostaticAction raise-modulator caution 0.2)
+   (HomeostasisRejected UndeclaredTarget))
+
+!(test (extractModulatorValue caution) 0.6)
+!(add-atom &self (HomeostaticTarget modulator caution normalized (set-point 0.65)))
+!(applyHomeostaticAction raise-modulator caution 0.2)
+
+!(test (extractModulatorValue caution) 0.65)
+!(add-atom &self (HomeostaticTarget modulator caution normalized (set-point 0.75)))
+
+!(test (applyHomeostaticAction raise-modulator caution 0.2)
+   (HomeostasisRejected InvalidTarget))
+!(remove-atom &self (HomeostaticTarget modulator caution normalized (set-point 0.65)))
+!(add-atom &self (ModulatorSpec caution 0.4))
+
+!(test (homeostaticTarget modulator caution) (HomeostasisRejected InvalidTarget))
+!(remove-atom &self (ModulatorSpec caution 0.4))
+
+!(test (applyHomeostaticAction raise-goal caution 0.2)
+   (HomeostasisRejected UndeclaredTarget))
+
+!(test (applyHomeostaticAction raise-modulator capabilities 0.2)
+   (HomeostasisRejected UndeclaredTarget))
+!(add-atom &self (HomeostaticTarget modulator capabilities normalized (set-point 0.5)))
+
+!(test (homeostaticTarget modulator capabilities) (HomeostasisRejected InvalidTarget))
+!(remove-atom &self (HomeostaticTarget modulator capabilities normalized (set-point 0.5)))
+!(add-atom &self (HomeostaticTarget goal help_user normalized (set-point 2)))
+
+!(test (homeostaticTarget goal help_user) (HomeostasisRejected InvalidTarget))
+!(remove-atom &self (HomeostaticTarget goal help_user normalized (set-point 2)))
+!(add-atom &self (HomeostaticTarget goal help_user seconds (set-point 0.5)))
+
+!(test (homeostaticTarget goal help_user) (HomeostasisRejected InvalidTarget))
+!(remove-atom &self (HomeostaticTarget goal help_user seconds (set-point 0.5)))
+!(add-atom &self (HomeostaticTarget goal help_user normalized
+   (set-point (py-call (provider_helpers_fixture.numeric_anomaly "nan")))))
+
+!(test (homeostaticTarget goal help_user) (HomeostasisRejected InvalidTarget))
+!(collapse (let $row (match &self (HomeostaticTarget goal help_user $unit $point)
+   (HomeostaticTarget goal help_user $unit $point)) (remove-atom &self $row)))
+
+;; Reject invalid steps/current values; helpers cannot bypass the declared point.
+!(test (applyHomeostaticAction raise-modulator caution -0.2) (HomeostasisRejected InvalidStep))
+
+!(test (applyHomeostaticAction raise-modulator caution 0) (HomeostasisRejected InvalidStep))
+
+!(test (applyHomeostaticAction raise-modulator caution "0.2") (HomeostasisRejected InvalidStep))
+
+!(test (applyHomeostaticAction raise-modulator caution 2) (HomeostasisRejected InvalidStep))
+
+!(test (applyHomeostaticAction raise-modulator caution
+   (py-call (provider_helpers_fixture.numeric_anomaly "nan"))) (HomeostasisRejected InvalidStep))
+
+!(test (applyHomeostaticAction raise-modulator caution
+   (py-call (provider_helpers_fixture.numeric_anomaly "inf"))) (HomeostasisRejected InvalidStep))
+
+!(test (applyHomeostaticAction unsupported caution 0.2) (HomeostasisRejected UnsupportedAction))
+
+!(test (applyHomeostaticCorrection modulator raise caution 1 0.2)
+   (HomeostasisRejected InvalidCorrection))
+
+!(test (applyDeclaredHomeostaticAction raise-modulator caution -0.2)
+   (HomeostasisRejected InvalidCorrection))
+
+!(test (extractModulatorValue caution) 0.65)
+!(add-atom &motivation-space (modulator caution 0.1))
+
+!(test (applyHomeostaticAction raise-modulator caution 0.2)
+   (HomeostasisRejected InvalidCurrentValue))
+!(remove-atom &motivation-space (modulator caution 0.1))
+!(remove-atom &motivation-space (modulator caution 0.65))
+
+!(test (applyHomeostaticAction raise-modulator caution 0.2)
+   (HomeostasisRejected InvalidCurrentValue))
+!(replaceModulator caution 1.1)
+
+!(test (applyHomeostaticAction raise-modulator caution 0.2)
+   (HomeostasisRejected InvalidCurrentValue))
+
+;; Colliding rules share the same destinations, even across repeated live sweeps.
+!(initOmegaClawMotivation)
+!(clearSignals)
+!(fixturePutSignal repeated-failure (quote (BooleanFact True)))
+!(fixturePutSignal failure-streak (quote (QuantityFact 8 count)))
+!(replaceModulator securing 0.9)
+!(replaceModulator context_depth 0.9)
+!(bind! &r34-self (new-state (getSelfModel)))
+!(map-atom (1 2 3 4 5 6 7 8 9 10) $cycle (runHomeostasis))
+
+!(test (extractModulatorValue threshold) 0.75)
+
+!(test (extractModulatorValue arousal) 0.3)
+
+!(test (extractModulatorValue exploration_bias) 0.2)
+
+!(test (extractModulatorValue persistence) 0.35)
+
+!(test (extractModulatorValue caution) 0.75)
+
+!(test (extractModulatorValue securing) 0.9)
+
+!(test (extractGoalValue gTrans_over) 0.3)
+
+!(test (extractGoalValue gInd_over) 0.85)
+
+!(test (filter-atom (lastHomeostaticCorrections) $row
+   (case $row (
+      ((HomeostaticRuleResult $_ (HomeostaticCorrection
+         (variable $kind $name) $_ $_ (set-point $point)))
+         (!= (homeostaticTarget $kind $name)
+             (HomeostaticTarget $kind $name normalized (set-point $point))))
+      ($_ True)))) ())
+
+!(test (getSelfModel) (get-state &r34-self))
+!(initOmegaClawMotivation)
+
+!(test (lastHomeostaticCorrections) ())
+!(clearSignals)

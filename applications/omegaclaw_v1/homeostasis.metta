@@ -3,6 +3,7 @@
 !(bind! &success-count (new-state 0))
 !(bind! &failure-count (new-state 0))
 !(bind! &cycle-count   (new-state 0))
+!(bind! &last-homeostatic-corrections (new-state ()))
 
 ;; Example: a normalized physiological or motivational field has a bounded seed.
 ;; Pure schema checks are shared by initialization, updates and restore.
@@ -114,35 +115,138 @@
       ($_ False)
    )))
 
-(= (applyHomeostaticAction $actionType $target $delta)
-   (case $actionType (
-      (raise-modulator
-         (replaceModulator $target
-            (clampValue (+ (extractModulatorValue $target) $delta))))
-      (lower-modulator
-         (replaceModulator $target
-            (clampValue (- (extractModulatorValue $target) $delta))))
-      (raise-goal
-         (replaceGoal $target
-            (clampValue (+ (extractGoalValue $target) $delta))))
-      (lower-goal
-         (replaceGoal $target
-            (clampValue (- (extractGoalValue $target) $delta))))
-      ($_ (println! ("Unknown homeostatic action type: " $actionType)))
-   )))
+;; Example: only a declared goal/modulator can have a homeostatic correction target.
+(= (homeostaticVariableDefaults $kind $name)
+    (case $kind (
+        (modulator (collapse (match &self (ModulatorSpec $name $seed) $seed)))
+        (goal (collapse (match &self (GoalSpec $name $seed) $seed)))
+        ($_ ())
+    ))
+)
 
+;; Example: (homeostaticTarget modulator caution) returns one validated declaration.
+;; Missing, duplicate, nonfinite or out-of-domain targets cannot drive a write.
+(= (homeostaticTarget $kind $name)
+    (case ((collapse (match &self
+            (HomeostaticTarget $kind $name $unit $point) ($unit $point)))
+            (homeostaticVariableDefaults $kind $name)) (
+        ((() $_) (HomeostasisRejected UndeclaredTarget))
+        ((((normalized (set-point $point))) ($seed))
+            (if (and (== (get-metatype $name) Symbol)
+                    (and (fsNumberIn $point 0 1) (fsNumberIn $seed 0 1)))
+                (HomeostaticTarget $kind $name normalized (set-point $point))
+                (HomeostasisRejected InvalidTarget)))
+        ($_ (HomeostasisRejected InvalidTarget))
+    ))
+)
+
+;; Example: a missing/duplicate current value is unavailable, not an implicit zero.
+(= (homeostaticCurrentValue $kind $name)
+    (let $values (case $kind (
+            (modulator (collapse (match &motivation-space (modulator $name $v) $v)))
+            (goal (collapse (match &goal-space (goal $name $v) $v)))
+            ($_ ())))
+        (case $values (
+            (($value) (if (fsNumberIn $value 0 1)
+                (HomeostaticValue $value) (HomeostasisRejected InvalidCurrentValue)))
+            ($_ (HomeostasisRejected InvalidCurrentValue))
+        ))
+    )
+)
+
+;; Example: raise-modulator addresses only a modulator; S/host state are not writable.
+(= (homeostaticActionSpec $action)
+    (case $action (
+        (raise-modulator (HomeostaticAction modulator raise))
+        (lower-modulator (HomeostaticAction modulator lower))
+        (raise-goal (HomeostaticAction goal raise))
+        (lower-goal (HomeostaticAction goal lower))
+        ($_ (HomeostasisRejected UnsupportedAction))
+    ))
+)
+
+;; Example: raising 0.70 by 0.20 toward 0.75 stops at 0.75; 0.90 stays 0.90.
+;; The caller validates normalized values and a positive finite step first.
+(= (homeostaticStep $direction $current $point $step)
+    (case $direction (
+        (raise (if (>= $current $point) $current
+            (let $next (+ $current $step) (if (> $next $point) $point $next))))
+        (lower (if (<= $current $point) $current
+            (let $next (- $current $step) (if (< $next $point) $point $next))))
+    ))
+)
+
+;; Example: even direct correction calls must agree with the declared target and step.
+(= (homeostaticCorrectionValid $kind $direction $name $point $step)
+    (if (fsNumberIn $step 0 1)
+        (and (> $step 0)
+            (and (fsContains (raise lower) $direction)
+                (== (homeostaticTarget $kind $name)
+                    (HomeostaticTarget $kind $name normalized (set-point $point)))))
+        False
+    )
+)
+
+;; Example: an admitted correction returns its actual before/after and set-point.
+(= (applyHomeostaticCorrection $kind $direction $name $point $step)
+    (if (not (homeostaticCorrectionValid $kind $direction $name $point $step))
+        (HomeostasisRejected InvalidCorrection)
+    (case (homeostaticCurrentValue $kind $name) (
+        ((HomeostaticValue $current)
+            (let* (
+                ($next (homeostaticStep $direction $current $point $step))
+                ($_ (if (== $current $next) ()
+                    (case $kind (
+                        (modulator (replaceModulator $name $next))
+                        (goal (replaceGoal $name $next))
+                    ))))
+            ) (HomeostaticCorrection (variable $kind $name)
+                (from $current) (to $next) (set-point $point))))
+        ($rejection $rejection)
+    )))
+)
+
+;; Example: correction dispatch requires a supported action and declared set-point.
+(= (applyDeclaredHomeostaticAction $action $name $step)
+    (case (homeostaticActionSpec $action) (
+        ((HomeostaticAction $kind $direction)
+            (case (homeostaticTarget $kind $name) (
+                ((HomeostaticTarget $_ $_ normalized (set-point $point))
+                    (applyHomeostaticCorrection $kind $direction $name $point $step))
+                ($rejection $rejection)
+            )))
+        ($rejection $rejection)
+    ))
+)
+
+;; Example: negative/nonfinite steps reject before any target or current value changes.
+(= (applyHomeostaticAction $actionType $target $delta)
+    (if (fsNumberIn $delta 0 1)
+        (if (> $delta 0) (applyDeclaredHomeostaticAction $actionType $target $delta)
+            (HomeostasisRejected InvalidStep))
+        (HomeostasisRejected InvalidStep)
+    )
+)
+
+;; Example: a triggered rule retains both its trigger declaration and correction result.
 (= (applyHomeostaticRule $rule)
    (let (HomeostaticRule $condType $metric $threshold $actionType $target $delta) $rule
       (if (homeostaticRuleTriggered $condType $metric $threshold)
-          (applyHomeostaticAction $actionType $target $delta)
+          (HomeostaticRuleResult $rule (applyHomeostaticAction $actionType $target $delta))
           ())))
 
+;; Example: latest-cycle diagnostics include adjusted, unchanged and rejected actions.
+(= (lastHomeostaticCorrections) (get-state &last-homeostatic-corrections))
+
+;; Example: runHomeostasis uses the live registry and replaces the previous trace.
 (= (runHomeostasis)
-   (collapse
+   (let $results (collapse
       (let $rule (match &self
                      (HomeostaticRule $condType $metric $threshold $actionType $target $delta)
                      (HomeostaticRule $condType $metric $threshold $actionType $target $delta))
-         (applyHomeostaticRule $rule))))
+         (applyHomeostaticRule $rule)))
+      (let $trace (filter-atom $results $result (!= $result ()))
+         (progn (change-state! &last-homeostatic-corrections $trace) $trace))))
 
 (= (fetchSelfMetricValue $name)
    (let $res (collapse (match &self-model-space (self-metric $name $v) $v))

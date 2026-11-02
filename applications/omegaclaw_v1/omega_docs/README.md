@@ -135,7 +135,7 @@ No adjudicated-store writer is added.
 This fences the supported application APIs, not arbitrary code with access to
 the interpreter's mutable spaces. Regression coverage extends the existing
 `tests/provider_helpers_test.metta`, including the real parser/save/restore
-fixture. Homeostatic target declarations remain item 3.4 work.
+fixture. Item 3.4 below declares and enforces homeostatic correction targets.
 
 Validation on 2 November 2026: all 82 v1 MeTTa test files passed; the final
 provider-helper run passed 198 assertions (59 added for 3.2). All four boundary
@@ -179,7 +179,7 @@ consumer and is not replaced with a pretend resource meter.
 No adjudicated-store integration is necessary for these replacements: MetaMo
 neither constructs nor writes a memory-reliability claim. Any future claim reader
 must consume host-adjudicated evidence. S remains limited to its declared schema;
-homeostatic targets and correction bounds remain the separate item 3.4.
+item 3.4 below bounds these corrections at their declared destinations.
 
 Coverage extends the existing provider-helper and host-mode suites. The latter
 dispatches two correlated failing commands, resolves their factual provenance,
@@ -190,6 +190,73 @@ policy, dispatch, outcome consumption, projection and MetaMo are real.
 
 Validation on 2 November 2026: all 82 v1 MeTTa test files passed, including
 235 provider-helper and 206 host-mode assertions (37 and 26 added respectively).
+All four boundary guards and 20 import/harness/service Python checks passed.
+No live-service verification was performed.
+
+## Declared homeostatic targets — integration item 3.4
+
+`registry.metta` enumerates all eight variables corrected by homeostasis as
+`(HomeostaticTarget kind name normalized (set-point value))` records. Each
+variable must also have exactly one valid `ModulatorSpec` or `GoalSpec`. The
+current action types address only motivational modulators/goals, never host
+tasks, frames, adjudicated claims, or self-model fields.
+
+| Kind | Variable | Current correction direction | Seed set-point |
+| --- | --- | --- | --- |
+| modulator | `threshold` | raise | 0.75 |
+| modulator | `arousal` | lower | 0.30 |
+| modulator | `exploration_bias` | lower | 0.20 |
+| modulator | `persistence` | lower | 0.35 |
+| modulator | `caution` | raise | 0.75 |
+| modulator | `securing` | raise | 0.70 |
+| goal | `gTrans_over` | lower | 0.30 |
+| goal | `gInd_over` | raise | 0.85 |
+
+These are explicit bootstrap policy choices, not outcome-earned parameters.
+Caution and securing destinations remain below their respective excess triggers
+(0.80 and 0.75), so their own homeostatic increases do not keep escalating those
+triggers. Deliberation and stability retain reserves under pressure; dampening
+keeps nonzero arousal, exploration, persistence and growth preferences. They are
+not resource estimates or changes to execution policy. Energy/fatigue have no
+homeostatic correction mechanism here, so no fictitious targets are added for
+them.
+
+Existing rule triggers and step sizes remain registry data. A raising correction
+uses `min(set-point, current + step)` only while current is below the point; a
+lowering correction uses `max(set-point, current - step)` only while above it.
+Values already at or beyond the point in that direction remain unchanged.
+For example, raising caution from 0.74 by 0.20 stops at 0.75, while caution at
+0.90 stays 0.90. These are destinations for homeostatic corrections, not global
+limits on appraisal or other motivational updates. Shared-variable rules use
+one destination, so repeated/colliding corrections cannot overshoot it.
+
+`homeostaticTarget` requires one exact declaration with normalized units, a finite
+0–1 point, and one valid corresponding variable declaration. Before any write,
+the correction also requires one finite 0–1 current value and a positive finite
+step no greater than 1. Unknown actions, missing/duplicate targets, wrong units,
+unsupported variables, malformed/nonfinite numbers, duplicate/missing current
+values and invalid steps return a typed `HomeostasisRejected` result. The affected
+variable is unchanged; valid corrections for other triggered rules can still run.
+Internal correction entry points recheck the declared destination and step.
+
+Each triggered rule returns a `HomeostaticRuleResult` containing the copied rule
+and its correction or rejection. A successful `HomeostaticCorrection` records
+the variable kind/name, actual before/after values and set-point, including no-op
+corrections already at/beyond the destination. `runHomeostasis` returns this trace
+and retains it in `lastHomeostaticCorrections`; normal motivational initialization
+clears it. These are latest-cycle, non-persisted diagnostics, not execution
+receipts or a new grading/learning loop.
+
+Existing provider-helper tests cover all rule-to-target links, four directions,
+overshoot, repeated sweeps, shared destinations, registry edits, rejected inputs,
+and unchanged S. The host-mode test consumes two actual correlated dispatch
+failures through the real bridge and checks the retained correction, then verifies
+the 0.75 caution and 0.30 growth destinations against that same bounded
+publication. Provider, memory and failing-handler doubles retain their existing
+scope; host policy, commitments and dispatch remain authoritative.
+
+Validation on 2 November 2026: all 82 v1 MeTTa files passed, including 281
+provider-helper and 211 host-mode assertions (46 and five added respectively).
 All four boundary guards and 20 import/harness/service Python checks passed.
 No live-service verification was performed.
 
