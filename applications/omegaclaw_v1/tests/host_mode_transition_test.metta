@@ -361,6 +361,88 @@
 !(test (get-state &mode-handler-invocations) 4)
 !(test (get-state &failure-count) 4)
 !(test (frameRuntimeRecovery (activeFrameBundle)) NoRecovery)
+
+;; R5 / 3.3: real dispatch receipts produce the facts consumed by recovery rules.
+;; Start another host task; only the failure handler and external services are doubles.
+!(commitmentFixtureReset)
+!(initContextFrame)
+!(fullLoopStartSession)
+!(fullLoopIngest "Observe repeated read failures")
+!(test (commitmentFixtureOpen "r33-task" (repr (get-state &cfv2-current-frame-id))
+   "Observe repeated read failures") (CommitmentOpened "r33-task"))
+
+!(test (modeTestProvision) 1)
+
+!(test (py-call (host_config_fixture.install_failure_handler)) 1)
+
+!(test (modeTestCycle) 1)
+
+!(test (== (fullLoopDispatch modes (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error test-handler failed))) True)
+
+!(test (modeTestCycle) 1)
+
+!(test (== (fullLoopDispatch modes (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible (Error test-handler failed))) True)
+!(change-state! &new-msg-flag False)
+!(bind! &r33-host-bundle (new-state (prepareTaskStateForMetaMo)))
+!(refreshSignals (get-state &r33-host-bundle))
+
+!(test (frameRuntimeOperationFeedback (get-state &r33-host-bundle))
+   (OperationFeedback Failure 2))
+
+!(test (signalTrue repeated-failure) True)
+
+!(test (signalQuantityAtLeast failure-streak count 2) True)
+
+!(test (hostSignalFactSupported (get-state &r33-host-bundle) (signalFact repeated-failure)) True)
+
+!(test (hostSignalFactSupported (get-state &r33-host-bundle) (signalFact failure-streak)) True)
+
+!(test (homeostaticRuleTriggered signal-true repeated-failure IsTrue) True)
+
+!(test (homeostaticRuleTriggered signal-count-at-least failure-streak 8) False)
+
+;; Reading the same publication again cannot manufacture another failure.
+!(refreshSignals (get-state &r33-host-bundle))
+
+!(test (signalValueIn (getSignals) failure-streak) (QuantityFact 2 count))
+!(clearSpace &appraisal-space)
+!(computeAllDimensions)
+
+!(test (registryCandidateAvailable (get-state &r33-host-bundle) self-improve) False)
+!(replaceModulator caution 0.2)
+!(replaceModulator context_depth 0.5)
+!(replaceModulator securing 0.3)
+!(replaceGoal gTrans_over 0.4)
+!(bind! &r33-host-self (new-state (getSelfModel)))
+!(bind! &r33-host-commitment (new-state (commitmentSnapshot)))
+!(runHomeostasis)
+
+!(test (extractModulatorValue caution) 0.4)
+
+!(test (and (> (extractGoalValue gTrans_over) 0.349999999)
+            (< (extractGoalValue gTrans_over) 0.350000001)) True)
+
+!(test (getSelfModel) (get-state &r33-host-self))
+
+!(test (commitmentSnapshot) (get-state &r33-host-commitment))
+
+;; Normal selection still runs; a no-outcome cycle is not a fresh repeated failure.
+!(test (modeTestCycle) 1)
+
+!(test (modeTestHas repeated-failure) False)
+
+!(test (selfModelMetricsValid (getSelfModel)) True)
+!(refreshSignals (activeFrameBundle))
+
+!(test (signalQuantityAtLeast failure-streak count 2) True)
+
+!(test (registryCandidateAvailable (activeFrameBundle) self-improve) True)
+
+!(test (hostSignalFactSupported (activeFrameBundle) (signalFact failure-streak)) True)
+!(clearSignals)
+
 !(test (py-call (host_config_fixture.cleanup)) 1)
 
 !(fullLoopFinish modes)

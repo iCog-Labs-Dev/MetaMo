@@ -71,7 +71,7 @@
 )
 
 ;; Example: unavailable memory_confidence is not a zero-confidence observation.
-;; Retired rule dependencies stay inactive until their factual migration in 3.3.
+;; Retired names remain rejected even after their rule dependencies are migrated.
 (= (selfMetricCondition $name $comparison $threshold)
     (case (collapse (match &self-model-space
             (self-metric $name $value) (self-metric $name $value))) (
@@ -86,13 +86,32 @@
     ))
 )
 
+;; Example: missing/duplicate context_depth is unavailable, never a numeric zero.
+;; Modulator values express motivational preferences, not adjudicated knowledge.
+(= (modulatorCondition $name $comparison $threshold)
+    (case (collapse (match &motivation-space
+            (modulator $name $value) $value)) (
+        (($value)
+            (if (and (fsNumberIn $value 0 1) (fsNumberIn $threshold 0 1))
+                (case $comparison (
+                    (above (> $value $threshold))
+                    (below (< $value $threshold))
+                    ($_ False)
+                )) False))
+        ($_ False)
+    ))
+)
+
+;; Example: repeated-failure must be a True fact; count thresholds use count units.
 (= (homeostaticRuleTriggered $condType $metric $threshold)
    (case $condType (
-      (modulator-exceeds (> (extractModulatorValue $metric) $threshold))
-      (modulator-below   (< (extractModulatorValue $metric) $threshold))
+      (modulator-exceeds (modulatorCondition $metric above $threshold))
+      (modulator-below   (modulatorCondition $metric below $threshold))
       (self-metric-exceeds (selfMetricCondition $metric above $threshold))
       (self-metric-below   (selfMetricCondition $metric below $threshold))
-      ($_ (println! ("Unknown homeostatic condition type: " $condType)))
+      (signal-true (and (== $threshold IsTrue) (signalTrue $metric)))
+      (signal-count-at-least (signalQuantityAtLeast $metric count $threshold))
+      ($_ False)
    )))
 
 (= (applyHomeostaticAction $actionType $target $delta)

@@ -72,7 +72,7 @@ that location does not give motivational scoring authority to change tasks.
 | Goal weights, motives, modulators, appraisal, extracted signals/history, constitutional mode, homeostatic quantities | MetaMo | Update locally from bounded observations. In particular `goal` weights in `&goal-space` are preferences, not host goals or commitments; constitutional modes are distinct from host Fast/Slow modes. |
 | Autonomy phase/counters, last motivational decision, cached policy/directive, source reliability | MetaMo/adapter local state | Scheduling memory and advisory output only; these cannot authorize execution or serve as authoritative task outcomes. |
 | Active bundle cache | Adapter, as a read-only copy of host publication | All consumers in a cycle use the same value. Changing local motivation does not republish or mutate host state. |
-| Capability/knowledge claims | Host adjudicated store | The declared self-model schema rejects these through initialization, updates and restore. Retired performance/`memory_confidence` rule dependencies remain inactive until integration item 3.3 supplies their factual/adjudicated replacements. |
+| Capability/knowledge claims | Host adjudicated store | The declared self-model schema rejects these through initialization, updates and restore. Integration item 3.3 replaces retired performance/`memory_confidence` dependencies with existing factual signals or motivational preferences; no claim-store writer is added. |
 
 For the current serialized path, `prepareTaskStateForMetaMo` merges host execution
 observations and mirrors explicit host commitment state, then projects and

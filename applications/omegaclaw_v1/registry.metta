@@ -243,9 +243,8 @@
 
 ;; DYNAMICS CONFIG
 ;; (DynamicsConfig <key> <value>)
-;; Replaces hardcoded decay and EMA constants.
+;; Registry-resident decay, persistence and autonomy settings.
 (DynamicsConfig decay_rate        0.15)
-(DynamicsConfig self_model_alpha  0.20)
 (DynamicsConfig persistence_interval 10)
 (DynamicsConfig autonomy_actions_before_refresh 2)
 
@@ -276,14 +275,16 @@
 (CandidateCondition learn             task-active       _                _    )
 (CandidateConditionAny learn             appraisal-above   novelty          0.50 )
 (CandidateConditionAny learn             modulator-above   exploration_bias 0.50 )
-(CandidateCondition self-improve      self-metric-above failure_rate     0.35 )
+;; Reflection follows a recorded failure streak once the existing risk guard allows it.
+(CandidateCondition self-improve      signal-count-at-least failure-streak 2)
 (CandidateCondition self-improve      appraisal-below   risk             0.65 )
 (CandidateCondition background-work   task-inactive     _                _    )
 (CandidateCondition recall-goals      task-inactive     _                _    )
-(CandidateConditionAny recall-goals   self-metric-below memory_confidence 0.45 )
+;; Context demand and focus are motivational preferences, not memory reliability.
+(CandidateConditionAny recall-goals   modulator-above   context_depth    0.55 )
 (CandidateCondition invent-goal       task-inactive     _                _    )
 (CandidateCondition plan-goal         task-inactive     _                _    )
-(CandidateCondition plan-goal         self-metric-above memory_confidence 0.80 )
+(CandidateCondition plan-goal         modulator-above   focus            0.55 )
 (CandidateCondition repair-failure    task-active       _                _    )
 (CandidateCondition repair-failure    appraisal-above   risk             0.30 )
 
@@ -296,8 +297,6 @@
 (SignalThreshold ambiguity-uncertainty    0.55) ;; uncertainty above → uncertaintyHigh
 (SignalThreshold explore-novelty          0.50) ;; novelty above → explorationCondition
 (SignalThreshold explore-exploration_bias 0.50) ;; exploration_bias above → explorationCondition
-(SignalThreshold self-improve-failure     0.35) ;; failure_rate above → selfImproveCondition
-(SignalThreshold self-improve-risk        0.65) ;; risk below → selfImproveCondition
 
 
 ;; ADDITIONAL CANDIDATE SPECS
@@ -473,7 +472,7 @@
 
 ;; (HomeostaticRule <condition-type> <metric-name> <threshold>
 ;;                  <action-type> <target> <delta>)
-;;   condition-type: modulator-exceeds | self-metric-below
+;;   condition-type: modulator-exceeds | signal-true | signal-count-at-least
 ;;   action-type:    raise-modulator | lower-modulator | raise-goal | lower-goal
 
 ;; Excessive securing → raise threshold, dampen exploration and arousal
@@ -484,23 +483,26 @@
 ;; Excessive caution → dampen exploration
 (HomeostaticRule modulator-exceeds  caution             0.80 lower-modulator exploration_bias  0.15)
 
-;; Low memory confidence → raise threshold, lower persistence
-(HomeostaticRule self-metric-below  memory_confidence   0.20 raise-modulator threshold         0.20)
-(HomeostaticRule self-metric-below  memory_confidence   0.20 lower-modulator persistence       0.15)
+;; Strong demand for deeper context favors deliberation over persistence.
+;; This replaces the unsupported memory-confidence heuristic with a preference.
+(HomeostaticRule modulator-exceeds context_depth       0.80 raise-modulator threshold         0.20)
+(HomeostaticRule modulator-exceeds context_depth       0.80 lower-modulator persistence       0.15)
 
-;; Low success rate → raise caution, dampen growth goal
-(HomeostaticRule self-metric-below  success_rate        0.15 raise-modulator caution           0.20)
-(HomeostaticRule self-metric-below  success_rate        0.15 lower-goal      gTrans_over       0.05)
+;; An observed repeated failure raises caution and dampens growth.
+;; An idle/no-outcome cycle is not evidence of low success.
+(HomeostaticRule signal-true       repeated-failure IsTrue raise-modulator caution           0.20)
+(HomeostaticRule signal-true       repeated-failure IsTrue lower-goal      gTrans_over       0.05)
 
-;; Low identity continuity → strengthen stability goal and securing
-(HomeostaticRule self-metric-below  identity_continuity 0.30 raise-goal      gInd_over         0.05)
-(HomeostaticRule self-metric-below  identity_continuity 0.30 raise-modulator securing          0.10)
+;; Eight consecutive failures replace the old 0.90 - streak * 0.08 < 0.30 proxy.
+;; The count is a factual observation with provenance, not an identity claim.
+(HomeostaticRule signal-count-at-least failure-streak     8 raise-goal      gInd_over         0.05)
+(HomeostaticRule signal-count-at-least failure-streak     8 raise-modulator securing          0.10)
 
 
 ;; R5 / 3.1–3.2: S allowlist and runtime initialization defaults.
 ;; (SelfModelFieldSpec <name> <class> <unit> <minimum> <maximum> <seed-default>)
 ;; These are internal condition estimates, not measured resources or capabilities.
-;; Initialization, writes and restore enforce this schema; rule migration is 3.3.
+;; Initialization, writes and restore enforce this schema; rules use facts/modulators.
 (SelfModelFieldSpec energy  physiological normalized 0 1 1.00)
 (SelfModelFieldSpec fatigue physiological normalized 0 1 0.00)
 (SelfModelFieldSpec urgency motivational  normalized 0 1 0.50)

@@ -35,10 +35,13 @@
       (task-inactive (not (frameRuntimeTaskOpen $bundle)))
       (appraisal-above (> (extractAppraisalDim $param) $thresh))
       (appraisal-below (< (extractAppraisalDim $param) $thresh))
-      (modulator-above (> (extractModulatorValue $param) $thresh))
+      (modulator-above (modulatorCondition $param above $thresh))
+      (modulator-below (modulatorCondition $param below $thresh))
       (self-metric-above (selfMetricCondition $param above $thresh))
       (self-metric-below (selfMetricCondition $param below $thresh))
-      ($_ (println! ("Unknown condition type: " $type)))
+      (signal-true (and (== $thresh IsTrue) (signalTrue $param)))
+      (signal-count-at-least (signalQuantityAtLeast $param count $thresh))
+      ($_ False)
    )))
 
 ;; Keep the empty-list branch in the same two-argument definition. Separate

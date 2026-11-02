@@ -92,7 +92,8 @@ The five retired runtime fields are exhaustively classified by
 Classification does not publish observations, migrate values, or write claims
 to the adjudicated store. In particular, an old saved `memory_confidence` value
 must not be promoted into an authoritative claim by copying or renaming it.
-Observation provenance and dependent-rule migration remain item 3.3 work.
+Item 3.3 below replaces the dependent rules using existing facts with provenance
+and motivational quantities, without recreating these retired heuristics.
 
 `homeostasis.metta` supplies pure `selfModelFieldSpec`,
 `selfModelFieldSpecValid`, and `selfModelMetricValid` checks. For example,
@@ -128,8 +129,8 @@ until integration item 6.
 Candidate/homeostatic self-metric predicates now require a unique valid observed
 field. Missing or retired fields do not satisfy either comparison; absence cannot
 become a low-value trigger via the legacy numeric getter's zero fallback.
-The registry's retired dependencies remain inactive pending their explicit
-factual/adjudicated replacement in 3.3. No adjudicated-store writer is added.
+Item 3.3 replaces the registry's retired dependencies as described below.
+No adjudicated-store writer is added.
 
 This fences the supported application APIs, not arbitrary code with access to
 the interpreter's mutable spaces. Regression coverage extends the existing
@@ -140,6 +141,57 @@ Validation on 2 November 2026: all 82 v1 MeTTa test files passed; the final
 provider-helper run passed 198 assertions (59 added for 3.2). All four boundary
 guards and eight import/launcher regressions passed. External services were
 doubled; no live-service verification was performed.
+
+## Factual and motivational rule inputs — integration item 3.3
+
+Every candidate and homeostatic rule that referenced a retired S field now reads
+an existing typed factual signal or motivational modulator:
+
+| Retired dependency | Replacement | Behavior |
+| --- | --- | --- |
+| `failure_rate` in `self-improve` | `failure-streak >= 2 count` | Recorded consecutive failures make reflection eligible through the registry fallback when its existing appraisal-risk guard (`risk < 0.65`) allows it. |
+| `memory_confidence` in `recall-goals` | `context_depth > 0.55` | A stronger preference for deeper context favors recalling goals. |
+| `memory_confidence` in `plan-goal` | `focus > 0.55` | Stronger motivational focus favors planning. |
+| Low `memory_confidence` homeostasis | `context_depth > 0.80` | Demand for deeper context raises deliberation threshold by 0.20 and lowers persistence by 0.15. |
+| Low `success_rate` homeostasis | `repeated-failure` is True | The current repeated-failure observation raises caution by 0.20 and lowers the growth goal by 0.05. An idle/no-outcome cycle is not low-success evidence. |
+| Low `identity_continuity` homeostasis | `failure-streak >= 8 count` | A recorded long failure streak raises the stability goal by 0.05 and securing by 0.10. This is the count boundary of the old `0.90 - streak * 0.08 < 0.30` proxy, without an identity claim. |
+
+The context-depth/focus policies and failure-trigger changes are explicit seed
+policy choices, not calibrated equivalents of memory reliability or cumulative
+success/failure rates. No capability/knowledge claim is inferred from execution
+success. Existing task routing, idle autonomy phase precedence, scoring, policy
+gates and dispatch remain in place; these registry rows do not override them.
+
+Candidate and homeostatic condition readers share the existing `signalTrue` and
+unit-aware `signalQuantityAtLeast` interfaces. Facts come from the same bounded
+publication as appraisal and selection; homeostasis runs before signal cleanup.
+Provenance and one-shot outcome consumption remain in the existing producer path.
+No new signal kind, rate accumulator, or detached observation store is introduced.
+Absent, malformed or duplicate facts do not match, False is not True, and a
+quantity with the wrong unit cannot satisfy a count condition.
+
+`modulatorCondition` requires one finite normalized value and a finite normalized
+threshold; missing, duplicate or invalid values cannot drive either comparison.
+Unknown condition types return False. The unused legacy EMA and failure-rate
+threshold declarations are removed. `resource_usage` has no remaining rule
+consumer and is not replaced with a pretend resource meter.
+
+No adjudicated-store integration is necessary for these replacements: MetaMo
+neither constructs nor writes a memory-reliability claim. Any future claim reader
+must consume host-adjudicated evidence. S remains limited to its declared schema;
+homeostatic targets and correction bounds remain the separate item 3.4.
+
+Coverage extends the existing provider-helper and host-mode suites. The latter
+dispatches two correlated failing commands, resolves their factual provenance,
+checks the actual corrections and unchanged S/commitment, and verifies that the
+next no-outcome cycle clears the fresh failure fact while retaining the count.
+Providers, memory and the failing handler are test doubles; Core ingestion,
+policy, dispatch, outcome consumption, projection and MetaMo are real.
+
+Validation on 2 November 2026: all 82 v1 MeTTa test files passed, including
+235 provider-helper and 206 host-mode assertions (37 and 26 added respectively).
+All four boundary guards and 20 import/harness/service Python checks passed.
+No live-service verification was performed.
 
 ## Installation
 

@@ -440,3 +440,149 @@
 
 !(test (getSelfModel)
    ((self-metric energy 1.0) (self-metric fatigue 0.0) (self-metric urgency 0.5)))
+
+;; R5 / 3.3: live rules depend on facts or motivational preferences, never legacy S.
+;; Example: volatile floating-point corrections are compared within 1e-9.
+(= (r33Near $actual $expected)
+   (and (> $actual (- $expected 0.000000001))
+        (< $actual (+ $expected 0.000000001))))
+
+!(bind! &r33-legacy (new-state
+   (collapse (match &self (LegacySelfMetricClass $name $_ $_) $name))))
+
+!(test (filter-atom (collapse (match &self
+   (CandidateCondition $candidate $type $name $threshold) $name)) $name
+   (fsContains (get-state &r33-legacy) $name)) ())
+
+!(test (filter-atom (collapse (match &self
+   (CandidateConditionAny $candidate $type $name $threshold) $name)) $name
+   (fsContains (get-state &r33-legacy) $name)) ())
+
+!(test (filter-atom (collapse (match &self
+   (HomeostaticRule $type $name $threshold $action $target $delta) $name)) $name
+   (fsContains (get-state &r33-legacy) $name)) ())
+
+!(bind! &r33-self (new-state (getSelfModel)))
+!(clearSignals)
+!(clearSpace &appraisal-space)
+
+!(test (homeostaticRuleTriggered signal-true repeated-failure IsTrue) False)
+
+!(fixturePutSignal repeated-failure (quote (BooleanFact False)))
+
+!(test (evalCondition () signal-true repeated-failure IsTrue) False)
+
+!(test (homeostaticRuleTriggered signal-true repeated-failure IsTrue) False)
+
+!(fixturePutSignal repeated-failure (quote (BooleanFact True)))
+!(fixturePutSignal failure-streak (quote (QuantityFact 2 count)))
+
+!(test (evalCondition () signal-true repeated-failure IsTrue) True)
+
+!(test (registryCandidateAvailable () self-improve) True)
+
+;; The ordinary repeated-failure appraisal still blocks reflection while risk is high.
+!(computeAllDimensions)
+
+!(test (registryCandidateAvailable () self-improve) False)
+!(clearSpace &appraisal-space)
+
+!(test (homeostaticRuleTriggered signal-true repeated-failure IsTrue) True)
+
+!(test (homeostaticRuleTriggered signal-true repeated-failure 0.8) False)
+
+;; Recovery corrections use current boolean truth; no success probability is inferred.
+!(replaceModulator context_depth 0.5)
+!(replaceModulator caution 0.2)
+!(replaceModulator securing 0.3)
+!(replaceGoal gTrans_over 0.4)
+!(runHomeostasis)
+
+!(test (extractModulatorValue caution) 0.4)
+
+!(test (r33Near (extractGoalValue gTrans_over) 0.35) True)
+
+;; Explicit False stops the correction; a duplicate record never supplies evidence.
+!(fixturePutSignal repeated-failure (quote (BooleanFact False)))
+!(runHomeostasis)
+
+!(test (extractModulatorValue caution) 0.4)
+
+!(add-atom &signal-space (fixtureSignalFact repeated-failure (quote (BooleanFact True))))
+
+!(test (homeostaticRuleTriggered signal-true repeated-failure IsTrue) False)
+
+!(test (evalCondition () signal-true repeated-failure IsTrue) False)
+!(clearSignals)
+
+;; The old identity proxy's threshold becomes an explicit count: 7 fails, 8 matches.
+!(fixturePutSignal failure-streak (quote (QuantityFact 7 count)))
+
+!(test (homeostaticRuleTriggered signal-count-at-least failure-streak 8) False)
+
+!(fixturePutSignal failure-streak (quote (QuantityFact 8 count)))
+
+!(test (homeostaticRuleTriggered signal-count-at-least failure-streak 8) True)
+
+!(test (homeostaticRuleTriggered signal-count-at-least failure-streak 7.5) False)
+
+!(replaceGoal gInd_over 0.7)
+!(runHomeostasis)
+
+!(test (extractGoalValue gInd_over) 0.75)
+
+!(test (extractModulatorValue securing) 0.4)
+!(clearSignals)
+!(add-atom &signal-space (quote (FactualSignal (kind failure-streak)
+   (value (QuantityFact 8 seconds))
+   (provenance ((SessionObservationRef "typed-signal-fixture" 0))))))
+
+!(test (homeostaticRuleTriggered signal-count-at-least failure-streak 8) False)
+!(clearSpace &appraisal-space)
+
+!(test (registryCandidateAvailable () self-improve) False)
+!(clearSignals)
+
+;; Recall follows demand for deeper context; planning follows focus, not memory trust.
+!(bind! &r33-idle (new-state (quote (FrameStateBundle
+   (root ()) (current ()) (index () ()) (relations ())
+   (runtime (FrameStateRuntime (task-open False)))))))
+!(replaceModulator context_depth 0.55)
+!(replaceModulator focus 0.55)
+
+!(test (registryCandidateAvailable (get-state &r33-idle) recall-goals) False)
+
+!(test (registryCandidateAvailable (get-state &r33-idle) plan-goal) False)
+!(replaceModulator context_depth 0.9)
+!(replaceModulator focus 0.9)
+
+!(test (registryCandidateAvailable (get-state &r33-idle) recall-goals) True)
+
+!(test (registryCandidateAvailable (get-state &r33-idle) plan-goal) True)
+
+!(replaceModulator threshold 0.4)
+!(replaceModulator persistence 0.5)
+!(runHomeostasis)
+
+!(test (r33Near (extractModulatorValue threshold) 0.6) True)
+
+!(test (r33Near (extractModulatorValue persistence) 0.35) True)
+
+;; Invalid, missing or ambiguous motivational values cannot trigger preferences.
+!(test (modulatorCondition absent below 0.5) False)
+
+!(test (modulatorCondition context_depth above "0.5") False)
+!(add-atom &motivation-space (modulator context_depth 0.1))
+
+!(test (homeostaticRuleTriggered modulator-exceeds context_depth 0.8) False)
+
+!(test (registryCandidateAvailable (get-state &r33-idle) recall-goals) False)
+!(remove-atom &motivation-space (modulator context_depth 0.1))
+
+!(test (getSelfModel) (get-state &r33-self))
+
+!(test (replaceSelfMetric memory_confidence 0.9) (SelfModelRejected InvalidMetric))
+
+!(test (homeostaticRuleTriggered unsupported memory_confidence 0.2) False)
+
+!(test (getSelfModel) (get-state &r33-self))
