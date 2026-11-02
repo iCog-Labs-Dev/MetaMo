@@ -36,8 +36,8 @@
       (appraisal-above (> (extractAppraisalDim $param) $thresh))
       (appraisal-below (< (extractAppraisalDim $param) $thresh))
       (modulator-above (> (extractModulatorValue $param) $thresh))
-      (self-metric-above (> (fetchSelfMetricValue $param) $thresh))
-      (self-metric-below (< (fetchSelfMetricValue $param) $thresh))
+      (self-metric-above (selfMetricCondition $param above $thresh))
+      (self-metric-below (selfMetricCondition $param below $thresh))
       ($_ (println! ("Unknown condition type: " $type)))
    )))
 

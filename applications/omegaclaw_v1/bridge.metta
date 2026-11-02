@@ -215,6 +215,8 @@
 
 ;; Initialize all motivational spaces from the registry defaults.
 (= (initOmegaClawMotivation)
+   (case (selfModelDefaults) (
+      ((SelfModelDefaults $_defaults)
    (let* (
       ($_ (setConstitutionalMode (constitutionalModeDefault)))
       ($_ (clearSpace &goal-space))
@@ -251,21 +253,16 @@
                 (add-atom &motivation-space (motive $name $baseline)))))
       ($_ (add-atom &motivation-space (mode orient)))
 
-      ($_ (clearSpace &self-model-space))
-      ($_ (collapse
-             (let* (
-                (($name $baseline)
-                   (match &self (SelfModelSpec $name $baseline)
-                                ($name $baseline)))
-             )
-                (add-atom &self-model-space
-                   (self-metric $name $baseline)))))
+      ($_ (initializeSelfModel))
    )
       (println! "OmegaClaw Motivation Initialized via MetaMo Adapter")))
+      ($rejection $rejection))))
 
 
 ;; Initialize the motivational runtime, then start the OmegaClaw loop.
 (= (motivatedOmegaclaw)
+   (case (selfModelDefaults) (
+      ((SelfModelDefaults $_defaults)
    (let* (
       ($_ (initOperationSession))
       ($_ (initOmegaClawMotivation))
@@ -287,3 +284,4 @@
               (persistenceInterval)))
    )
       (eval (omegaclaw))))
+      ($rejection $rejection))))

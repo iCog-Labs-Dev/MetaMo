@@ -5,7 +5,7 @@
 !(bind! &cycle-count   (new-state 0))
 
 ;; Example: a normalized physiological or motivational field has a bounded seed.
-;; Pure schema checks do not authorize or perform runtime writes (item 3.2).
+;; Pure schema checks are shared by initialization, updates and restore.
 (= (selfModelFieldSpecValid $spec)
     (case $spec (
         ((SelfModelFieldSpec $name $class normalized 0 1 $seed)
@@ -44,16 +44,54 @@
     )
 )
 
-(= (selfModelAlpha)
-   (let $v (collapse (match &self (DynamicsConfig self_model_alpha $x) $x))
-      (if (== $v ()) 0.20 (car-atom $v))))
+;; Example: a partial saved S may be valid, but duplicate or forbidden fields reject.
+(= (selfModelMetricsValid $metrics)
+    (if (or (not (is-ground $metrics)) (!= (get-metatype $metrics) Expression)) False
+        (if (!= (filter-atom $metrics $metric (not (selfModelMetricValid $metric))) ()) False
+            (== (filter-atom $metrics $metric
+                (!= (size-atom (filter-atom $metrics $other
+                    (== (index-atom $metric 1) (index-atom $other 1)))) 1)) ()))
+    )
+)
+
+;; Example: duplicate declarations cannot be used to initialize even valid seeds.
+(= (selfModelDefaults)
+    (let* (
+        ($specs (collapse (match &self
+            (SelfModelFieldSpec $n $c $u $lo $hi $seed)
+            (SelfModelFieldSpec $n $c $u $lo $hi $seed))))
+        ($invalid (filter-atom $specs $spec
+            (!= (selfModelFieldSpec (index-atom $spec 1)) $spec)))
+    )
+        (if (or (== $specs ()) (!= $invalid ()))
+            (SelfModelRejected InvalidSchema)
+            (SelfModelDefaults (map-atom $specs $spec
+                (self-metric (index-atom $spec 1) (index-atom $spec 6)))))
+    )
+)
+
+;; Example: unavailable memory_confidence is not a zero-confidence observation.
+;; Retired rule dependencies stay inactive until their factual migration in 3.3.
+(= (selfMetricCondition $name $comparison $threshold)
+    (case (collapse (match &self-model-space
+            (self-metric $name $value) (self-metric $name $value))) (
+        (($metric)
+            (if (and (selfModelMetricValid $metric) (fsNumberIn $threshold 0 1))
+                (case $comparison (
+                    (above (> (index-atom $metric 2) $threshold))
+                    (below (< (index-atom $metric 2) $threshold))
+                    ($_ False)
+                )) False))
+        ($_ False)
+    ))
+)
 
 (= (homeostaticRuleTriggered $condType $metric $threshold)
    (case $condType (
       (modulator-exceeds (> (extractModulatorValue $metric) $threshold))
       (modulator-below   (< (extractModulatorValue $metric) $threshold))
-      (self-metric-exceeds (> (fetchSelfMetricValue $metric) $threshold))
-      (self-metric-below   (< (fetchSelfMetricValue $metric) $threshold))
+      (self-metric-exceeds (selfMetricCondition $metric above $threshold))
+      (self-metric-below   (selfMetricCondition $metric below $threshold))
       ($_ (println! ("Unknown homeostatic condition type: " $condType)))
    )))
 
@@ -91,17 +129,33 @@
    (let $res (collapse (match &self-model-space (self-metric $name $v) $v))
       (if (== $res ()) 0.0 (car-atom $res))))
 
+;; Example: (replaceSelfMetric energy 0.7) updates; forbidden/invalid writes preserve S.
 (= (replaceSelfMetric $name $newValue)
-   (let* (
-      ($existing (collapse (match &self-model-space
-                                (self-metric $name $v) (self-metric $name $v))))
-      ($_ (if (!= $existing ())
-              (let $old (car-atom $existing)
-                 (remove-atom &self-model-space $old))
-              _))
-      ($_ (add-atom &self-model-space (self-metric $name $newValue)))
-   ) ()))
+    (if (not (selfModelMetricValid (self-metric $name $newValue)))
+        (SelfModelRejected InvalidMetric)
+        (let* (
+            ($_ (collapse (let $old (match &self-model-space
+                (self-metric $name $value) (self-metric $name $value))
+                (remove-atom &self-model-space $old))))
+            ($_ (add-atom &self-model-space (self-metric $name $newValue)))
+        ) ()))
+)
 
+;; Example: (initializeSelfModel) installs all declared seeds only after validation.
+(= (initializeSelfModel)
+    (case (selfModelDefaults) (
+        ((SelfModelDefaults $metrics)
+            (progn (clearSpace &self-model-space)
+                (map-atom $metrics $metric
+                    (let (self-metric $name $value) $metric (replaceSelfMetric $name $value)))
+                SelfModelInitialized))
+        ($rejection $rejection)
+    ))
+)
+
+;; Example: a failed cycle updates counters outside S, never memory/capability claims.
+;; Energy/fatigue retain their valid values; no measurement/update law is invented.
+;; Urgency mirrors the existing motivational modulator through the validated writer.
 (= (updateSelfModel $hadError $hadResults)
    (let* (
       ($_ (change-state! &cycle-count (+ (get-state &cycle-count) 1)))
@@ -111,27 +165,7 @@
       ($_ (if $hadError
               (change-state! &failure-count (+ (get-state &failure-count) 1))
               _))
-      ($cycles (get-state &cycle-count))
-      ($successes (get-state &success-count))
-      ($failures (get-state &failure-count))
-      ($instSuccess (if (> $cycles 0) (/ $successes $cycles) 0.5))
-      ($instFailure (if (> $cycles 0) (/ $failures $cycles) 0.1))
-      ($alpha (selfModelAlpha))
-      ($oldSucc (fetchSelfMetricValue success_rate))
-      ($oldFail (fetchSelfMetricValue failure_rate))
-      ($newSucc
-         (clampValue (+ (* (- 1.0 $alpha) $oldSucc) (* $alpha $instSuccess))))
-      ($newFail
-         (clampValue (+ (* (- 1.0 $alpha) $oldFail) (* $alpha $instFailure))))
-      ($_ (replaceSelfMetric success_rate $newSucc))
-      ($_ (replaceSelfMetric failure_rate $newFail))
-      ($_ (replaceSelfMetric memory_confidence (clampValue (* $newSucc 1.4))))
-      ($streak (get-state &failure-streak))
-      ($_ (replaceSelfMetric identity_continuity
-              (clampValue (- 0.90 (* $streak 0.08)))))
-      ($_ (replaceSelfMetric resource_usage
-              (clampValue (/ $cycles (+ $cycles 50.0)))))
    ) 
-      (UPDATED SELF MODEL METRICS)
+      (replaceSelfMetric urgency (extractModulatorValue urgency))
    )
    )

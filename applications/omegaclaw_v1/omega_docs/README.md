@@ -60,8 +60,8 @@ see [RESURFACING.md](RESURFACING.md) for cycle bounds and multi-cycle tests.
 
 ## Declared self-model schema — integration item 3.1
 
-`registry.metta` declares the R5 allowlist independently of the legacy runtime
-defaults. Each `SelfModelFieldSpec` names a field, its motivational/physiological
+`registry.metta` declares the R5 allowlist and runtime initialization defaults.
+Each `SelfModelFieldSpec` names a field, its motivational/physiological
 class, unit, inclusive numeric bounds and bootstrap default:
 
 | Field | Class | Unit and bounds | Seed default | Meaning |
@@ -70,26 +70,27 @@ class, unit, inclusive numeric bounds and bootstrap default:
 | `fatigue` | physiological | normalized, 0–1 | 0.0 | Internal estimate of accumulated activity strain. |
 | `urgency` | motivational | normalized, 0–1 | 0.5 | Internal pressure to attend to work. |
 
-These defaults are declared seeds, not observed measurements. No new producer,
-resource meter, or synchronization with the existing urgency modulator is
-installed by 3.1. Numeric domains constrain representation; they are not
+These defaults are declared seeds, not observed measurements. Item 3.2 mirrors
+the existing urgency modulator after each motivational update; energy and fatigue
+retain their current valid values. No resource meter or physiological update law
+is invented. Numeric domains constrain representation; they are not
 homeostatic correction targets (item 3.4). Fields absent from this allowlist,
 including capability, knowledge and belief fields, are outside the declared S
 schema.
 
-The existing five runtime fields are exhaustively classified by
+The five retired runtime fields are exhaustively classified by
 `LegacySelfMetricClass`:
 
-| Legacy field | Destination | Existing calculation and interpretation |
+| Legacy field | Destination | Retired calculation and interpretation |
 | --- | --- | --- |
 | `success_rate` | Observation | Smoothed cumulative successful-result cycles / all cycles; not a capability claim or calibrated success probability. |
 | `failure_rate` | Observation | Smoothed cumulative error cycles / all cycles; not a capability claim. |
 | `resource_usage` | Observation | `cycles / (cycles + 50)`; a cycle-count proxy, not measured resource consumption. |
-| `memory_confidence` | Adjudicated claim | Currently `clamp(success_rate * 1.4)`; that heuristic cannot establish memory reliability. Any retained reliability claim requires host adjudication and evidence. |
+| `memory_confidence` | Adjudicated claim | Previously `clamp(success_rate * 1.4)`; that heuristic cannot establish memory reliability. Any retained reliability claim requires host adjudication and evidence. |
 | `identity_continuity` | Observation | `clamp(0.90 - failure_streak * 0.08)`; a failure-streak proxy, not evidence about identity or beliefs. |
 
 Classification does not publish observations, migrate values, or write claims
-to the adjudicated store. In particular, the current `memory_confidence` value
+to the adjudicated store. In particular, an old saved `memory_confidence` value
 must not be promoted into an authoritative claim by copying or renaming it.
 Observation provenance and dependent-rule migration remain item 3.3 work.
 
@@ -100,15 +101,45 @@ unknown fields, invalid/duplicate declarations, nonnumeric or nonfinite values,
 and values outside the declared bounds reject. These checks inspect data and
 do not mutate state or evaluate supplied metric expressions.
 
-**Runtime enforcement remains pending.** `SelfModelSpec` still initializes the
-legacy fields, and the existing update/restore paths and dependent rules remain
-active until items 3.2–3.3 migrate them together. The new schema and pure checks
-alone do not establish R5 compliance. Regression coverage lives in the existing
-`tests/provider_helpers_test.metta`, including its real save/restore fixture.
-Validation on 2 November 2026: all 82 v1 MeTTa test files passed, including
-139 provider-helper assertions (26 added for 3.1), plus all four boundary guards.
-External services were doubled; no live-service run was needed for this schema
-declaration.
+## Self-model enforcement — integration item 3.2
+
+`initializeSelfModel` validates the complete nonempty registry schema before
+replacing S with its defaults. Duplicate/invalid declarations reject without
+clearing current state. `initOmegaClawMotivation` and `motivatedOmegaclaw` check
+the schema before changing motivational spaces or entering the Core loop.
+The retired `SelfModelSpec` defaults are removed.
+
+`replaceSelfMetric` validates before removal/insertion. Unknown fields, non-ground
+values, nonnumeric/nonfinite values, or values outside the declared domain return
+`(SelfModelRejected InvalidMetric)` and preserve existing S. `updateSelfModel`
+keeps cycle/success/failure counters outside S and no longer writes any retired
+metric. It updates urgency only through this validated writer.
+
+Restoration keeps Core's existing text/parser checks, then validates the complete
+parsed snapshot before any G/AG/M/S write. Invalid S, including forbidden legacy
+fields or duplicate names, rejects the whole snapshot with
+`(SelfModelRejected InvalidSnapshot)`. Old snapshots containing retired fields
+are deliberately rejected, not silently filtered or promoted into claims.
+Valid partial S snapshots update only their declared fields, leaving other
+current/default values intact; an empty S section is allowed. Successful restore
+returns `MotivationalStateRestored`. Numeric persistence remains floating point
+until integration item 6.
+
+Candidate/homeostatic self-metric predicates now require a unique valid observed
+field. Missing or retired fields do not satisfy either comparison; absence cannot
+become a low-value trigger via the legacy numeric getter's zero fallback.
+The registry's retired dependencies remain inactive pending their explicit
+factual/adjudicated replacement in 3.3. No adjudicated-store writer is added.
+
+This fences the supported application APIs, not arbitrary code with access to
+the interpreter's mutable spaces. Regression coverage extends the existing
+`tests/provider_helpers_test.metta`, including the real parser/save/restore
+fixture. Homeostatic target declarations remain item 3.4 work.
+
+Validation on 2 November 2026: all 82 v1 MeTTa test files passed; the final
+provider-helper run passed 198 assertions (59 added for 3.2). All four boundary
+guards and eight import/launcher regressions passed. External services were
+doubled; no live-service verification was performed.
 
 ## Installation
 

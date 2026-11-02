@@ -31,14 +31,28 @@
    ) saved))
 
 
-;; restoreMotivationalState
-(= (restoreMotivationalState)
-   (let* (
-      ($_ (println! ("Querying long-term memory for prior motivational state...")))
-      ($results (eval (query (persistenceKey))))
-      ($parsed (sread (py-call (lib_llm_ext.parseMotivosState $results))))
-   )
-      (if (and (!= $parsed ()) (!= $parsed (Error)))
+;; Example: malformed self-metric arity cannot disappear during S extraction.
+(= (motivationalRestoreEntryValid $entry)
+   (case $entry (
+      ((self-metric $_ $_) (selfModelMetricValid $entry))
+      ((goal $name $value) (and (== (get-metatype $name) Symbol) (fsNumberIn $value 0 1)))
+      ((anti-goal $name $value) (and (== (get-metatype $name) Symbol) (fsNumberIn $value 0 1)))
+      ((modulator $name $value) (and (== (get-metatype $name) Symbol) (fsNumberIn $value 0 1)))
+      ($_ False))))
+
+;; Example: parsed snapshots are ground lists with valid entries and unique S names.
+(= (motivationalRestoreValid $parsed)
+   (if (or (not (is-ground $parsed)) (!= (get-metatype $parsed) Expression)) False
+       (if (!= (filter-atom $parsed $entry (not (motivationalRestoreEntryValid $entry))) ()) False
+           (selfModelMetricsValid (filter-atom $parsed $entry
+               (case $entry (((self-metric $_ $_) True) ($_ False))))))))
+
+;; Example: a legacy memory_confidence field rejects the entire parsed snapshot.
+;; Validate S before any G/AG/M/S write; rejected restores preserve current state.
+;; Old snapshots with forbidden fields require explicit migration, never projection.
+(= (restoreParsedMotivationalState $parsed)
+      (if (not (motivationalRestoreValid $parsed))
+          (SelfModelRejected InvalidSnapshot)
           (let* (
              ($_ (collapse
                     (let $entry (superpose $parsed)
@@ -48,8 +62,18 @@
                           ((modulator $name $val) (replaceModulator $name $val))
                           ((self-metric $name $val) (replaceSelfMetric $name $val))
                           ($_ (empty)))))))
-             ($_ (println! ("Prior motivational state successfully restored.")))
-          ) ())
+          ) MotivationalStateRestored)))
+
+;; Example: restore valid S through the application schema after Core text parsing.
+(= (restoreMotivationalState)
+   (let* (
+      ($_ (println! ("Querying long-term memory for prior motivational state...")))
+      ($results (eval (query (persistenceKey))))
+      ($parsed (sread (py-call (lib_llm_ext.parseMotivosState $results))))
+   )
+      (if (and (!= $parsed ()) (!= $parsed (Error)))
+          (let $result (restoreParsedMotivationalState $parsed)
+             (progn (println! $result) $result))
           (println! ("No prior motivational state found. Using registry defaults.")))))
 
 

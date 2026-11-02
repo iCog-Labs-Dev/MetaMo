@@ -20,18 +20,18 @@
 !(replaceGoal progress 0.4)
 !(replaceAntiGoal harm 0.8)
 !(replaceModulator urgency 0.2)
-!(replaceSelfMetric resource_usage 0.3)
+!(replaceSelfMetric energy 0.3)
 !(saveMotivationalState)
 !(replaceGoal progress 0.1)
 !(replaceAntiGoal harm 0.1)
 !(replaceModulator urgency 0.1)
-!(replaceSelfMetric resource_usage 0.1)
+!(replaceSelfMetric energy 0.1)
 !(restoreMotivationalState)
 !(test (getGoals) ((goal progress 0.4)))
 
 !(test (getAntiGoals) ((anti-goal harm 0.8)))
 !(test (getModulators) ((modulator urgency 0.2)))
-!(test (getSelfModel) ((self-metric resource_usage 0.3)))
+!(test (getSelfModel) ((self-metric energy 0.3)))
 !(change-state! &helper-memory "MOTIVOS_STATE_V1 time:today G:((goal progress 0.9)) AG:() M:((eval unsafe)) S:()")
 !(restoreMotivationalState)
 !(test (getGoals) ((goal progress 0.4)))
@@ -192,7 +192,7 @@
 
 ;; Every legacy default has exactly one destination and is excluded from S.
 !(test (filter-atom
-   (collapse (match &self (SelfModelSpec $name $_) $name)) $name
+   (collapse (match &self (LegacySelfMetricClass $name $_ $_) $name)) $name
    (or (!= (size-atom (collapse (match &self
       (LegacySelfMetricClass $name $destination $meaning)
       ($destination $meaning)))) 1)
@@ -271,3 +271,172 @@
    (provenance ((SessionObservationRef "typed-signal-fixture" 0)))))) failure) False)
 !(test (get-state &failure-streak) 0)
 !(clearSignals)
+
+;; R5 / 3.2: initialization uses the validated allowlist, never legacy defaults.
+!(test (initializeSelfModel) SelfModelInitialized)
+
+!(test (getSelfModel)
+   ((self-metric energy 1.0) (self-metric fatigue 0.0) (self-metric urgency 0.5)))
+
+!(replaceSelfMetric energy 0.7)
+!(bind! &r32-initial (new-state (getSelfModel)))
+
+;; Every retired field rejects through the actual writer without changing S.
+!(test (filter-atom
+   (collapse (match &self (LegacySelfMetricClass $name $_ $_) $name)) $name
+   (!= (replaceSelfMetric $name 0.9) (SelfModelRejected InvalidMetric))) ())
+
+!(test (replaceSelfMetric capabilities 0.9) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric knowledge 0.9) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric beliefs 0.9) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy -0.1) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy 1.1) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy "0.5") (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy True) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy
+   (py-call (provider_helpers_fixture.numeric_anomaly "nan"))) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy
+   (py-call (provider_helpers_fixture.numeric_anomaly "inf"))) (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy (quote (change-state! &failure-streak 99)))
+   (SelfModelRejected InvalidMetric))
+
+!(test (replaceSelfMetric energy (quote $unknown)) (SelfModelRejected InvalidMetric))
+
+!(test (getSelfModel) (get-state &r32-initial))
+
+!(test (get-state &failure-streak) 0)
+
+;; Invalid initialization preserves S and the other motivational spaces as well.
+!(bind! &r32-goals (new-state (getGoals)))
+!(bind! &r32-mods (new-state (getModulators)))
+!(add-atom &self (SelfModelFieldSpec energy physiological normalized 0 1 0.5))
+
+!(test (initializeSelfModel) (SelfModelRejected InvalidSchema))
+
+!(test (initOmegaClawMotivation) (SelfModelRejected InvalidSchema))
+
+!(test (motivatedOmegaclaw) (SelfModelRejected InvalidSchema))
+
+!(test (getSelfModel) (get-state &r32-initial))
+
+!(test (getGoals) (get-state &r32-goals))
+
+!(test (getModulators) (get-state &r32-mods))
+!(remove-atom &self (SelfModelFieldSpec energy physiological normalized 0 1 0.5))
+!(add-atom &self (SelfModelFieldSpec capabilities cognitive normalized 0 1 0.5))
+
+!(test (initializeSelfModel) (SelfModelRejected InvalidSchema))
+!(remove-atom &self (SelfModelFieldSpec capabilities cognitive normalized 0 1 0.5))
+
+;; Absence is not zero: old rule dependencies remain inactive pending 3.3.
+!(test (selfMetricCondition memory_confidence below 0.2) False)
+
+!(test (evalCondition () self-metric-below memory_confidence 0.45) False)
+
+!(test (homeostaticRuleTriggered self-metric-below success_rate 0.15) False)
+
+!(test (selfMetricCondition fatigue below 0.2) True)
+
+!(runHomeostasis)
+!(test (getGoals) (get-state &r32-goals))
+
+!(test (getModulators) (get-state &r32-mods))
+
+;; Both observed outcomes keep performance counts outside the persisted S schema.
+!(bind! &r32-cycles (new-state (get-state &cycle-count)))
+!(bind! &r32-successes (new-state (get-state &success-count)))
+!(bind! &r32-failures (new-state (get-state &failure-count)))
+!(updateSelfModel False True)
+!(updateSelfModel True False)
+
+!(test (get-state &cycle-count) (+ (get-state &r32-cycles) 2))
+
+!(test (get-state &success-count) (+ (get-state &r32-successes) 1))
+
+!(test (get-state &failure-count) (+ (get-state &r32-failures) 1))
+
+!(test (selfModelMetricsValid (getSelfModel)) True)
+
+!(test (fetchSelfMetricValue energy) 0.7)
+
+!(test (fetchSelfMetricValue fatigue) 0.0)
+
+!(test (fetchSelfMetricValue urgency) (extractModulatorValue urgency))
+
+;; Invalid S rejects the whole snapshot before any otherwise valid G/AG/M write.
+!(bind! &r32-before-restore (new-state (getSelfModel)))
+!(bind! &r32-antigoals (new-state (getAntiGoals)))
+!(change-state! &helper-memory
+   "MOTIVOS_STATE_V1 time:today G:((goal progress 0.9)) AG:((anti-goal harm 0.1)) M:((modulator urgency 0.9)) S:((self-metric energy 0.2) (self-metric memory_confidence 0.9))")
+
+!(test (restoreMotivationalState) (SelfModelRejected InvalidSnapshot))
+
+!(test (getSelfModel) (get-state &r32-before-restore))
+
+!(test (getGoals) (get-state &r32-goals))
+
+!(test (getAntiGoals) (get-state &r32-antigoals))
+
+!(test (getModulators) (get-state &r32-mods))
+
+!(test (restoreParsedMotivationalState
+   (quote ((goal progress 0.9) (self-metric energy 0.2) (self-metric energy 0.8))))
+   (SelfModelRejected InvalidSnapshot))
+
+!(test (restoreParsedMotivationalState
+   (quote ((goal progress 0.9) (self-metric energy 0.2 extra))))
+   (SelfModelRejected InvalidSnapshot))
+
+!(test (restoreParsedMotivationalState
+   (quote ((goal progress 0.9) (self-metric energy (change-state! &failure-streak 99)))))
+   (SelfModelRejected InvalidSnapshot))
+
+!(test (selfModelMetricsValid (quote ((self-metric energy 0.5) invalid))) False)
+
+!(test (selfModelMetricsValid (quote ((self-metric energy $unknown)))) False)
+
+!(test (get-state &failure-streak) 0)
+
+!(test (getSelfModel) (get-state &r32-before-restore))
+
+!(test (getGoals) (get-state &r32-goals))
+
+;; Real parser and application restore accept declared fields; save round-trips S.
+!(change-state! &helper-memory
+   "MOTIVOS_STATE_V1 time:today G:((goal progress 0.6)) AG:((anti-goal harm 0.7)) M:((modulator urgency 0.4)) S:((self-metric energy 0.8) (self-metric fatigue 0.1) (self-metric urgency 0.3))")
+
+!(test (restoreMotivationalState) MotivationalStateRestored)
+
+!(test (fetchSelfMetricValue energy) 0.8)
+
+!(test (fetchSelfMetricValue fatigue) 0.1)
+
+!(test (fetchSelfMetricValue urgency) 0.3)
+
+!(test (getGoals) ((goal progress 0.6)))
+
+!(test (getAntiGoals) ((anti-goal harm 0.7)))
+
+!(test (getModulators) ((modulator urgency 0.4)))
+!(saveMotivationalState)
+!(initializeSelfModel)
+!(restoreMotivationalState)
+
+!(test (selfModelMetricsValid (getSelfModel)) True)
+
+!(test (fetchSelfMetricValue energy) 0.8)
+
+;; The production initializer installs the same S schema alongside goals/modulators.
+!(initOmegaClawMotivation)
+
+!(test (getSelfModel)
+   ((self-metric energy 1.0) (self-metric fatigue 0.0) (self-metric urgency 0.5)))

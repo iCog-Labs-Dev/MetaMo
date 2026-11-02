@@ -88,7 +88,7 @@ times. Dispatch takes fresh context later to check that execution is still allow
 | **Priority** | A value expressing how much attention recommended work should receive. It does not grant permission. |
 | **Directive** | Structured guidance about what to do or inspect next. It is advisory until the host checks and executes concrete work. |
 | **Autonomy phase** | Local tracking of background activity, such as recalling goals, proposing a goal, planning, or taking a background step. |
-| **Self-model** | Local estimates about the agent's performance and condition. These estimates are not independently verified capability claims. |
+| **Self-model** | Schema-limited internal condition: energy, fatigue and urgency. Performance counters remain outside S; knowledge and capability claims belong to the host adjudicated store. |
 
 The eleven configured modulators can be read as these intuitive controls. Their
 actual effects depend on the scoring and update rules; they are not human emotions.

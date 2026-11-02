@@ -497,15 +497,15 @@
 (HomeostaticRule self-metric-below  identity_continuity 0.30 raise-modulator securing          0.10)
 
 
-;; R5 / 3.1: declared S allowlist, separate from the legacy runtime defaults.
+;; R5 / 3.1–3.2: S allowlist and runtime initialization defaults.
 ;; (SelfModelFieldSpec <name> <class> <unit> <minimum> <maximum> <seed-default>)
 ;; These are internal condition estimates, not measured resources or capabilities.
-;; Activation/enforcement belongs to 3.2; dependent-rule migration belongs to 3.3.
+;; Initialization, writes and restore enforce this schema; rule migration is 3.3.
 (SelfModelFieldSpec energy  physiological normalized 0 1 1.00)
 (SelfModelFieldSpec fatigue physiological normalized 0 1 0.00)
 (SelfModelFieldSpec urgency motivational  normalized 0 1 0.50)
 
-;; Exhaustive classification of the legacy fields below. No row permits S writes.
+;; Exhaustive classification of retired legacy fields. No row permits S writes.
 ;; (LegacySelfMetricClass <name> <destination> <interpretation>)
 ;; An adjudicated claim requires host evidence; the current heuristic cannot supply it.
 (LegacySelfMetricClass success_rate        observation      execution-success-estimate)
@@ -513,14 +513,6 @@
 (LegacySelfMetricClass resource_usage      observation      cycle-count-proxy)
 (LegacySelfMetricClass memory_confidence   adjudicated-claim memory-reliability)
 (LegacySelfMetricClass identity_continuity observation      failure-streak-proxy)
-
-;; LEGACY RUNTIME SELF MODEL DEFAULTS (pending 3.2–3.3 migration, not the S schema).
-;; (SelfModelSpec <name> <baseline>)
-(SelfModelSpec success_rate        0.50)
-(SelfModelSpec failure_rate        0.10)
-(SelfModelSpec resource_usage      0.30)
-(SelfModelSpec memory_confidence   0.70)
-(SelfModelSpec identity_continuity 0.90)
 
 ;; Trusted policy captured at plan installation; zero disables correction retries.
 (ContinuationRetryPolicy 2)
