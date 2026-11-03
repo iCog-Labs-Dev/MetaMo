@@ -184,6 +184,38 @@ shape. Malformed events return `(ReasonerAccessorRejected InvalidProposalEvent)`
 Quote literal record inputs; the accessors inspect and return contents as data.
 These shape checks do not validate evidence authority or grade outcomes.
 
+### Legacy proposal value contract
+
+`reasonerProposalValid` checks the following representation contract after the
+exact, ground proposal shape has matched. It returns one boolean and does not
+allocate identities, resolve evidence, change ownership, or update reliability.
+
+| Field | Accepted representation |
+| --- | --- |
+| ID | A nonblank symbol or string of 1–256 Unicode characters, without control characters. Boolean and symbolic `None`/`none` values are rejected. Symbols and strings retain their distinct identities. |
+| Target | `current-frame` or `(FrameTarget ID)` for candidate/attention requests; `(FrameTarget ID)` for frame switches; exactly `(ModeTarget Fast)` or `(ModeTarget Slow)` for mode changes. Frame IDs use the same scalar bounds as proposal IDs. |
+| Confidence | A finite number in `[0,1]`; numeric strings and booleans are rejected rather than coerced. |
+| Claim, support, prediction | Ground, nonempty opaque data. Top-level `()`, `None`, empty strings and whitespace-only strings are rejected. Each field has depth at most 16, at most 1024 nodes, at most 256 children per list, and at most 1200 characters per text/symbol scalar. Embedded numbers must be finite and within ±9007199254740991. |
+| Evidence | Exactly `(EvidenceReferences REFS)`, where REFS is a proper list of at most 32 distinct references. NARS and PLN proposals require at least one reference; other sources may use an empty list. |
+
+References may be bounded legacy symbol/string stamps, `(ObservationRef HOST ID)`
+with string host/ID, or `(SessionObservationRef SESSION SEQUENCE)` with a string
+session and integer sequence in `0–9007199254740991`. Identifier text rules apply
+to these names. Duplicate checks preserve exact types. Multiline payload text
+is allowed; expression contents are inspected as data and never executed.
+The depth count starts at one, and every list or scalar counts as one node.
+
+Proposal builders accept raw reference lists or an existing `EvidenceReferences`
+wrapper and produce the canonical wrapper. Malformed proposals receive
+`Malformed / InvalidProposal` at admission and cannot reach scoring. Inference
+conversion emits no proposal when the completed record fails value validation.
+
+A valid reference shape does not establish that an observation exists, belongs
+to this snapshot/task, or supports the claim. Those checks remain the trusted
+host's responsibility before live proposal intake. Nonempty support data is
+likewise not proof of a derivation. This contract leaves engine reasoning,
+evidence resolution, authorization, and outcome grading separate.
+
 From the PeTTa workspace root, run the offline integration checks:
 
 ```bash
@@ -202,7 +234,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 48 assertions respectively without import caching. Native
+They pass all 6 and 109 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure

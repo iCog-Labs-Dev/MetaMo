@@ -19,7 +19,7 @@
 
 (: ReasonerMotivationalProposalType Type)
 (: ReasonerMotivationalProposal
-   (-> Symbol Symbol Symbol Expression Symbol Expression Expression
+   (-> Expression Symbol Symbol Expression Symbol Expression Expression
        Number Expression Expression ReasonerMotivationalProposalType))
 
 ;; Typed inference payloads accepted by the NARS/PLN adapters. These are
@@ -58,8 +58,11 @@
       (request-attention True)
       ($_ False))))
 
+;; Confidence must be a finite number in [0,1], without coercion or clamping.
+;; Example: (reasonerProposalConfidenceValid "0.9") -> False.
 (= (reasonerProposalConfidenceValid $confidence)
-   (and (>= $confidence 0.0) (<= $confidence 1.0)))
+    (fsNumberIn $confidence 0 1)
+)
 
 ;; Candidate names are registry-owned. This prevents a reasoner from smuggling
 ;; an arbitrary executable operation through the proposal boundary.
@@ -80,21 +83,27 @@
       (ask-clarification True)
       ($_ False))))
 
-(= (reasonerProposalIdValid $id)
-   (not (== $id ())))
-
 ;; A proposal may ask the scheduler to consider a frame/mode transition. The
 ;; target is deliberately data-shaped and is never passed to a ContextFrames
 ;; mutation function by MetaMo.
+;; Example: (reasonerProposalTargetValid propose-candidate (quote (FrameTarget Frame-A))) -> True.
 (= (reasonerProposalTargetValid $kind $target)
-   (case $kind (
-      (propose-candidate (not (== $target ())))
-      (request-attention (not (== $target ())))
-      (request-frame-switch (case $target (
-         ((FrameTarget $frame) (not (== $frame ()))) ($_ False))))
-      (request-mode-change (case $target (
-         ((ModeTarget Fast) True) ((ModeTarget Slow) True) ($_ False))))
-      ($_ False))))
+    (if (is-ground ($kind $target))
+        (case ($kind $target)
+            (
+                ((propose-candidate current-frame) True)
+                ((request-attention current-frame) True)
+                ((propose-candidate (FrameTarget $frame)) (reasonerProposalIdValid $frame))
+                ((request-attention (FrameTarget $frame)) (reasonerProposalIdValid $frame))
+                ((request-frame-switch (FrameTarget $frame)) (reasonerProposalIdValid $frame))
+                ((request-mode-change (ModeTarget Fast)) True)
+                ((request-mode-change (ModeTarget Slow)) True)
+                ($_ False)
+            )
+        )
+        False
+    )
+)
 
 ;; ---------------------------------------------------------------------------
 ;; Inference adapters
@@ -105,6 +114,8 @@
 ;; and an expected outcome. The adapter adds provenance without exposing
 ;; engine-specific execution terms to MetaMo.
 
+;; Wrap NARS output as data, accepting raw or already wrapped evidence references.
+;; Example: (narsFactsToProposal p () claim support 0.9 (quote (e1)) respond prediction).
 (= (narsFactsToProposal
       $id $facts $conclusion $support $confidence $evidence
       $candidate $prediction)
@@ -113,9 +124,11 @@
       (InferredConclusion nars $conclusion)
       (InferenceSupport nars $facts $support)
       $confidence
-      (EvidenceReferences $evidence)
+      (reasonerProposalEvidenceRecord $evidence)
       $prediction))
 
+;; Wrap PLN output without resolving its supporting observations.
+;; Example: (plnFactsToProposal p () claim support 0.9 (quote (e1)) respond prediction).
 (= (plnFactsToProposal
       $id $facts $conclusion $support $confidence $evidence
       $candidate $prediction)
@@ -124,7 +137,7 @@
       (InferredConclusion pln $conclusion)
       (InferenceSupport pln $facts $support)
       $confidence
-      (EvidenceReferences $evidence)
+      (reasonerProposalEvidenceRecord $evidence)
       $prediction))
 
 (= (narsInferenceToProposal
@@ -142,41 +155,54 @@
 ;; LLM reasoning is deliberately an optional adapter. If it is not wired by
 ;; the host, no proposals are produced; if wired, its output is still subject
 ;; to the identical source, schema, candidate, and feasibility checks.
+;; Example: (llmReasoningToProposal p claim 0.8 () respond prediction).
 (= (llmReasoningToProposal
       $id $claim $confidence $evidence $candidate $prediction)
    (ReasonerMotivationalProposal
       $id llm propose-candidate current-frame $candidate
       (LLMClaim $claim) (LLMSupport $claim)
-      $confidence $evidence $prediction))
+      $confidence (reasonerProposalEvidenceRecord $evidence) $prediction))
 
+;; Build an advisory frame request while preserving the native target type.
+;; Example: (requestFrameSwitchProposal p Frame-A 0.9 (quote (e1)) prediction).
 (= (requestFrameSwitchProposal
       $id $frame-id $confidence $evidence $prediction)
    (ReasonerMotivationalProposal
       $id nars request-frame-switch (FrameTarget $frame-id) defer
       (SwitchFrameClaim $frame-id) (SwitchFrameSupport $frame-id)
-      $confidence $evidence $prediction))
+      $confidence (reasonerProposalEvidenceRecord $evidence) $prediction))
 
+;; Build a Slow-mode request with canonical evidence data, without changing mode.
+;; Example: (requestSlowModeProposal p 0.9 (quote (e1)) prediction).
 (= (requestSlowModeProposal
       $id $confidence $evidence $prediction)
    (ReasonerMotivationalProposal
       $id pln request-mode-change (ModeTarget Slow) defer
       request-slow-mode (ModeChangeSupport Slow)
-      $confidence $evidence $prediction))
+      $confidence (reasonerProposalEvidenceRecord $evidence) $prediction))
 
+;; Validate representation only. References need separate trusted host resolution.
+;; Example: an unknown but well-formed evidence stamp can pass this pure check.
 (= (reasonerProposalValid $proposal)
-   (case $proposal (
-      ((ReasonerMotivationalProposal $id $source $kind $target $candidate
-         $claim $support $confidence $evidence $prediction)
-       (tpAllTrue (
-          (reasonerProposalIdValid $id)
-          (reasonerProposalSourceValid $source)
-          (reasonerProposalKindValid $kind)
-          (reasonerProposalTargetValid $kind $target)
-          (reasonerProposalCandidateValid $candidate)
-          (reasonerProposalConfidenceValid $confidence)
-          (not (== $claim ()))
-          (not (== $prediction ())))))
-      ($_ False))))
+    (if (reasonerProposalShapeValid $proposal)
+        (let (ReasonerMotivationalProposal $id $source $kind $target $candidate
+                $claim $support $confidence $evidence $prediction) $proposal
+            (tpAllTrue (
+                (reasonerProposalIdValid $id)
+                (reasonerProposalSourceValid $source)
+                (reasonerProposalKindValid $kind)
+                (reasonerProposalTargetValid $kind $target)
+                (reasonerProposalCandidateValid $candidate)
+                (reasonerProposalConfidenceValid $confidence)
+                (reasonerProposalPayloadValid $claim)
+                (reasonerProposalPayloadValid $support)
+                (reasonerProposalEvidenceValid $source $evidence)
+                (reasonerProposalPayloadValid $prediction)
+            ))
+        )
+        False
+    )
+)
 
 (= (legacyReasonerProposalGate $bundle $proposal)
    ;; Legacy inference smoke tests can appraise current-frame suggestions only.
@@ -304,9 +330,15 @@
       ($confidence (getProposalConfidence $proposal)))
       (clampValue (* $confidence (reasonerSourceReliability $source)))))
 
+;; Malformed values must not reach influence arithmetic or the native scorer.
+;; Example: an invalid confidence returns 0.0 even with an unusable scoring state.
 (= (reasonerProposalEffectiveScore $bundle $state $proposal)
-   (* (reasonerProposalScore $bundle $state $proposal)
-      (reasonerProposalInfluence $proposal)))
+    (if (reasonerProposalValid $proposal)
+        (* (reasonerProposalScore $bundle $state $proposal)
+            (reasonerProposalInfluence $proposal))
+        0.0
+    )
+)
 
 ;; A transition proposal can be valid, feasible, and scored while still being
 ;; deferred until the scheduler performs its own authorization/availability

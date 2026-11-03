@@ -139,3 +139,20 @@
 !(test (nativeRequestCheck Frame-native "Frame-native") (GateDecision Rejected TargetMismatch))
 !(test (requestBundleShapeValid (requestBundle 42 Active Fast)) False)
 !(test (requestBundleShapeValid (requestBundle (Frame-native) Active Fast)) False)
+
+;; Representation errors are rejected before concrete policy or scoring.
+!(test (getStatus (reasonerProposalAdmissionForOperation (originBundle) (originBundle)
+   (quote (ReasonerMotivationalProposal "" nars propose-candidate current-frame
+      execute-skill claim support 0.9 (EvidenceReferences (e1)) prediction))
+   (readOp execute-skill "origin") (requestScope Global) (requestScope (FrameTarget "origin")))) Malformed)
+
+!(test (reasonerProposalScoreForOperation (originBundle) (originBundle) invalid-scoring-state
+   (quote (ReasonerMotivationalProposal p nars propose-candidate current-frame
+      execute-skill claim support "0.9" (EvidenceReferences (e1)) prediction))
+   (readOp execute-skill "origin") (requestScope Global) (requestScope (FrameTarget "origin"))) 0.0)
+
+;; A shaped reference is not resolved/authenticated by these pure policy helpers.
+!(test (getStatus (reasonerProposalAdmissionForOperation (originBundle) (originBundle)
+   (quote (ReasonerMotivationalProposal p nars propose-candidate current-frame
+      execute-skill claim support 0.9 (EvidenceReferences (unresolved-stamp)) prediction))
+   (readOp execute-skill "origin") (requestScope Global) (requestScope (FrameTarget "origin")))) Accepted)

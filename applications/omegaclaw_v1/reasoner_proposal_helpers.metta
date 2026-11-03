@@ -1,6 +1,186 @@
 
-;; Shape-only access to legacy proposal data. Literal records must be quoted
-;; by callers; accessors never eval their contents or validate evidence authority.
+;; Pure representation checks and field access for legacy proposal data.
+;; Callers quote literal records; no helper evaluates data or establishes host authority.
+!(import_prolog_function string_codes)
+
+;; Test a Unicode character property through SWI's existing character interface.
+;; Example: (reasonerTextCodeIsSpace 32) -> True.
+(= (reasonerTextCodeIsSpace $code)
+    (!= (collapse (translatePredicate (code_type $code space))) ())
+)
+
+;; Reject control characters without interpreting text as a command.
+;; Example: (reasonerTextCodeIsControl 10) -> True.
+(= (reasonerTextCodeIsControl $code)
+    (!= (collapse (translatePredicate (code_type $code cntrl))) ())
+)
+
+;; Check length before examining characters; preserve the original value.
+;; Example: (reasonerProposalTextValid "proposal-1" 256) -> True.
+(= (reasonerProposalTextValid $text $limit)
+    (if (and (> (string_length $text) 0) (<= (string_length $text) $limit))
+        (let $codes (string_codes $text)
+            (and
+                (== (filter-atom $codes $code (reasonerTextCodeIsControl $code)) ())
+                (!= (filter-atom $codes $code (not (reasonerTextCodeIsSpace $code))) ())
+            )
+        )
+        False
+    )
+)
+
+;; IDs are nonblank symbols/strings, excluding boolean and absent-value markers.
+;; Example: (reasonerProposalIdValid (quote (run code))) -> False.
+(= (reasonerProposalIdValid $id)
+    (if (is-ground $id)
+        (if (or (== (get-type $id) String)
+                (!= (collapse (translatePredicate (atom $id))) ()))
+            (if (tpContains (True False None none) $id)
+                False
+                (reasonerProposalTextValid $id 256)
+            )
+            False
+        )
+        False
+    )
+)
+
+;; Opaque payload scalars are finite bounded numbers or bounded text/symbols.
+;; Example: (reasonerProposalScalarValid 0.9) -> True.
+(= (reasonerProposalScalarValid $value)
+    (if (== (get-type $value) Number)
+        (fsNumberIn $value -9007199254740991 9007199254740991)
+        (if (or (== (get-type $value) String)
+                (!= (collapse (translatePredicate (atom $value))) ()))
+            (<= (string_length $value) 1200)
+            False
+        )
+    )
+)
+
+;; Walk at most 256 children, threading a shared node allowance through siblings.
+;; Example: (reasonerProposalDataItems () 15 10 256) -> 10.
+(= (reasonerProposalDataItems $items $depth $remaining $slots)
+    (if (== $items ())
+        $remaining
+        (if (or (< $remaining 1) (< $slots 1))
+            -1
+            (let* (
+                (($head $tail) (decons-atom $items))
+                ;; Defer the recursive partner until both definitions are loaded.
+                ($next (eval (reasonerProposalDataRemaining (quote $head) $depth $remaining)))
+            )
+                (if (< $next 0)
+                    -1
+                    (reasonerProposalDataItems $tail $depth $next (- $slots 1))
+                )
+            )
+        )
+    )
+)
+
+;; Count each scalar/list as a node and stop before descending past the limit.
+;; Example: (reasonerProposalDataRemaining (quote (Expected recovered)) 16 1024) -> 1021.
+(= (reasonerProposalDataRemaining $data $depth $remaining)
+    (if (or (< $depth 1) (< $remaining 1))
+        -1
+        (if (== (get-metatype $data) Expression)
+            (reasonerProposalDataItems $data (- $depth 1) (- $remaining 1) 256)
+            (if (reasonerProposalScalarValid $data) (- $remaining 1) -1)
+        )
+    )
+)
+
+;; Require nonblank text with a 1200-character bound, permitting multiline content.
+;; Example: (reasonerProposalPayloadTextValid "first\nsecond") -> True.
+(= (reasonerProposalPayloadTextValid $text)
+    (if (<= (string_length $text) 1200)
+        (!= (filter-atom (string_codes $text) $code
+            (not (reasonerTextCodeIsSpace $code))) ())
+        False
+    )
+)
+
+;; Require ground, nonempty data; multiline text remains inert payload content.
+;; Example: (reasonerProposalPayloadValid "first\nsecond") -> True.
+(= (reasonerProposalPayloadValid $data)
+    (if (is-ground $data)
+        (if (or (== $data ()) (== $data None))
+            False
+            (if (== (get-type $data) String)
+                (reasonerProposalPayloadTextValid $data)
+                (>= (reasonerProposalDataRemaining $data 16 1024) 0)
+            )
+        )
+        False
+    )
+)
+
+;; Accept legacy evidence stamps and typed observation-reference shapes only.
+;; Example: (reasonerProposalEvidenceReferenceValid (quote (ObservationRef "host" "obs"))) -> True.
+(= (reasonerProposalEvidenceReferenceValid $reference)
+    (case $reference
+        (
+            ((ObservationRef $host $id)
+                (tpAllTrue ((== (get-type $host) String) (== (get-type $id) String)
+                    (reasonerProposalIdValid $host) (reasonerProposalIdValid $id))))
+            ((SessionObservationRef $session $sequence)
+                (tpAllTrue ((== (get-type $session) String)
+                    (reasonerProposalIdValid $session) (fsCount $sequence))))
+            ($_ (reasonerProposalIdValid $reference))
+        )
+    )
+)
+
+;; Validate a proper, duplicate-free bounded list without resolving its members.
+;; Example: (reasonerProposalEvidenceList (quote (e1 e1)) 32 ()) -> False.
+(= (reasonerProposalEvidenceList $references $remaining $seen)
+    (case ((get-metatype $references) (== $references ()))
+        (
+            ((Expression True) True)
+            ((Expression False)
+                (if (< $remaining 1) False
+                    (let ($head $tail) (decons-atom $references)
+                        (if (and (reasonerProposalEvidenceReferenceValid $head)
+                                (not (tpContains $seen $head)))
+                            (reasonerProposalEvidenceList $tail (- $remaining 1) (cons-atom $head $seen))
+                            False
+                        )
+                    )
+                )
+            )
+            ($_ False)
+        )
+    )
+)
+
+;; NARS/PLN need nonempty support references; other sources may have none.
+;; Example: (reasonerProposalEvidenceValid nars (quote (EvidenceReferences ()))) -> False.
+(= (reasonerProposalEvidenceValid $source $evidence)
+    (if (is-ground $evidence)
+        (case $evidence
+            (
+                ((EvidenceReferences $references)
+                    (and (reasonerProposalEvidenceList $references 32 ())
+                        (or (not (tpContains (nars pln) $source)) (!= $references ())))
+                )
+                ($_ False)
+            )
+        )
+        False
+    )
+)
+
+;; Builders accept either a raw reference list or an already wrapped record.
+;; Example: (reasonerProposalEvidenceRecord (quote (e1))) -> (EvidenceReferences (e1)).
+(= (reasonerProposalEvidenceRecord $evidence)
+    (case $evidence
+        (
+            ((EvidenceReferences $references) $evidence)
+            ($_ (EvidenceReferences $evidence))
+        )
+    )
+)
 
 ;; Check the exact constructor and ten fields without binding missing input.
 ;; Example: (reasonerProposalShapeValid (quote (ReasonerMotivationalProposal broken))) -> False.

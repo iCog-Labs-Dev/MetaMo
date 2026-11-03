@@ -22,10 +22,13 @@
 ;; Query a registered candidate recommendation for this exact frame. Merely
 ;; asking the question does not supply the conclusion: inference must return
 ;; positive support. Preserve both truth components and the original stamps.
+;; Example: an invalid ID or prediction returns () before querying an engine.
 (= (reasonerInferProposal $engine $id $frame $facts $candidate $prediction $limits)
-   (if (and (or (== $engine nars) (== $engine pln))
-            (and (reasonerProposalCandidateValid $candidate)
-                 (not (== $frame ()))))
+   (if (tpAllTrue ((or (== $engine nars) (== $engine pln))
+          (reasonerProposalIdValid $id)
+          (reasonerProposalCandidateValid $candidate)
+          (reasonerProposalTargetValid propose-candidate (FrameTarget $frame))
+          (reasonerProposalPayloadValid $prediction)))
        (let* (
           ($query (Recommend $frame $candidate))
           ($result (reasonerQuery $engine $facts $query $limits)))
@@ -33,27 +36,50 @@
              $engine $id $frame $facts $query $candidate $prediction $result))
        ()))
 
+;; No inferred result produces no proposal.
+;; Example: (reasonerInferenceResultToProposal nars p f () q respond prediction ()) -> ().
 (= (reasonerInferenceResultToProposal
       $engine $id $frame $facts $query $candidate $prediction ()) ())
+
+;; Validate numerical representation before testing positive recommendation strength.
+;; Example: (reasonerPositiveInference "1.0" 0.9) -> False.
+(= (reasonerPositiveInference $value $confidence)
+    (if (and (fsNumberIn $value 0 1) (reasonerProposalConfidenceValid $confidence))
+        (and (> $value 0.5) (> $confidence 0.0))
+        False
+    )
+)
+
+;; Preserve inference support only when the final targeted proposal is valid.
+;; Example: a positive result with empty evidence returns ().
 (= (reasonerInferenceResultToProposal
       $engine $id $frame $facts $query $candidate $prediction
       ((stv $value $confidence) $evidence))
-   ;; Positive recommendation only. Confidence does not establish polarity.
-   (if (and (> $value 0.5)
-            (and (<= $value 1.0)
-                 (and (> $confidence 0.0)
-                      (reasonerProposalConfidenceValid $confidence))))
-       (let $proposal
-          (case $engine (
-             (nars (narsFactsToProposal $id $facts $query
-                (InferenceTruth nars (stv $value $confidence))
-                $confidence $evidence $candidate $prediction))
-             (pln (plnFactsToProposal $id $facts $query
-                (InferenceTruth pln (stv $value $confidence))
-                $confidence $evidence $candidate $prediction))))
-          (reasonerProposalForFrame $frame $proposal))
-       ()))
+    (if (reasonerPositiveInference $value $confidence)
+        (let*
+            (
+                ($proposal
+                    (case $engine
+                        (
+                            (nars (narsFactsToProposal $id $facts $query
+                                (InferenceTruth nars (stv $value $confidence))
+                                $confidence $evidence $candidate $prediction))
+                            (pln (plnFactsToProposal $id $facts $query
+                                (InferenceTruth pln (stv $value $confidence))
+                                $confidence $evidence $candidate $prediction))
+                        )
+                    )
+                )
+                ($targeted (reasonerProposalForFrame $frame $proposal))
+            )
+            (if (reasonerProposalValid $targeted) $targeted ())
+        )
+        ()
+    )
+)
 
+;; Retain the exact native frame ID while replacing the adapter's local marker.
+;; Example: a valid inference for Frame-A retains (FrameTarget Frame-A).
 (= (reasonerProposalForFrame $frame
       (ReasonerMotivationalProposal $id $source $kind $_target $candidate
          $claim $support $confidence $evidence $prediction))
