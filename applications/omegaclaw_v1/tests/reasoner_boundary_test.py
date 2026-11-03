@@ -15,6 +15,9 @@ REASONER_MODULES = {
         "reasoner_integration.metta", "reasoner_engines.pl",
     )
 }
+HOST_EVIDENCE_MODULES = {
+    str(APP / name) for name in ("reasoner_host_evidence.metta", "reasoner_host_evidence.pl")
+}
 
 
 class ReasonerBoundaryTests(unittest.TestCase):
@@ -32,7 +35,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
                 with self.subTest(entry=name):
                     edges = self.audit(APP / name, Path(directory) / "imports.json")
                     resolved = {edge["resolved"] for edge in edges}
-                    self.assertFalse(resolved & REASONER_MODULES)
+                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES))
                     self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
                     # The native decision and policy path still loads.
                     self.assertIn(str(APP / "omegaclaw_decision.metta"), resolved)
@@ -52,6 +55,21 @@ class ReasonerBoundaryTests(unittest.TestCase):
             self.assertEqual(len(proposal_edges), 1)
             engines = {Path(e["resolved"]).name for e in edges if e["kind"] == "reasoner_engine"}
             self.assertEqual(engines, {"lib_nars.metta", "lib_pln.metta"})
+
+    def test_host_evidence_adapter_does_not_load_inference_engines(self):
+        with tempfile.TemporaryDirectory(prefix="reasoner-host-evidence-") as directory:
+            entry = Path(directory) / "host.metta"
+            entry.write_text(
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/composition))\n"
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))\n"
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence))\n"
+            )
+            edges = self.audit(entry, Path(directory) / "imports.json")
+            resolved = {edge["resolved"] for edge in edges}
+            self.assertTrue(HOST_EVIDENCE_MODULES <= resolved)
+            self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
+            proposals = [e for e in edges if e["resolved"] == str(APP / "reasoner_proposals.metta")]
+            self.assertEqual(len(proposals), 1)
 
 
 if __name__ == "__main__":

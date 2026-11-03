@@ -501,3 +501,201 @@
 !(test (resolveSignalObservation (get-state &r24-mode-source))
    (FactualSignalRejected MissingObservation))
 !(test (py-call (host_config_fixture.cleanup)) 1)
+
+;; Optional proposal attribution uses real host selection, Core tickets and reads.
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence))
+!(commitmentFixtureReset)
+!(initContextFrame)
+!(initOmegaClawMotivation)
+!(initOperationSession)
+!(ctx-ingest-user-message "Inspect evidence input")
+!(cfv2-load-frame (get-state &cfv2-last-admitted-frame-id))
+!(change-state! &cfv2-current-frame-id "configured-frame")
+!(change-state! &prevmsg "")
+!(change-state! &lastresults "")
+!(change-state! &error "")
+!(change-state! &new-msg-flag False)
+!(commitmentFixtureOpen "reasoner-owner" "configured-frame" "Inspect evidence input")
+!(initMetaMoDispatch)
+!(bind! &reasoner-host-config (new-state (py-call (host_config_fixture.setup))))
+!(py-call (host_dispatch_config.provision (get-state &reasoner-host-config)))
+
+;; Select an actually admitted read and retain the proposal's exact origin.
+;; Example: (reasonerHostReadCycle proposal-A) returns a retained Accepted event.
+(= (reasonerHostReadCycle $id)
+    (let*
+        (
+            ($bundle (prepareTaskStateForMetaMo))
+            ($rows (captureCandidateOperations $bundle))
+            ($action (candidateToAction execute-skill))
+            ($pruning (admitCapturedOperations $bundle (cons-atom $action ()) $rows))
+            ($_ (retainSelectedOperation execute-skill $rows))
+            ($proposal (ReasonerMotivationalProposal $id nars propose-candidate
+                (FrameTarget (frameBundleCurrentId $bundle)) execute-skill
+                inspect-input observed-request 0.9 (EvidenceReferences (input-request))
+                (Expected ReadSucceeded)))
+            ($decision (reasonerProposalDecision $bundle (motivosToMetamoState) $proposal))
+        )
+        (if (== $pruning (CandidatePruning (admitted (cons-atom $action ())) (rejected ())))
+            (ReasonerProposalEvent (proposal $proposal) (decision $decision) (disposition Accepted))
+            NoHostSelection
+        )
+    )
+)
+
+!(bind! &reasoner-host-event (new-state (reasonerHostReadCycle proposal-A)))
+
+;; A proposal-shaped event absent from the retained audit cannot claim selection.
+!(test (retainReasonerProposalSelection
+    (quote (ReasonerProposalEvent
+        (proposal (ReasonerMotivationalProposal unretained nars propose-candidate current-frame
+            execute-skill claim support 0.9 (EvidenceReferences (e1)) prediction))
+        (decision (ReasonerMotivationalDecision Accepted Feasible
+            (ReasonerMotivationalProposal unretained nars propose-candidate current-frame
+                execute-skill claim support 0.9 (EvidenceReferences (e1)) prediction)
+            execute-skill 0.5))
+        (disposition Accepted))))
+    (ReasonerOutcomeRejected UnretainedDecision))
+
+!(test (retainReasonerProposalSelection (get-state &reasoner-host-event))
+    (ReasonerProposalLinked (get-state &selected-operation-decision)))
+
+!(test (observeReasonerProposalExecution (get-state &reasoner-host-event))
+    (ReasonerOutcomeRejected MismatchedObservation))
+
+!(bind! &reasoner-grade-before (new-state (reasonerSourceReliability nars)))
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event) Completed () Confirmed ())
+    (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+!(test (reasonerSourceReliability nars) (get-state &reasoner-grade-before))
+
+!(test (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+
+;; Knowing a real ticket is insufficient before trusted observation capture.
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (ReasonerExecutionEvidence (selectedHostTicket)) Unresolved ())
+    (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+;; A new audit event cannot retrospectively adopt an execution that already ran.
+!(bind! &reasoner-late-proposal (new-state
+    (ReasonerMotivationalProposal late-proposal nars propose-candidate current-frame
+        execute-skill claim support 0.9 (EvidenceReferences (e1)) prediction)))
+!(bind! &reasoner-late-decision (new-state
+    (reasonerProposalDecision (activeFrameBundle) (motivosToMetamoState)
+        (get-state &reasoner-late-proposal))))
+!(test (retainReasonerProposalSelection
+    (ReasonerProposalEvent (proposal (get-state &reasoner-late-proposal))
+        (decision (get-state &reasoner-late-decision)) (disposition Accepted)))
+    (ReasonerOutcomeRejected StaleDispatch))
+
+;; A structurally valid callback is insufficient when Core retained other data.
+!(bind! &reasoner-actual-callback (new-state (get-state &last-operation-outcome)))
+!(change-state! &last-operation-outcome
+    (OperationOutcome (get-state &selected-operation-decision)
+        (attempted-command (selectedHostCommand)) Success
+        (DispatchResult Executed Feasible "fabricated observation")))
+!(test (observeReasonerProposalExecution (get-state &reasoner-host-event))
+    (ReasonerOutcomeRejected MismatchedExecution))
+!(change-state! &last-operation-outcome (get-state &reasoner-actual-callback))
+
+!(bind! &reasoner-host-evidence (new-state
+    (observeReasonerProposalExecution (get-state &reasoner-host-event))))
+!(test (get-state &reasoner-host-evidence)
+    (ReasonerExecutionEvidence (selectedHostTicket)))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (ReasonerExecutionEvidence (selectedHostTicket) (get-state &last-operation-outcome))
+    Unresolved ()) (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Confirmed ())
+    (ReasonerOutcomeRejected MissingVerificationEvidence))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Confirmed (quote (model-says-confirmed)))
+    (ReasonerOutcomeRejected UnsupportedVerificationEvidence))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Failed (get-state &reasoner-host-evidence) Unresolved ())
+    (ReasonerOutcomeRejected ExecutionStatusMismatch))
+
+!(test (reasonerSourceReliability nars) (get-state &reasoner-grade-before))
+
+!(bind! &reasoner-recorded-grade (new-state
+    (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+        Completed (get-state &reasoner-host-evidence) Unresolved ())))
+!(test (case (get-state &reasoner-recorded-grade)
+    (((ReasonerProposalOutcomeEvent $_ $_ $_ $_ $_ (outcome Unresolved) (grade 0.75)) True)
+        ($_ False))) True)
+
+!(test (!= (reasonerSourceReliability nars) (get-state &reasoner-grade-before)) True)
+!(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
+
+;; A later cycle cannot adopt the old proposal or supply its execution evidence.
+!(bind! &reasoner-host-next (new-state (reasonerHostReadCycle proposal-B)))
+!(test (retainReasonerProposalSelection (get-state &reasoner-host-event))
+    (ReasonerOutcomeRejected StaleProposalContext))
+
+!(test (retainReasonerProposalSelection (get-state &reasoner-host-next))
+    (ReasonerProposalLinked (get-state &selected-operation-decision)))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-next)
+    Completed (get-state &reasoner-host-evidence) Unresolved ())
+    (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+;; An actual failed read has its own exact ticket and immutable observation.
+!(py-call (host_config_fixture.remove_file))
+!(test (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))
+    (quote (DispatchResult Executed Feasible (Error read-file FileUnavailable))))
+
+!(bind! &reasoner-failed-evidence (new-state
+    (observeReasonerProposalExecution (get-state &reasoner-host-next))))
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-failed-evidence) Unresolved ())
+    (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-next)
+    Completed (get-state &reasoner-failed-evidence) Unresolved ())
+    (ReasonerOutcomeRejected ExecutionStatusMismatch))
+
+!(test (case (recordReasonerProposalOutcome (get-state &reasoner-host-next)
+        Failed (get-state &reasoner-failed-evidence) Unresolved ())
+    (((ReasonerProposalOutcomeEvent $_ $_ $_ $_ $_ (outcome Refuted) (grade 0.0)) True)
+        ($_ False))) True)
+
+;; Revocation after linking cannot create observed execution or a grade.
+!(py-call (host_config_fixture.replace_file_content))
+!(bind! &reasoner-revoked-event (new-state (reasonerHostReadCycle proposal-C)))
+!(test (retainReasonerProposalSelection (get-state &reasoner-revoked-event))
+    (ReasonerProposalLinked (get-state &selected-operation-decision)))
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "permission-denied"))))
+!(test (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))
+    (DispatchResult Blocked StaleSnapshot none))
+
+!(test (observeReasonerProposalExecution (get-state &reasoner-revoked-event))
+    (ReasonerOutcomeRejected NoObservedExecution))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-revoked-event)
+    Completed (ReasonerExecutionEvidence (selectedHostTicket)) Unresolved ())
+    (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+;; An old captured receipt stays historical; later ownership cannot relabel it.
+!(commitmentFixtureApply
+    (quote (CommitmentEvent "reasoner-replace" "reasoner-owner" 0
+        (Superseded "reasoner-successor" "Inspect another input" "Explicit replacement"))))
+!(test (observeReasonerProposalExecution (get-state &reasoner-host-event))
+    (ReasonerOutcomeRejected OwnerMismatch))
+
+!(test (validateReasonerExecutionEvidence (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Unresolved ()) ReasonerExecutionEvidenceValid)
+
+;; Unknown sessions do not borrow evidence from the old session's ledger.
+!(initOperationSession)
+!(prepareTaskStateForMetaMo)
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Unresolved ())
+    (ReasonerOutcomeRejected MissingSelectionLink))
+
+!(test (py-call (host_config_fixture.cleanup)) 1)

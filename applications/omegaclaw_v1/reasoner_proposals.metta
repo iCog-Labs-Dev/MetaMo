@@ -36,6 +36,10 @@
 !(bind! &reasoner-proposal-events (new-space))
 !(bind! &reasoner-proposal-outcomes (new-space))
 !(bind! &reasoner-source-reliability (new-space))
+;; Retained origin data is advisory provenance, never dispatch authority.
+!(bind! &reasoner-proposal-origins (new-space))
+;; A trusted optional host adapter installs evidence validation explicitly.
+!(bind! &reasoner-evidence-validator (new-state ()))
 
 (= (reasonerProposalSources) (nars pln llm rule-engine human-adapter))
 (= (reasonerInferenceSources) (nars pln))
@@ -350,7 +354,15 @@
                   (== $kind request-mode-change)) Deferred Accepted))
        $status))
 
+;; Compatibility entry point captures the currently published bundle explicitly.
+;; Example: trusted callers can retain an event without invoking a handler.
 (= (recordReasonerProposalEvent $proposal $decision)
+    (recordReasonerProposalEvent $proposal $decision (activeFrameBundle))
+)
+
+;; Retain the exact cycle, supplied snapshot and host owner beside the audit event.
+;; Example: a later host selection must match this origin before linking a ticket.
+(= (recordReasonerProposalEvent $proposal $decision $bundle)
    (let* (
       ($status (getStatus $decision))
       ($disposition (reasonerProposalDisposition $proposal $status))
@@ -358,8 +370,19 @@
          (proposal $proposal)
          (decision $decision)
          (disposition $disposition)))
-      ($_ (add-atom &reasoner-proposal-events $event)))
+      ($origin (ReasonerProposalOrigin $event (get-state &operation-context)
+          $bundle (commitmentSnapshot)))
+      ($_ (add-atom &reasoner-proposal-events $event))
+      ($_ (add-atom &reasoner-proposal-origins $origin)))
       $event))
+
+;; Read retained origin data without recapturing or relabelling a proposal.
+;; Example: (reasonerProposalOrigins) returns session-local publication records.
+(= (reasonerProposalOrigins)
+    (collapse (match &reasoner-proposal-origins
+        (ReasonerProposalOrigin $event $context $bundle $owner)
+        (ReasonerProposalOrigin $event $context $bundle $owner)))
+)
 
 (= (reasonerProposalEvents)
    (collapse (match &reasoner-proposal-events
@@ -397,10 +420,44 @@
 (= (reasonerProposalOutcomeClass Blocked $_) Unresolved)
 (= (reasonerProposalOutcomeClass Unobserved $_) Unresolved)
 
-;; `execution-evidence` and `frame-state-evidence` are bounded observations
-;; supplied by the host. They are retained verbatim for audit/grading and are
-;; not treated as executable instructions.
+;; Invoke only a trusted installed reader, passing every input as quoted data.
+;; Example: absent host wiring returns (ReasonerOutcomeRejected MissingHostEvidence).
+(= (reasonerOutcomeEvidenceCheck $event $status $execution $frame-status $frame-evidence)
+    (if (is-ground ($event $status $execution $frame-status $frame-evidence))
+        (case (get-state &reasoner-evidence-validator)
+            (
+                (() (ReasonerOutcomeRejected MissingHostEvidence))
+                ($validator
+                    (eval ($validator (quote $event) (quote $status) (quote $execution)
+                        (quote $frame-status) (quote $frame-evidence))))
+            )
+        )
+        (ReasonerOutcomeRejected MalformedEvidence)
+    )
+)
+
+;; Execution-backed grades require host-retained causal links and observations.
+;; Example: caller-supplied Completed/Confirmed labels with () evidence reject.
 (= (recordReasonerProposalOutcome
+      $proposal-event $execution-status $execution-evidence
+      $frame-evidence-status $frame-state-evidence)
+    (let $validation (reasonerOutcomeEvidenceCheck $proposal-event $execution-status
+            $execution-evidence $frame-evidence-status $frame-state-evidence)
+        (case $validation
+            (
+                (ReasonerExecutionEvidenceValid
+                    (recordValidatedReasonerProposalOutcome $proposal-event $execution-status
+                        $execution-evidence $frame-evidence-status $frame-state-evidence))
+                ((ReasonerOutcomeRejected $reason) $validation)
+                ($_ (ReasonerOutcomeRejected InvalidHostEvidence))
+            )
+        )
+    )
+)
+
+;; Internal writer used only after the host evidence check; it executes no data.
+;; Example: a validated read result can be recorded with frame status Unresolved.
+(= (recordValidatedReasonerProposalOutcome
       $proposal-event $execution-status $execution-evidence
       $frame-evidence-status $frame-state-evidence)
    (let* (
@@ -454,7 +511,7 @@
              (ReasonerMotivationalDecision Accepted Feasible $proposal $candidate
                 (reasonerProposalEffectiveScore $bundle $state $proposal))
              (ReasonerMotivationalDecision $status $reason $proposal none 0.0)))
-      ($_ (recordReasonerProposalEvent $proposal $decision)))
+      ($_ (recordReasonerProposalEvent $proposal $decision $bundle)))
       $decision))
 
 ;; The proposal remains available to the scheduler as data. Only the approved

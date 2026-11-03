@@ -493,3 +493,11 @@
 !(test (reasonerProposalOutcomes) (get-state &reasoner-validation-outcomes))
 
 !(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))
+
+;; No host adapter means status labels cannot mint execution-backed grades.
+!(test (recordReasonerProposalOutcome (car-atom (reasonerProposalEvents))
+    Completed () Confirmed ()) (ReasonerOutcomeRejected MissingHostEvidence))
+
+!(test (reasonerProposalOutcomes) (get-state &reasoner-validation-outcomes))
+
+!(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))

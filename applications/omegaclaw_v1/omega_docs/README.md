@@ -127,7 +127,7 @@ fixed score; the real bundle feasibility gate is still exercised and asserted.
 
 ## NARS / PLN proposal integration
 
-Live reasoner integration is deferred. The default `composition.metta` and
+Live proposal intake is not connected yet. The default `composition.metta` and
 `run.metta` do not import the MetaMo proposal adapter or inference extension.
 Native candidates, scoring, policy and dispatch operate independently. Existing
 reasoner code/tests are retained as an explicit optional extension.
@@ -216,6 +216,52 @@ host's responsibility before live proposal intake. Nonempty support data is
 likewise not proof of a derivation. This contract leaves engine reasoning,
 evidence resolution, authorization, and outcome grading separate.
 
+### Execution-backed proposal evidence
+
+`recordReasonerProposalOutcome` now requires evidence from an explicitly installed
+trusted host adapter. Without one it returns
+`(ReasonerOutcomeRejected MissingHostEvidence)` and changes neither outcomes nor
+source reliability. Status labels or arbitrary evidence text cannot create a grade.
+
+The optional `reasoner_host_evidence.metta` adapter uses Core's existing ticket
+and immutable result ledger. Load it once after composition, proposal support,
+and Core/v1 dispatch. It does not load inference engines or start a service.
+
+| Trusted host API | Required timing and result |
+| --- | --- |
+| `retainReasonerProposalSelection EVENT` | Before invocation, explicitly attribute the exact selected operation to a retained Accepted event. Checks the event's original operation context, published bundle, open commitment, candidate/target and current Core ticket/snapshot. Returns `(ReasonerProposalLinked OPERATION-DECISION)` or a rejection. |
+| `observeReasonerProposalExecution EVENT` | After normal dispatch, while its owner and selection remain current, validate the correlated callback against Core's exact retained command/result. Returns `(ReasonerExecutionEvidence TICKET)` or a rejection. The opaque reference exposes no file contents. |
+| `recordReasonerProposalOutcome EVENT STATUS EVIDENCE Unresolved ()` | Resolve the captured evidence for this exact event and recheck Core's receipt before recording an execution-backed grade. Observed `Success` corresponds to execution status `Completed`; observed `Failure` corresponds to `Failed`. |
+
+The retained chain is proposal event and publication → selected operation/ticket
+→ Core's single execution attempt → validated observation. A matching candidate
+alone is insufficient. Attribution must precede execution; a later proposal
+cannot adopt an earlier result. Receipts from another command, frame, cycle,
+commitment or session cannot replace the linked observation. Captured evidence
+can be validated on later cycles within its session without relabelling it as
+evidence for a successor task.
+
+The adapter supports current-frame candidate work and at most 128 links per
+session. It requires an open matching commitment. Observation capture must occur
+before the selected callback slot is displaced. Blocked and uncertain execution
+cannot supply an execution-backed grade. Dispatch reset or session loss does not
+provide durable evidence recovery. These are host APIs, not model skills or
+authorization for execution.
+
+Here `Completed` describes the observed operation, not the user's task. No
+commitment is completed by this recorder. `Confirmed`/`Refuted` frame evidence
+is rejected until an authoritative verification adapter is connected; empty
+evidence returns `MissingVerificationEvidence`, and arbitrary nonempty text
+returns `UnsupportedVerificationEvidence`. An executed read cannot establish a
+frame claim merely by returning successfully.
+
+The existing status-based grade table remains provisional. Prediction comparison
+and grade/outcome deduplication are separate unfinished work; retaining a causal
+receipt does not by itself implement either. Tests extend the real Core
+operation-selection suite with successful and failed reads, missing/forged
+observations, mismatched receipts/statuses, stale/revoked selections, ownership
+changes and session isolation. External services remain doubled.
+
 From the PeTTa workspace root, run the offline integration checks:
 
 ```bash
@@ -234,7 +280,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 109 assertions respectively without import caching. Native
+They pass all 6 and 112 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure
