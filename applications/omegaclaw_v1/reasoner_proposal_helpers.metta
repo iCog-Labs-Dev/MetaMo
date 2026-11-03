@@ -1,51 +1,110 @@
 
-;; Positional access to proposal records belongs here so callers can use
-;; named accessors instead of coupling themselves to the wire layout.
+;; Shape-only access to legacy proposal data. Literal records must be quoted
+;; by callers; accessors never eval their contents or validate evidence authority.
+
+;; Check the exact constructor and ten fields without binding missing input.
+;; Example: (reasonerProposalShapeValid (quote (ReasonerMotivationalProposal broken))) -> False.
+(= (reasonerProposalShapeValid $proposal)
+    (if (is-ground $proposal)
+        (case $proposal
+            (
+                ((ReasonerMotivationalProposal $id $source $kind $target $candidate
+                    $claim $support $confidence $evidence $prediction) True)
+                ($_ False)
+            )
+        )
+        False
+    )
+)
+
+;; Read a known field index only after the complete proposal shape matches.
+;; Example: (reasonerProposalField (quote (WrongTag a b c d e f g h i j)) 1) -> rejection.
+(= (reasonerProposalField $proposal $index)
+    (if (reasonerProposalShapeValid $proposal)
+        (index-atom $proposal $index)
+        (ReasonerAccessorRejected InvalidProposal)
+    )
+)
+
+;; Return the proposal ID as inert data.
+;; Example: (getProposalId (quote (ReasonerMotivationalProposal p nars propose-candidate current-frame respond claim support 0.9 evidence prediction))) -> p.
 (= (getProposalId $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 1))
+    (reasonerProposalField $proposal 1)
 )
 
+;; Return the source without interpreting its implementation.
+;; Example: (getProposalSource ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalSource $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 2))
+    (reasonerProposalField $proposal 2)
 )
 
+;; Return the request kind from an exact proposal record.
+;; Example: (getProposalKind malformed) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalKind $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 3))
+    (reasonerProposalField $proposal 3)
 )
 
+;; Return the target without invoking frame or mode operations.
+;; Example: (getProposalTarget ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalTarget $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 4))
+    (reasonerProposalField $proposal 4)
 )
 
+;; Return the candidate; admission remains the caller's responsibility.
+;; Example: (getProposalCandidate ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalCandidate $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 5))
+    (reasonerProposalField $proposal 5)
 )
 
+;; Return the claim as data without running an expression it contains.
+;; Example: (getProposalClaim ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalClaim $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 6))
+    (reasonerProposalField $proposal 6)
 )
 
+;; Return support as data; this does not establish evidence validity.
+;; Example: (getProposalSupport ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalSupport $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 7))
+    (reasonerProposalField $proposal 7)
 )
 
+;; Return confidence without coercion or numerical validation.
+;; Example: (getProposalConfidence ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalConfidence $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 8))
+    (reasonerProposalField $proposal 8)
 )
 
+;; Return evidence references without resolving or evaluating them.
+;; Example: (getProposalEvidence ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalEvidence $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 9))
+    (reasonerProposalField $proposal 9)
 )
 
+;; Return the prediction as data without attempting to grade it.
+;; Example: (getProposalPrediction ()) -> (ReasonerAccessorRejected InvalidProposal).
 (= (getProposalPrediction $proposal)
-    (if (<= (size-atom $proposal) 10) (Error "There is a proposal error") (index-atom $proposal 10))
+    (reasonerProposalField $proposal 10)
 )
 
-;; A proposal event stores the proposal under its first named field.
+;; Require the exact event constructor, ordered named fields and proposal shape.
+;; Decision/disposition contents remain data; semantic validation is separate.
+;; Example: (getProposalEventProposal (quote (ReasonerProposalEvent (proposal broken)))) -> rejection.
 (= (getProposalEventProposal $proposal-event)
-    (if (<= (size-atom $proposal-event) 1)
-        (Error "There is a proposal event error")
-        (index-atom (index-atom $proposal-event 1) 1))
+    (if (is-ground $proposal-event)
+        (case $proposal-event
+            (
+                ((ReasonerProposalEvent (proposal $proposal)
+                    (decision $decision) (disposition $disposition))
+                    (if (reasonerProposalShapeValid $proposal)
+                        $proposal
+                        (ReasonerAccessorRejected InvalidProposalEvent)
+                    )
+                )
+                ($_ (ReasonerAccessorRejected InvalidProposalEvent))
+            )
+        )
+        (ReasonerAccessorRejected InvalidProposalEvent)
+    )
 )
 
 

@@ -64,3 +64,189 @@
    (motivation (0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1 0.1)
                (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5))
    (plnRepairProposal))) Accepted)
+
+;; Exercise every public proposal accessor with quoted data, including payloads
+;; whose heads name executable functions. Only the accessor itself is evaluated.
+;; Example: (reasonerAccessorTestFields ()) returns ten typed rejections.
+(= (reasonerAccessorTestFields $proposal)
+    (map-atom
+        (quote (getProposalId getProposalSource getProposalKind getProposalTarget
+            getProposalCandidate getProposalClaim getProposalSupport
+            getProposalConfidence getProposalEvidence getProposalPrediction))
+        $accessor
+        (eval ($accessor (quote $proposal)))
+    )
+)
+
+;; Check every accessor's rejection rather than just a representative field.
+;; Example: (reasonerAccessorsReject ()) -> True.
+(= (reasonerAccessorsReject $proposal)
+    (== (reasonerAccessorTestFields $proposal)
+        (map-atom (1 2 3 4 5 6 7 8 9 10) $index
+            (ReasonerAccessorRejected InvalidProposal)
+        )
+    )
+)
+
+;; Distinct field values detect positional regressions across all ten getters.
+;; Example: (getProposalId (reasonerAccessorTestProposal)) -> accessor-id.
+(= (reasonerAccessorTestProposal)
+    (quote (ReasonerMotivationalProposal accessor-id nars propose-candidate
+        (FrameTarget demo-frame) respond claim support 0.9
+        (EvidenceReferences (observation-1)) prediction))
+)
+
+;; Construct an inert event with the canonical ordered field layout.
+;; Example: (getProposalEventProposal (reasonerAccessorTestEvent p)) rejects p.
+(= (reasonerAccessorTestEvent $proposal)
+    (quote (ReasonerProposalEvent (proposal $proposal)
+        (decision retained-decision) (disposition Accepted)))
+)
+
+!(test (reasonerAccessorTestFields (reasonerAccessorTestProposal))
+    (quote (accessor-id nars propose-candidate (FrameTarget demo-frame)
+        respond claim support 0.9 (EvidenceReferences (observation-1)) prediction)))
+
+!(test (reasonerAccessorsReject
+    (quote (WrongTag id nars propose-candidate current-frame respond
+        claim support 0.9 evidence prediction))) True)
+
+!(test (reasonerAccessorsReject
+    (quote (ReasonerMotivationalProposal id nars propose-candidate current-frame
+        respond claim support 0.9 evidence))) True)
+
+!(test (reasonerAccessorsReject
+    (quote (ReasonerMotivationalProposal id nars propose-candidate current-frame
+        respond claim support 0.9 evidence prediction extra))) True)
+
+!(test (reasonerAccessorsReject ()) True)
+
+!(test (reasonerAccessorsReject malformed) True)
+
+!(test (reasonerAccessorsReject "not a record") True)
+
+!(test (reasonerAccessorsReject 42) True)
+
+!(test (reasonerAccessorsReject (quote $unbound-proposal)) True)
+
+!(test (reasonerAccessorsReject
+    (quote (ReasonerMotivationalProposal $unbound-id nars propose-candidate
+        current-frame respond claim support 0.9 evidence prediction))) True)
+
+!(test (getProposalEventProposal
+    (reasonerAccessorTestEvent (reasonerAccessorTestProposal))) (reasonerAccessorTestProposal))
+
+!(test (getProposalEventProposal
+    (quote (WrongEvent (proposal malformed) (decision d) (disposition Accepted))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal
+    (quote (ReasonerProposalEvent (proposal malformed))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal
+    (quote (ReasonerProposalEvent (proposal malformed) (decision d)
+        (disposition Accepted) extra)))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal
+    (quote (ReasonerProposalEvent (wrong-field malformed) (decision d) (disposition Accepted))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal
+    (quote (ReasonerProposalEvent (proposal malformed extra) (decision d) (disposition Accepted))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal
+    (quote (ReasonerProposalEvent (decision d) (proposal malformed) (disposition Accepted))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal (reasonerAccessorTestEvent
+    (quote (WrongProposal id nars propose-candidate current-frame respond
+        claim support 0.9 evidence prediction))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal ()) (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal malformed) (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalEventProposal (quote $unbound-event))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+;; A valid embedded proposal must not hide malformed event fields or arities.
+;; Example: every record returned here must reject at the event boundary.
+(= (reasonerAccessorMalformedEvents)
+    (let $proposal (reasonerAccessorTestProposal)
+        (quote (
+            (WrongEvent (proposal $proposal) (decision d) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision d))
+            (ReasonerProposalEvent (proposal $proposal) (decision d) (disposition Accepted) extra)
+            (ReasonerProposalEvent (wrong-field $proposal) (decision d) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal extra) (decision d) (disposition Accepted))
+            (ReasonerProposalEvent (decision d) (proposal $proposal) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (wrong-field d) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision d extra) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision d) (wrong-field Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision d) (disposition))
+            (ReasonerProposalEvent (proposal $proposal) (decision d) (disposition Accepted extra))
+        ))
+    )
+)
+
+!(test (map-atom (reasonerAccessorMalformedEvents) $event
+    (getProposalEventProposal $event))
+    (map-atom (1 2 3 4 5 6 7 8 9 10 11 12) $index
+        (ReasonerAccessorRejected InvalidProposalEvent)))
+
+!(test (reasonerProposalShapeValid
+    (getProposalEventProposal (car-atom (reasonerProposalEvents)))) True)
+
+;; The counter proves that payload inspection/return never executes its code.
+!(bind! &reasoner-accessor-effects (new-state 0))
+
+;; Deliberately executable payload used only inside quoted records.
+;; Example: an explicit (reasonerAccessorEffect) increments the counter once.
+(= (reasonerAccessorEffect)
+    (change-state! &reasoner-accessor-effects
+        (+ (get-state &reasoner-accessor-effects) 1)
+    )
+)
+
+;; All fields are expressions to exercise every accessor's data-return path.
+;; Example: (getProposalClaim (reasonerAccessorInertProposal)) returns the expression unchanged.
+(= (reasonerAccessorInertProposal)
+    (quote (ReasonerMotivationalProposal
+        (reasonerAccessorEffect) (reasonerAccessorEffect) (reasonerAccessorEffect)
+        (reasonerAccessorEffect) (reasonerAccessorEffect) (reasonerAccessorEffect)
+        (reasonerAccessorEffect) (reasonerAccessorEffect) (reasonerAccessorEffect)
+        (reasonerAccessorEffect)))
+)
+
+!(test (reasonerAccessorTestFields (reasonerAccessorInertProposal))
+    (quote ((reasonerAccessorEffect) (reasonerAccessorEffect) (reasonerAccessorEffect)
+        (reasonerAccessorEffect) (reasonerAccessorEffect) (reasonerAccessorEffect)
+        (reasonerAccessorEffect) (reasonerAccessorEffect) (reasonerAccessorEffect)
+        (reasonerAccessorEffect))))
+
+!(test (getProposalEventProposal (reasonerAccessorTestEvent (reasonerAccessorInertProposal)))
+    (reasonerAccessorInertProposal))
+
+!(test (getProposalEventProposal
+    (let $proposal (reasonerAccessorInertProposal)
+        (quote (ReasonerProposalEvent (proposal $proposal)
+            (decision (reasonerAccessorEffect)) (disposition (reasonerAccessorEffect))))))
+    (reasonerAccessorInertProposal))
+
+!(test (getProposalEventProposal
+    (quote (ReasonerProposalEvent (proposal (reasonerAccessorEffect))
+        (decision (reasonerAccessorEffect)) (disposition (reasonerAccessorEffect)))))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (getProposalId (quote (reasonerAccessorEffect)))
+    (ReasonerAccessorRejected InvalidProposal))
+
+!(test (getProposalEventProposal (quote (reasonerAccessorEffect)))
+    (ReasonerAccessorRejected InvalidProposalEvent))
+
+!(test (get-state &reasoner-accessor-effects) 0)

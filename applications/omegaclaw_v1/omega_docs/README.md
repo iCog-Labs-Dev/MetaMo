@@ -175,6 +175,15 @@ Automatic frame-to-fact extraction, proposal collection in the live bridge,
 and scheduler outcome callbacks remain deferred host integration work. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 
+Legacy proposal accessors require a ground `ReasonerMotivationalProposal` with
+exactly ten fields. Malformed input returns
+`(ReasonerAccessorRejected InvalidProposal)`. `getProposalEventProposal` requires
+the exact `ReasonerProposalEvent` constructor and ordered `proposal`, `decision`,
+and `disposition` fields, each containing one value, plus a matching proposal
+shape. Malformed events return `(ReasonerAccessorRejected InvalidProposalEvent)`.
+Quote literal record inputs; the accessors inspect and return contents as data.
+These shape checks do not validate evidence authority or grade outcomes.
+
 From the PeTTa workspace root, run the offline integration checks:
 
 ```bash
@@ -193,7 +202,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 18 assertions respectively without import caching. Native
+They pass all 6 and 48 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure
