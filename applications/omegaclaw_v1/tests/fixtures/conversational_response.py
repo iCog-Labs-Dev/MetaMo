@@ -7,6 +7,8 @@ _calls = 0
 _messages = iter(())
 _scenario = 'answer'
 _drain_irc = None
+_before_calls = 0
+REPLY = 'Hi! I\'m ready. You said "hello".\nHow can I help?'
 
 
 # Example: install() supplies explicit send policy, with no fixed send command.
@@ -48,7 +50,7 @@ def receive():
     return _drain_irc()
 
 
-# Example: preparation returns JSON; Core command generation echoes its selection.
+# Example: preparation returns JSON; asking a model to echo commands is a failure.
 def provider(name, prompt, max_tokens, *args):
     import janus
     global _calls
@@ -81,15 +83,18 @@ def provider(name, prompt, max_tokens, *args):
             return '{"no_action":true}'
         if _scenario == 'invalid':
             return '{"command":"send", "permissions":["all"]}'
-        return '{"text":"Hello!"}'
-    if _scenario == 'before_dispatch':
-        import host_ingress
-        assert 'FollowUp' in host_ingress.ingest('follow-up: read /secret')
-    result = janus.query_once('''eval([selectedHostCommand], Command), swrite(Command, Source),
-        eval(['get-state','&prepared-host-operation'], Prepared)''')
-    if result['Command']:
-        assert result['Prepared'][6] == ['NoToolEvidenceReady', 'Conversation', 'hello']
-    return result['Source'] if result['Command'] else '()'
+        return json.dumps({'text': REPLY})
+    raise AssertionError('Core must not call a command-generation model for host commands or no action')
+
+
+# Example: mutate current ownership after selection but before final dispatch checks.
+def before_dispatch():
+    global _before_calls
+    import host_ingress
+    _before_calls += 1
+    assert _scenario == 'before_dispatch' and _before_calls == 1
+    assert 'FollowUp' in host_ingress.ingest('follow-up: read /secret')
+    return 1
 
 
 # Example: three polling turns submit one greeting and perform zero reads.
@@ -97,12 +102,29 @@ def verified():
     import janus
     import irc_routing_fixture
     assert _calls == (0 if _scenario == 'unsupported' else 1), _calls
-    expected = 1 if _scenario == 'answer' else 0
+    expected = 2 if _scenario == 'answer' else 0
+    assert _before_calls == (1 if _scenario == 'before_dispatch' else 0)
     assert irc_routing_fixture.writes() == expected, irc_routing_fixture.writes()
     assert janus.query_once("\\+ oc_dispatch_result(_, ['read-file',_], _)")['truth']
     if not expected:
         assert janus.query_once("eval(['get-state','&answered-operation-key'], [])")['truth']
         return 1
-    assert irc_routing_fixture._sockets[0].sendall.call_args.args == (b'PRIVMSG #room :Hello!\r\n',)
+    submitted = [call.args[0] for call in irc_routing_fixture._sockets[0].sendall.call_args_list]
+    assert submitted == [b'PRIVMSG #room :Hi! I\'m ready. You said "hello".\r\n',
+                         b'PRIVMSG #room :How can I help?\r\n'], submitted
+    receipts = janus.query_once("findall(C, oc_dispatch_result(_, C, ['DispatchResult','Executed',_,_]), Commands), C=ignored")
+    assert receipts['Commands'] == [['send', REPLY]], receipts
     assert janus.query_once("eval(['get-state','&answered-operation-key'], Key), Key \\== []")['truth']
+    return 1
+
+
+# Example: exercise standalone Core's opt-out path with a bounded provider double.
+def install_legacy_provider():
+    import lib_llm_ext
+
+    def legacy_provider(name, prompt, max_tokens, *args):
+        assert name == 'Offline' and max_tokens == 256
+        return '(send "legacy model reply")'
+
+    lib_llm_ext.callProvider = legacy_provider
     return 1

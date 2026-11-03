@@ -1,13 +1,30 @@
-# OmegaClaw v1 dependency baseline and workspace layout
+# Setting up a matching workspace
 
-**Automatic correction/resume (F4.6), 26 October 2026:** requires matching Core
+This application depends on matching MetaMo, OmegaClaw-Core, PeTTa, and ChromaDB
+adapter sources. Use the workspace layout below and the common launcher. The
+recorded commit hashes alone are not enough to reproduce the older runs: some
+required changes were local working-tree files.
+
+The latest compatibility notes come first. Dated sections preserve the setup and
+test evidence from earlier runs; they are not a clean-install lock file.
+
+**Direct host command input, 2 November 2026:** deploy matching Core
+`src/dispatch.metta` and `src/loop.metta` with v1's dispatch/operation-selection
+changes. `configureCoreLoopCommandSource` lets the host supply the already
+selected command as data; empty selections skip command generation entirely.
+Standalone Core keeps its model source. Older Core lacking this hook is rejected
+by enabled v1 startup. Existing final checks, accounting and outcome ownership
+remain mandatory. Restart the interpreter to load these changes; see
+[direct command input](DISPATCH.md#direct-host-command-input).
+
+**Automatic correction/resume (automatic correction capture and fresh retry tickets), 26 October 2026:** requires matching Core
 `src/loop.metta` and `src/dispatch.metta` overlays. The loop retains original
 received text alongside its legacy sanitized text; the optional two-argument
 `configureCoreLoopIngest` API lets v1 startup opt into original text for strict
 correction JSON. Existing one-argument configuration remains legacy-compatible.
 Deploy these with v1's `host_startup.metta`, lifecycle and dispatch-hook changes;
 older Core sources cannot support the automatic polling-loop correction path.
-See `CONTINUATION.md#automatic-correction-capture-and-fresh-retry-tickets-f46`.
+See `CONTINUATION.md#automatic-correction-capture-and-fresh-retry-tickets`.
 
 The [live mode-transition verification](LIVE_MODES.md) additionally requires
 Core's updated `src/skills.metta`: pre-open file unavailability returns
@@ -42,7 +59,7 @@ PeTTa compiler sources are unchanged. Application-local `helpers.metta`, its
 composition import, seven shared-core wrappers, and runner-hardening tests are
 already in the recorded MetaMo commit.
 
-## Required working-tree source overlays
+## Local source changes required for these runs
 
 Preserve these files from the assessed workspace as well as the commits.
 Paths in this table are relative to their component checkout.
@@ -132,7 +149,7 @@ adapter imports `chromadb` without its own requirements file. A complete Python
 lock and clean live installation remain follow-up work. Check the Python
 embedded by SWI-Prolog, not only the shell interpreter.
 
-## Reconstruct the assessed source setup
+## Recreate the recorded workspace
 
 The following uses local repository histories and the nine overlay files above.
 It creates a new temporary workspace without modifying the source or fetching
@@ -197,16 +214,16 @@ On 21 September 2026, reconstruction at
 
 Suite and standalone demo agree on `respond`, score `0.5`, mode `Rumination`,
 and the admitted directive targeting `demo-frame`. This is a fixed-score fixture,
-not proof of the real execution-feedback MVP. The import regressions also check
+not proof of the real execution-feedback initial implementation. The import regressions also check
 native context integration (77 assertions) and native minimal/reasoner tests,
 including a 64 MiB compiler stack for the latter two.
 
 The shared-core wrappers supply application-local `norm`; direct standalone
 shared tests without that helper retain the previously recorded failures.
-This is not a passing full-repository baseline. No live channel, restart,
+These results do not cover the full repository. No live channel, restart,
 clean dependency installation, or CI run was verified.
 
-## Live invocation and historical limits
+## Starting a live run and reading older results
 
 Subsequent offline-service work adds `tests/offline_ingestion_test.metta`,
 `tests/offline_services_test.py`, and `tests/fixtures/offline_services/*.py`,

@@ -1,9 +1,10 @@
 # OmegaClaw and MetaMo: a plain-language glossary
 
 This note explains the terminology used in `MetaMo/applications/omegaclaw_v1`
-and `repos/OmegaClaw-Core`. It describes the local project as inspected on
-September 17, 2026. Some terms describe planned capabilities; those limits are
-called out below.
+and `repos/OmegaClaw-Core`. It is a guide to the code's vocabulary, not a claim
+that every described interface is fully deployed. Planned capabilities and
+current limits are called out where they matter; dated reports give the evidence
+for particular runs.
 
 Start with this division of responsibilities: **Core owns the agent's tasks and
 execution. MetaMo recommends what deserves attention. Core checks whether the
@@ -125,7 +126,7 @@ candidates compete. The implemented scheduling order is **Threat-remediation >
 Recovery > Interactive > Orienting > Engaged > Rumination > Sleep**. Only the
 highest admitted class reaches numeric scoring; scores break ties within it.
 These scheduling classes are separate from constitutional modes and do not
-change Fast/Slow execution modes. See the [scheduling note](MetaMo/applications/omegaclaw_v1/omega_docs/SCHEDULING.md).
+change Fast/Slow execution modes. See the [scheduling note](SCHEDULING.md).
 
 ## 6. Stability and mathematical terminology
 
@@ -168,7 +169,7 @@ Other contract vocabulary:
   record ID, producer, context, and payload.
 - **Payload:** the actual content inside the envelope.
 - **Producer / consumer:** the component creating a record / the component
-  reading it. A producer name alone does not authenticate its sender.
+  reading it. A producer name alone does not establish who sent the record.
 - **Validation:** checking shape, types, and local consistency. A valid record
   is not automatically authorized work.
 - **Reference:** an identifier pointing to another record or piece of evidence.
@@ -178,9 +179,10 @@ Other contract vocabulary:
 - **Legacy v0:** the older unversioned runtime records. They do not become v1
   just because they are used inside the `omegaclaw_v1` directory.
 
-**Current limit:** v1 construction and validation APIs exist, but the live loop
-still uses legacy records. Full host migration, durable identity management, and
-reference enforcement remain integration work.
+**Current limit:** construction and validation APIs exist, but the live loop still
+uses legacy records. Durable identity APIs are available as an opt-in module;
+connecting them to the full live record exchange and reference checks remains
+integration work.
 
 ## 8. Policy and admission
 
@@ -226,7 +228,8 @@ or frame policy rejects it, that score cannot make it executable.
 **Current limit:** v1 dispatch requires explicit host policies and command
 bindings. Its live adapter supports same-frame candidate work; cross-frame and
 mode-transition execution remain unsupported on that path. One ticket permits
-at most one invocation, including when the model produces a batch of commands.
+at most one invocation. Enabled v1 supplies the selected command directly; it does
+not ask a model to reconstruct its arguments.
 
 ## 10. Resource budgets
 
@@ -248,8 +251,10 @@ Example: a limit of 10, spent amount of 3, and reservation of 2 leave **5
 available**. A proposed cost of 6 must be rejected. An uncertain outcome is not
 evidence that the reserved amount can be refunded.
 
-**Current limit:** numeric admission and the accounting projection are
-implemented. Live reservations, settlement, and a durable ledger remain host work.
+**Current limit:** live availability, reservation, and settlement are connected
+for supported command invocations in both budget scopes. Each supported command
+costs one unit. Token, monetary, byte, and elapsed-time meters are not connected,
+and session accounting does not provide a durable restart ledger.
 
 ## 11. Reasoning and evidence
 
@@ -306,14 +311,14 @@ durable resource accounting are not completed by this example.
 
 ## Source references
 
-- [Application overview](MetaMo/applications/omegaclaw_v1/omega_docs/README.md)
-- [Motivation registry](MetaMo/applications/omegaclaw_v1/registry.metta)
-- [Constitutional mode rules](MetaMo/applications/omegaclaw_v1/mode_layer.metta)
-- [Motivation cycle and prompt bridge](MetaMo/applications/omegaclaw_v1/bridge.metta)
-- [Shared contracts and state ownership](MetaMo/applications/omegaclaw_v1/omega_docs/CONTRACTS.md)
-- [Typed policy and request admission](MetaMo/applications/omegaclaw_v1/omega_docs/TYPED_POLICY.md)
-- [Budget accounting contract](MetaMo/applications/omegaclaw_v1/omega_docs/BUDGET_ACCOUNTING.md)
-- [Session dispatch and its limits](MetaMo/applications/omegaclaw_v1/omega_docs/DISPATCH.md)
-- [Module composition and imports](MetaMo/applications/omegaclaw_v1/omega_docs/COMPOSITION.md)
-- [Pseudo-bimonad implementation](MetaMo/category/bimonad.metta)
-- [Core frame implementation](repos/OmegaClaw-Core/src/context.metta)
+- [Application overview](README.md)
+- [Motivation registry](../registry.metta)
+- [Constitutional mode rules](../mode_layer.metta)
+- [Motivation cycle and prompt bridge](../bridge.metta)
+- [Shared contracts and state ownership](CONTRACTS.md)
+- [Typed policy and request admission](TYPED_POLICY.md)
+- [Budget accounting contract](BUDGET_ACCOUNTING.md)
+- [Session dispatch and its limits](DISPATCH.md)
+- [Module composition and imports](COMPOSITION.md)
+- [Pseudo-bimonad implementation](../../../category/bimonad.metta)
+- [Core frame implementation](../../../../repos/OmegaClaw-Core/src/context.metta)

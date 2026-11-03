@@ -1,9 +1,11 @@
-# Registry-driven mode transitions
+# How the application changes mode
 
-Constitutional mode selection and scheduling promotion read the same trigger
-definitions in `registry.metta`. They consume typed `FactualSignal`
-records with values and session provenance and, for mode selection, the bounded snapshot's current-frame presence.
-No trigger evaluator creates signals, calls a provider, or mutates host frames.
+The application chooses its constitutional mode from facts in the current
+snapshot: whether a user is waiting, a failure is unresolved, a threat estimate
+is present, or a frame exists. Mode selection and scheduling promotion share the
+trigger definitions in `registry.metta`. They read typed `FactualSignal` values
+with source references; evaluating a trigger does not call a provider or change
+host frames.
 
 Constitutional modes remain **Engaged, Threat, Rumination, Sleep**. Recovery,
 Interactive, and Orienting remain scheduling classes; ContextFrames **Fast/Slow**
@@ -33,7 +35,7 @@ The timing and default lookups require a single matching row. Replace a row when
 changing configuration rather than appending a conflicting duplicate. Missing or
 ambiguous required rows cannot produce a normal transition update.
 
-## Default wake, recovery, and collision behavior
+## Wake, recovery, and competing triggers
 
 | Trigger group | Sources | Target | Transition priority |
 | --- | --- | --- | ---: |
@@ -214,7 +216,7 @@ both modes from the bridge's retained before/after record:
 The additional anger-input, timing, policy-denial, frame/session expiry and
 repeated idle-cycle checks remain in the same regression. Bounded live validation
 now passes all six transitions with real providers and native read outcomes;
-see [LIVE_MODES.md](LIVE_MODES.md) for the Task 6 evidence and driver scope.
+see [LIVE_MODES.md](LIVE_MODES.md) for the live results and driver scope.
 
 
 ## Retained rule and timing evidence
@@ -278,9 +280,9 @@ winning and losing groups, confirmation and hold/cooldown checks, absence after
 input consumption, and historical trace stability after a registry edit.
 
 
-## R2 typed-consumer migration
+## Typed facts in mode decisions
 
-The completed increment 2.4 retires the strength projection. Mode and scheduling
+Mode decisions use typed facts directly; the older numeric strength projection is retired. Mode and scheduling
 matching are independent of `SignalAppraisalRule` coefficients. The same typed
 predicates generate retained evidence and matching results. Latest mode evidence
 pins its session sources; reset clears it and expires old references. September

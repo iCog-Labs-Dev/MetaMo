@@ -1,11 +1,12 @@
-# Host budget reservation and accounting contract
+# How command budgets work
 
-MetaMo checks prospective costs; Core owns balances, reservations, meters and
-dispatch. The production adapter now publishes live session availability at
-operation admission, continuation admission and final dispatch revalidation
-(integration item 1.2). Item 1.3 connects automatic reservation and settlement
-for the supported command-invocation resource. Durable recovery and additional
-resource meters are outside this integration item.
+Before a command runs, the host checks that both the global budget and the
+current frame's budget can pay for it. MetaMo uses the available amounts when
+filtering candidates; Core reserves capacity, invokes the handler, and records
+what was spent. The same live balances apply to read plans and corrected reads.
+
+The supported meter counts command invocations. It does not track tokens, money,
+bytes, or elapsed time, and its session accounts do not provide restart recovery.
 
 `budget_accounting.metta` now initializes accounts, publishes availability, and
 reserves complete global/frame costs and settles actual usage with session replay
@@ -13,11 +14,10 @@ protection. It commits balances and the reservation/settlement record in one sta
 update under a serialized-caller contract. The production `dispatch.metta`
 imports the component; the trusted adapter acquires Core's dispatch mutex around
 provisioning, capture and revalidation. The component itself does not acquire
-that mutex or authorize execution. See the
-[integration plan](INTEGRATION_PLAN.md#budget-accounting-functions-to-implement)
-for remaining work.
+that mutex or authorize execution. The sections below explain the accounting
+rules and what still requires host reconciliation.
 
-## Production availability and lifecycle
+## Available budget and account lifetime
 
 The supported catalog declares one `commands` / `units` cost per read,
 frame inspection or send. No token, byte, monetary or general host-service
@@ -61,7 +61,7 @@ Accounts retain the component's 128-account session bound, including older
 frames; adding accounts beyond it rejects provisioning without changing the
 store. This implementation supplies session accounting, not restart recovery.
 
-## Production reservation and settlement
+## Reserving and spending command units
 
 `initMetaMoDispatch` installs `mm_budget_reserve` and `mm_budget_settle` with
 Core's `oc_dispatch_configure_accounting`. The hooks run under the existing
@@ -140,7 +140,7 @@ Every cost must fit both global and target-frame accounts, as well as applicable
 budget. Long-running or variable-cost handlers must enforce the reserved upper
 bound; reserve an additional increment atomically before exceeding it, or stop.
 
-## Atomic dispatch protocol
+## Keeping reservation and execution together
 
 1. Resolve the actual handler, arguments, target, destinations and bounded cost
    vector. Revalidate current permissions, constraints, modes and revisions.
@@ -161,7 +161,7 @@ Concurrent dispatches must not both spend the same available balance. Even in a
 serialized loop, asynchronous in-flight work needs reservations. For synchronous
 work a committed pre-execution debit can serve the same purpose.
 
-## Settlement and replay
+## Recording usage and handling repeats
 
 | Observation | Required accounting |
 | --- | --- |
@@ -184,7 +184,8 @@ for replay protection. `Unknown` usage leaves pending capacity untouched. An
 overrun retains the actual report and closes all accounts affected by that
 operation, keeping spent/reserved unchanged until host reconciliation. It does
 not automatically reconcile or reopen accounts; this is a pending overrun, not
-final settlement. See the integration plan for the exact API and result records.
+final settlement. The accounting implementation and tests define the exact
+`AccountCost` and reservation/settlement records.
 
 Restart-safe operation requires a durable atomic ledger and reconciliation of
 in-flight reservations before new spending. Until that exists, session-only
@@ -203,7 +204,7 @@ now also check automatic invocation charging, cumulative exhaustion, competing
 tickets, duplicate/mismatched callbacks, definite failed reads, all-or-nothing
 reservation failure and pending uncertain effects.
 
-Item 1.2 verification on 26 October 2026: all 82 existing MeTTa test files
+Budget-availability checks on 26 October 2026: all 82 existing MeTTa test files
 passed, and the expanded `host_dispatch_config_test.metta` passed all 58
 assertions after its final additions. Six relevant Python suites passed 118
 tests; all four existing shell boundary guards and five Core dispatch-guard
@@ -231,11 +232,11 @@ callbacks under Core's dispatch/transport locks. The existing Core dispatch
 suite retains policy-revocation and serialized-start coverage. Variable-resource
 execution meters and restart reconciliation remain outside the supported path.
 
-Item 1.3 verification on 26 October 2026: all 82 MeTTa test files passed;
+Reservation and settlement checks on 26 October 2026: all 82 MeTTa test files passed;
 the final targeted budget and IRC accounting suites passed 87 and 37 assertions
 respectively. Six relevant Python suites passed 118 tests, all four existing
 shell boundary guards passed, and Core's existing dispatch suite (20 named tests,
 including a three-case UUID test) plus the expanded 10 dispatch-guard tests
 passed. Regression fixtures outside the bounded budget suite now explicitly
 allocate headroom for their multiple invocations; production configuration
-defaults remain unchanged. No new test files or live external calls were added.
+defaults remain unchanged. The checks extended existing tests and made no live external calls.

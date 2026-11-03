@@ -15,6 +15,11 @@
 !(fullLoopStartSession)
 !(py-call (host_startup_fixture.configure))
 !(initializeHostStartup)
+;; Observe the real host turn at command capture, instead of an unnecessary LLM call.
+(= (hostIngressLoopCommandSource)
+   (let $plan (selectedHostCommandPlan)
+      (progn (py-call (host_ingress_loop.observe)) $plan)))
+!(configureCoreLoopCommandSource hostIngressLoopCommandSource)
 !(py-call (host_ingress_loop.install))
 ;; Start at turn 2 to use explicit offline initialization rather than live I/O.
 !(configure maxSessionCycles 6)
@@ -29,6 +34,7 @@
 !(test (py-call (host_ingress_loop.verified)) 1)
 !(test (size-atom (cfv2-frame-refs-by-status Active)) 1)
 !(test (get-state &task-open) False)
-!(test (py-call (lib_llm_ext.call_count "semantics")) 3)
+;; Selected host operations now execute instead of a model returning no action.
+!(test (py-call (lib_llm_ext.call_count "semantics")) 2)
 !(test (py-call (offline_guard.optional_modules_absent)) 1)
 !(py-call (host_config_fixture.cleanup))

@@ -11,8 +11,8 @@ def receive():
     return next(_messages, '')
 
 
-# Example: provider() captures the host result after the real loop's preparation.
-def provider(*args):
+# Example: observe() captures host state after selection, without a command model call.
+def observe():
     import janus
     observation = janus.query_once('''
         eval([commitmentSnapshot], _Owner), swrite(_Owner, Owner),
@@ -21,7 +21,11 @@ def provider(*args):
         eval(['get-state','&new-msg-flag'], Fresh)
     ''')
     _observations.append(observation)
-    return '()'
+    return 1
+
+
+def provider(*args):
+    raise AssertionError('Host-owned commands must not require model reproduction')
 
 
 # Example: install() replaces provider transport, not ingestion or scheduling.

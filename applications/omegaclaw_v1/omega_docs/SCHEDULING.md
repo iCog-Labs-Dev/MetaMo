@@ -1,6 +1,8 @@
-# Scheduling preemption
+# How work gets priority
 
-The v1 application selects work in this order:
+The application first removes work that is not allowed. It then gives precedence
+to the highest remaining scheduling class and uses motivational scores to choose
+within that class. The fixed order is:
 
 **Threat-remediation > Recovery > Interactive > Orienting > Engaged > Rumination > Sleep**
 
@@ -40,7 +42,7 @@ consensus scoring. The bundle-aware decision facade also applies the filter so
 direct callers use the same order. The old unbound `omegaclawDecide` scoring
 utility remains a score-only path; v1 runtime decisions use a bound frame bundle.
 
-## Candidate mapping
+## Which class each candidate belongs to
 
 The registry declares each candidate's base class and the fixed class ranks.
 Scheduling reads typed factual signal records; it maintains no additional signal or

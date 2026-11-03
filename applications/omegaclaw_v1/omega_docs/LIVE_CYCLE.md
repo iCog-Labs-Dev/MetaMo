@@ -1,4 +1,4 @@
-# Bounded live bridge and execution demonstration
+# A live run from selection to observed results
 
 **Subsequent update:** [LIVE_MODES.md](LIVE_MODES.md) verifies all six live mode
 transitions and introduces definite pre-open reader failure reporting. The run
@@ -9,12 +9,12 @@ Verified 24 September 2026 at 19:02 UTC: **35 assertions passed across seven
 consecutive cycles**, in one interpreter process, with one session and one active
 native Core frame. The run completed in 48.96 seconds without timeout or retry.
 
-This closes the bounded Task 6 execution demonstration with the qualifications
-below. It uses a controlled serialized host driver around the real bridge and
-Core handlers. It does not exercise the unmodified autonomous Core polling and
-LLM command-generation loop, or demonstrate the required constitutional transitions.
+The run used a controlled host driver around the real bridge and Core handlers.
+It demonstrates the sequence below in one serialized session. It did not run the
+unmodified autonomous Core polling/model-command loop or test the constitutional
+mode transitions.
 
-## Reproduce
+## Run this check again
 
 From `MetaMo/applications/omegaclaw_v1`:
 
@@ -63,7 +63,7 @@ failure-triggered Rumination or claim that uncertain side effects can be retried
 generally. The operator repair/retry here concerns only an explicitly authorized
 local read. Task completion is not inferred from the read succeeding.
 
-Only the exact temporary file is bound, using the existing Task 2 provisioner
+Only the exact temporary file is bound, using the existing host provisioner
 and policy template. This scenario enables the native `read-file` handler;
 the separate setup verification also exercised `show-current-frame`. Policies
 retain global/frame permission checks and prospective budget/cost constraints.

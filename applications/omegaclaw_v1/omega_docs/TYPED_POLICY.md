@@ -1,4 +1,9 @@
-# Typed operation checks on PeTTa
+# Checking whether an operation is allowed
+
+These checks answer a narrow question: does this proposed operation satisfy the
+host's current rules? They return a decision and a reason. They do not execute
+the operation, and a high motivational score cannot turn a rejection into
+permission.
 
 `typed_policy.metta` implements pure MeTTa admission checks. It has no Prolog
 helper, service dependency, execution authority, or mutable policy registry.
@@ -150,17 +155,20 @@ directive; a legacy directive alone does not encode the transition mode or
 concrete command. MetaMo performs no frame mutation. Host policy resolution,
 snapshot consistency, revision checks and final dispatch remain host duties.
 
-### Production wiring still required
+### What the host still has to do
 
 The legacy `feasibilityGate bundle candidate` still performs preliminary checks
 only. Legacy reasoner admission now rejects attention, cross-frame and transition
 requests with `MissingOperationContext`; only current-frame candidate suggestions
-remain on its preliminary path. Production candidates lack trusted handler metadata,
-and the legacy projection still compacts policy summaries. This change therefore
-does **not** claim that production dispatch enforces the new checks. Core must
-resolve policy and derive metadata from the actual handler/arguments, wire the
-concrete request APIs into scheduling, revalidate current policy, and reserve
-and account for resources before execution. These are separate Phase 3 items.
+remain on its preliminary path. A compacted policy summary cannot substitute for
+trusted handler metadata or the full host policy.
+
+The enabled v1 dispatcher now connects those services for its supported command
+catalog: it derives metadata from the real handler/arguments, resolves both policy
+scopes, filters candidates before scoring, revalidates before invocation, and
+reserves/settles command budgets. See [the execution path](DISPATCH.md). These
+pure gate functions do not provide that wiring by themselves, and their ability
+to validate a request does not mean every host execution path supports it.
 
 `tests/fixtures/typed_policy.metta` provides reusable policy/operation examples.
 `tests/typed_policy_test.metta` exercises the pure gate through PeTTa; the focused

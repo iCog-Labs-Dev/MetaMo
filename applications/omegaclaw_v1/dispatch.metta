@@ -151,3 +151,6 @@
 ;; Core loop hooks retain the pre-scoring ticket and exact selected arguments.
 !(if (== (eval (configureCoreLoopDispatch selectedHostTicket dispatchSelectedHostCommand)) True)
      True (py-call (host_operations.incompatible_core)))
+;; The host already selected the exact command; do not ask a model to reproduce it.
+!(if (== (eval (configureCoreLoopCommandSource selectedHostCommandPlan)) True)
+     True (py-call (host_operations.incompatible_core)))

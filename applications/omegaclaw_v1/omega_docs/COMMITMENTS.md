@@ -1,13 +1,18 @@
-# Explicit commitment lifecycle
+# How tasks stay open and finish
 
-A commitment is host-owned work that remains open until the host records an
-explicit terminal event. Its lifetime is independent of goal weights, motives,
-modulators, decay, candidate scores, constitutional mode, and autonomy phases.
+A commitment is the host's record that there is still work to do. It stays open
+until the host records completion, cancellation with a reason, or replacement by
+another commitment. Lower urgency, a different mode, or a losing candidate score
+cannot quietly close it.
 
 This implementation provides a **single-current-commitment, session-only** host
 store in `commitments.pl`, with a read-only MeTTa adapter. Storage lives alongside
 the MetaMo integration code, but its meaning and write authority belong to the
 host. These local records are not additions to the six versioned wire schemas.
+
+The sections follow a task from admission through follow-up, cancellation,
+replacement, and completion. Dated checks preserve the evidence from their
+original runs; later sections describe additional connected behavior.
 
 ## Terminal events
 
@@ -58,7 +63,7 @@ must authenticate the source and decide whether an observed result actually
 satisfies the commitment. Calling `record_outcome` is that trusted adjudication;
 the store cannot independently prove the real-world task succeeded.
 
-## Automatic admission (F2.1)
+## Automatic admission
 
 `prepareHostStartup` now calls `host_dispatch_config.admit_startup_commitment`
 through Core's existing post-ingestion prepare hook. It opens a UUID-named
@@ -76,7 +81,7 @@ polling a previously committed frame cannot reopen its terminal commitment.
 rejected result for diagnostics. No admission API is registered as a model skill.
 
 This connects task opening only. Per-task provisioning now follows admission
-through F2.8; automatic response preparation remains F2.9.
+through per-task provisioning; automatic response preparation remains automatic conversational preparation.
 Direct Core ingestion can still admit a frame that is
 rejected while an earlier commitment stays open; the production ingress hook
 below handles follow-ups before frame creation. Policy is bound to the exact
@@ -107,13 +112,13 @@ dispatcher is loaded. This invalidates outstanding tickets after commitment
 changes. Supersession commits both records and the event in one Prolog transaction.
 The offline path uses the same mutex without requiring a configured dispatcher.
 
-## Explicit same-task follow-ups (F2.2)
+## Explicit same-task follow-ups
 
 The v1 startup installs `ingestHostMessage` through Core's optional
 `configureCoreLoopIngest` callback. The polling loop invokes that callback
 before frame creation; its standalone default remains `ctx-ingest-user-message`.
 Deploy the matching Core `src/dispatch.metta` and `src/loop.metta` changes with
-this adapter. The existing post-ingestion prepare hook still performs F2.1.
+this adapter. The existing post-ingestion prepare hook still performs automatic admission.
 
 Use `follow-up: include examples` to explicitly associate input with the current
 open commitment. The marker is case-insensitive and permits surrounding
@@ -148,9 +153,9 @@ the real Core polling loop: initial task, explicit follow-up, unrelated text,
 explicit replacement, and explicit cancellation.
 Only external channel/provider/memory boundaries are doubled. Follow-up text
 does not alter a read plan or its required evidence; automatic replanning and
-response generation remain separate increments.
+response generation are described separately.
 
-## Explicit cancellation (F2.3)
+## Explicit cancellation
 
 Use `cancel: no longer needed` to abandon the current open commitment. The marker
 is case-insensitive; the trimmed reason must be nonblank and obeys the same input
@@ -177,7 +182,7 @@ inert reasons, repeated and delayed decisions, terminal-state preservation, and
 dispatch rejection with both old and new tickets. The polling-loop test checks
 that the replacement owner becomes Abandoned on the fifth turn.
 
-## Explicit replacement (F2.4)
+## Explicit replacement
 
 Use `replace: Summarize document B` to supersede the current open commitment.
 The case-insensitive marker requires a nonblank new task description and obeys
@@ -205,7 +210,7 @@ the original receipt without another event. This session-local receipt is not
 durable channel-message deduplication. Replaying an admitted predecessor decision
 cannot supersede the successor. A different explicit replacement can supersede it.
 
-Per-task command provisioning now runs through F2.8 on the next prepare hook:
+Per-task command provisioning now runs through per-task provisioning on the next prepare hook:
 replacement alone does not authorize the successor to execute the predecessor's
 commands. Automatic replanning and
 response preparation also remain separate work. No Core changes or new Prolog
@@ -214,7 +219,7 @@ records, new identities, replay/staleness, inert descriptions, blocked frames,
 and dispatch revocation. The polling-loop test replaces on turn four and cancels
 the successor on turn five.
 
-## Pure completion check (F2.5)
+## Pure completion check
 
 `host_completion.metta`, loaded by composition, exposes:
 
@@ -247,7 +252,7 @@ the owner snapshot alongside each outcome accepted through `ingestOperationOutco
 the outcome alone has no commitment ID. These pairs are input data, not a new
 observation ledger. They must never be accepted from a model or reconstructed
 by attaching the current owner to old results. This pure check verifies matching
-records, not their external provenance. The F2.6 publisher below accepts these
+records, not their external provenance. The completion publication publisher below accepts these
 host-retained inputs; automatic live evidence gathering remains separate work.
 
 Every required read needs exactly one matching `Success` / `Executed Feasible`
@@ -258,19 +263,19 @@ returns `False`. Old sessions, frames, owners and revisions cannot satisfy the
 requirements. The supplied evidence list must contain exactly the required reads
 and answer, without extra records.
 
-F2.5 supports the acknowledged local read-and-answer slice. IRC transport
+Pure completion check supports the acknowledged local read-and-answer slice. IRC transport
 submission is not recipient acknowledgement and remains incomplete here.
 Explicit transport-specific completion criteria for declared no-tool tasks use
-the F2.10 contract below; empty required reads cannot bypass this predicate. Registering an outcome
-and publishing `Completed` use F2.6 below; the prepare hook completes the matching
-Core frame through F2.7.
+the conversational completion contract below; empty required reads cannot bypass this predicate. Registering an outcome
+and publishing `Completed` use completion publication below; the prepare hook completes the matching
+Core frame through core frame completion.
 
 `host_completion_test.metta` uses a host-owned two-read fixture and an actual open
 commitment. It checks partial progress, answer acknowledgement, correlation,
 malformed data, replay, ordering, bounds, and that a successful check leaves the
 commitment and event history unchanged.
 
-## Completion publication (F2.6)
+## Completion publication
 
 Trusted host code can now call:
 
@@ -280,7 +285,7 @@ mm_commitment_complete(OutcomeId, EventId, Requirements, Evidence, Result).
 
 This API lives in the existing `commitments.pl`. It is not exported through
 `commitments.metta` or registered as a model skill. Requirements and evidence use
-the F2.5 contract above. The host must retain stable, nonblank string outcome and
+the pure completion check contract above. The host must retain stable, nonblank string outcome and
 event IDs for retries; neither IDs nor completion evidence come from model claims.
 
 Under the dispatch mutex, the publisher checks the requirements' exact open owner
@@ -307,9 +312,9 @@ that successor. A new event attempting to complete a cancelled, superseded or
 already completed owner is stale.
 
 This implements trusted publication from supplied retained evidence. Production
-read-evidence gathering remains F3.7. F2.10 automatically publishes eligible
+read-evidence gathering remains completed read-plan answers. conversational completion automatically publishes eligible
 no-tool conversational completion after dispatch. Core frame completion uses
-F2.7 below. The normal existing
+core frame completion below. The normal existing
 `refreshTaskCommitment` mirrors a published terminal record into task state.
 
 `host_completion_publication_test.metta` runs the real pure predicate and store
@@ -319,7 +324,7 @@ conflicts, cancellation/replacement races represented by delayed publication,
 and unchanged Core frame status. Prolog tests additionally check rollback of a
 new outcome when event publication conflicts.
 
-## Core frame completion (F2.7)
+## Core frame completion
 
 The existing `prepareHostStartup` hook now calls the trusted
 `mm_commitment_complete_frame/1` adapter before provisioning/admission and task
@@ -351,18 +356,18 @@ invalidate previously captured tickets.
 
 `&last-host-frame-completion` records `FrameCompleted`, `FrameCompletionRetained`,
 `FrameCompletionSkipped`, or `FrameCompletionHeld`. The adapter is not exported
-as a model skill. Completion publication remains separate: F2.6 must first receive
+as a model skill. Completion publication remains separate: completion publication must first receive
 the host-retained requirements/evidence. Once published, the next prepare hook
 automatically performs frame bookkeeping.
 
-`host_frame_completion_test.metta` exercises the real F2.5/F2.6 path and Core
+`host_frame_completion_test.metta` exercises the real pure completion check/F2.6 path and Core
 handler, including native symbol/string mismatch, completed records/index/cache,
 dispatch invalidation, replay, cancellation, and a queued successor surviving
-automatic selection. This full Core fixture also exposed and fixes a F2.5
+automatic selection. This full Core fixture also exposed and fixes a pure completion check
 compilation issue: command patterns now inspect fields as data instead of
 evaluating loaded `read-file` or `send` skills during validation.
 
-## Per-task provisioning (F2.8)
+## Per-task provisioning
 
 After completing any terminal frame and admitting its next commitment,
 `prepareHostStartup` calls `provision_admitted_task`. An operator configuration
@@ -398,7 +403,7 @@ waits until execution returns. Its existing `ExecutionUncertain` record also
 guards reentrant admission and unresolved effects: new-task/replacement ingress,
 commitment admission, and provisioning are held as `OutstandingInvocation`.
 Captured but unexecuted tickets do not count as running invocations and can be
-invalidated. Uncertain executions require trusted reconciliation; this increment
+invalidated. Uncertain executions require trusted reconciliation; this implementation
 adds no retry or outcome-clearing mechanism. Explicit cancellation can still
 abandon the task, but cannot authorize its successor while uncertainty remains.
 
@@ -433,7 +438,7 @@ completion. A new message alone is not an abandonment or supersession event.
 
 Trusted ingress opens commitments and routes explicit cancellation and replacement
 through the existing event API. A pure read-and-answer completion predicate is
-available, and trusted host code can publish its confirmed result through F2.6.
+available, and trusted host code can publish its confirmed result through completion publication.
 Automatic evidence retention and polling-loop invocation remain pending.
 The adapter does not automatically
 equate Core's `DispatchResult Executed` with completion.
@@ -459,7 +464,7 @@ events, and dispatch invalidation. Adapter tests exercise real decay/writeback,
 homeostasis, Sleep, result text, and publication without implicit termination.
 
 
-## Explicit conversational completion (F2.10)
+## Explicit conversational completion
 
 Host configuration may declare `completion_criterion` alongside `destination`:
 
@@ -494,8 +499,8 @@ After dispatch outcome ingestion, `completeHostConversation` in `dispatch.pl`
 checks the current prepared no-tool operation, current assessment, selected
 respond decision, and Core's immutable ticket/result. The assessment and completion
 policy must match those captured in the ticket before dispatch. Publication uses
-`mm_commitment_complete/5` (F2.6), with stable event/outcome IDs derived from that
-ticket. It does not generate another answer or invoke a channel. F2.7 archives the
+`mm_commitment_complete/5` (completion publication), with stable event/outcome IDs derived from that
+ticket. It does not generate another answer or invoke a channel. Core frame completion archives the
 matching completed frame on the next prepare step; ordinary task-state projection
 then allows idle Sleep. Replay cannot close another commitment.
 

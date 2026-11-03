@@ -1,9 +1,15 @@
-# Host-owned integration identities
+# Identifying records and tracing their causes
+
+An outcome needs to identify the decision and execution it came from. The host
+identity APIs allocate record IDs, retain native frame IDs, and check those links.
+They support the versioned records in [the contract reference](CONTRACTS.md);
+they do not replace execution permission checks or migrate the live runtime by
+themselves.
 
 `host_identity.metta` implements allocation/publication orchestration, typed
 reference resolution, and causal agreement checks for `CONTRACTS.md`.
 `identity_store.py` supplies only UUIDs, producer namespaces, and durable opaque
-storage. There is no new Prolog implementation. MeTTa checks use higher-order
+storage. The identity checks run in MeTTa. MeTTa checks use higher-order
 `identityEvery`/`identityAll` and named predicates; data passed to predicates is
 quoted so fields such as `(id ...)` cannot become executable calls.
 
@@ -42,7 +48,7 @@ for envelope references. Shape/causal failures return `ContractRejection`.
 Filesystem/locking failures raise host errors and must prevent publication or
 invocation; callers must not catch them and assume success.
 
-## Native identity and lifetime
+## Native IDs and how long they remain valid
 
 Frame and root IDs are preserved **exactly as Core supplies them**. The adapter
 does not parse Core's timestamp-shaped IDs, generate replacement frame IDs, or
@@ -74,7 +80,7 @@ preserves IDs and producer namespaces. A backup restore, host-state fork, or
 lost identity ledger requires a new ledger/lineage; the operator must not use
 `resume` on a rolled-back copy. The ledger alone cannot detect backup rollback.
 
-## Causal checks and scope
+## Checking causal links
 
 The retained chain is:
 

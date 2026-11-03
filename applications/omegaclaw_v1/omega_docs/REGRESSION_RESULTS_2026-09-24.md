@@ -1,8 +1,8 @@
-# Task 5 local regression results — 24 September 2026
+# Local regression results — 24 September 2026
 
 All **18 commands passed on their first invocation**, with no timeouts or
-retries. This records the final Task 5 regression checklist item for the bounded,
-session-only offline integration.
+retries. This report records a bounded, session-only offline run and the exact
+sources and commands used to produce it.
 
 ## Environment and sources
 
@@ -90,9 +90,9 @@ The source-controlled record preserves the commands and results if they expire.
 
 ## Scope
 
-This closes Task 5's local offline regression gate. It is not a full-repository
+This verifies the recorded local offline scenarios. It is not a full-repository
 or clean-installation baseline. Shared-core checks here use the documented
 application wrappers. No live provider, channel, memory service, durable restart
 recovery, or CI execution was exercised. Optional reasoner tests remain offline;
-live reasoner integration and CI changes remain deferred. Task 6 live acceptance
-and the broader Phase 1–7 gates remain open.
+live reasoner integration and CI changes remain deferred. Broader live-runtime
+and deployment checks are separate from this run.

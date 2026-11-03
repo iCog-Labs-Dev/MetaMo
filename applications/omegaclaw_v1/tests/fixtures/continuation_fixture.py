@@ -566,7 +566,7 @@ def verify_retry_selection(result):
     assert checked['FailedSource'] == _auto_correction['FailedSource'], checked
 
 
-# Example: the model proposes references, answers from observations, and echoes selected commands.
+# Example: the model proposes references and answers from observations, never echoes commands.
 def auto_provider(provider, prompt, max_tokens, *args):
     import janus
     global _auto_question_turns
@@ -598,6 +598,13 @@ def auto_provider(provider, prompt, max_tokens, *args):
         if _auto_correction is not None:
             return '{"text":"Both files were inspected: other content; unrequested content."}'
         return '{"text":"Both files were inspected: other content; observed local file content."}'
+    raise AssertionError('Host command execution must not require a model echo')
+
+
+# Example: failure/revocation injection happens after host selection, before dispatch.
+def auto_before_dispatch():
+    import janus
+    global _auto_question_turns
     result = janus.query_once('eval([selectedHostCommand],Command), swrite(Command,Source)')
     if _auto_scenario == 'uncertain-read' and result['Command'] == _commands[0]:
         make_selected_read_unreadable()
@@ -609,7 +616,7 @@ def auto_provider(provider, prompt, max_tokens, *args):
         if result['Command'] and result['Command'][0] == 'send':
             _auto_question_turns += 1
             if _auto_scenario == 'missing-no-action' and _auto_question_turns == 1:
-                return '()'
+                return 0
             if _auto_scenario == 'missing-stale':
                 janus.query_once('oc_dispatch_mutate(true)')
             if _auto_scenario == 'missing-uncertain':
@@ -621,8 +628,8 @@ def auto_provider(provider, prompt, max_tokens, *args):
                     eval([ingestOperationOutcome,[quote,Outcome]],Result)""",
                     {'CommandSource': result['Source']})
                 assert outcome['Result'] == 'OutcomeAccepted', outcome
-                return '()'
-    return result['Source'] if result['Command'] else '()'
+                return 0
+    return 1
 
 
 # Example: verify real Core invocations after a single input, not helper-installed plan state.

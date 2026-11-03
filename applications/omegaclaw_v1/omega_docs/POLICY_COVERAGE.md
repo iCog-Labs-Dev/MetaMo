@@ -1,26 +1,24 @@
-# Production dispatch policy coverage — integration item 1.1
+# Which execution paths enforce policy
 
-Audited 26 October 2026 against R1, §3.7 and §7.4 of the
-[22 July integration specification](../../../../ContextFrames_MetaMo_Integration_Spec_2026-07-22.md).
-This records the current production paths and remaining enforcement gaps; it
-does not implement items 1.2–1.4 or establish completion of requirement R1.
-Source inspection uses the working trees, including local changes, of MetaMo
-(`1622d9b` base) and OmegaClaw-Core (`8cabe49` base).
+This audit follows each supported command from admission to final dispatch and
+asks where its budget, permissions, egress, skill, and safety restrictions are
+checked. It was recorded on 26 October 2026 using the local MetaMo (`1622d9b`
+base) and OmegaClaw-Core (`8cabe49` base) working trees.
 
-Follow-up: item 1.2 now connects live accounting availability to production
-admission and final revalidation. G1 below records the original audit finding;
+Follow-up work connected live budget availability to admission and final
+revalidation. G1 below records the original audit finding;
 its availability wiring is resolved as described in
-[the budget lifecycle documentation](BUDGET_ACCOUNTING.md#production-availability-and-lifecycle).
-Item 1.3 also resolves G2 for the supported command-invocation resource through
-[production reservation and settlement](BUDGET_ACCOUNTING.md#production-reservation-and-settlement).
-Item 1.4 connects raw native constraints, current host justification, native
+[the budget lifecycle documentation](BUDGET_ACCOUNTING.md#available-budget-and-account-lifetime).
+Reservation and settlement also resolve G2 for command invocations through
+[production reservation and settlement](BUDGET_ACCOUNTING.md#reserving-and-spending-command-units).
+The dispatcher now checks raw native constraints, current host justification, native
 budget closure, continuation-mode regression coverage and command-batch limits;
-see [native constraint enforcement](DISPATCH.md#native-constraints-and-justification-integration-item-14).
+see [native constraint enforcement](DISPATCH.md#native-constraints-and-justification).
 G3–G4 are closed for the supported catalog. For G5, the command-batch limit is
-now enforced; provider/transport/memory setup remains a trusted host-service
+now enforced. Provider, transport, and memory setup remain a trusted host-service
 boundary with existing per-call caps, not a new command-budget resource. No
 additional host-service meter or rollout is introduced. The tables below
-preserve the original 1.1 baseline.
+preserve the original audit baseline.
 
 ## Production boundary
 
@@ -102,7 +100,7 @@ in [`dispatch.pl`](../dispatch.pl).
 | `DenySkill`, `RequirePermission`, `DenyEgress`, `MaxCost` | `tpConstraints` / `tpConstraint` enforce these as hard feasibility checks in both scopes. | `MaxCost` caps each declared operation cost, not cumulative spending. |
 | Unsupported typed constraints | Config parser rejects them. `tpScopeValid` also rejects malformed/unknown constraints as invalid global/frame policy before execution. | Core's prose `Constraint` records are separate from typed `PolicyScope` constraints; they are not translated into these checks (G3). |
 | Active frame and Fast/Slow mode matching | `requestFrameStateReason` requires Active/Focused status and frame mode equal to origin root mode for ordinary operations. The check is shared by read-plan admission, corrected-read admission and final dispatch. | Continuation ownership/Ready state alone does not prove mode compatibility. Existing pure request tests cover mismatch; see G4 for the remaining production-path check. |
-| Constitutional posture | `constitutionalModeGate` can only tighten admission. Sleep rejects candidates classified by `candidateRequiresFrame`; explicit transition requests are tested as operational work even if named `defer`. | `respond`, `ask-clarification` and `search-knowledge` are not in that operational set; they still need ordinary concrete policy. Dedicated bounded Sleep work classes belong to plan item 7. |
+| Constitutional posture | `constitutionalModeGate` can only tighten admission. Sleep rejects candidates classified by `candidateRequiresFrame`; explicit transition requests are tested as operational work even if named `defer`. | `respond`, `ask-clarification` and `search-knowledge` are not in that operational set; they still need ordinary concrete policy. Dedicated bounded Sleep work classes still need to be connected. |
 | Core frame budget/status | Preliminary candidate gating checks the current frame budget status for frame-requiring candidates. Provider calls receive output caps. | Core's `max-output-tokens`, `max-command-lines` and `wake-interval` record is not a live accounting vector. The command loop does not enforce the recorded five-command maximum as a parser/batch limit. G1–G2/G5 apply. |
 | `NoUnjustifiedAutonomousSideEffects` | Core declares it; concrete gating supplies partial protection via active target, mode matching and typed policy. | No dedicated semantic check or typed representation; declaration alone is not enforcement (G3). |
 | Autonomous frame creation only in Slow mode | No production v1 catalog binding exists for `new-autonomous-frame`, so model attempts are denied. | Core's public helper and `cfv2-create-autonomous-frame` do not check the current root mode or applicable constraints (G4). Creating a frame whose stored mode is Slow is not a check that creation happened in Slow mode. |
@@ -140,7 +138,7 @@ Sources: [`typed_policy.metta`](../contexts/typed_policy.metta),
   access, and policy/state mutations through Core's mutation/epoch boundary.
   Standalone Core's legacy `eval` path must not be presented as enabled v1.
 
-## Gaps handed to items 1.2–1.4
+## Findings from the original audit
 
 | ID | Finding and source evidence | Follow-up |
 | --- | --- | --- |
@@ -187,6 +185,7 @@ For each MeTTa file listed above, use the canonical launcher, for example:
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/typed_policy_test.metta
 ```
 
-Passing checks establish the existing enforcement listed here, not cumulative
-production accounting, semantic enforcement of Core's prose constraints, or
-Slow-mode protection inside autonomous frame creation. Those remain open.
+These results describe the original audit baseline. The follow-up links at the
+top describe the connected accounting, native constraints, and frame-creation
+checks. The supported budget meter still counts commands only, and this audit
+does not establish durable recovery or enforcement for every possible host service.

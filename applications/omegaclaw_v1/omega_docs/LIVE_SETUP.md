@@ -1,14 +1,15 @@
-# Verified bounded live setup
+# A verified local setup with real services
 
 Subsequent execution-feedback evidence and the additional Core budget fix are
 documented in [LIVE_CYCLE.md](LIVE_CYCLE.md). The setup results below describe
 the earlier readiness check and retain their original scope.
 
-Verified 24 September 2026. This closes **Task 6's first checklist item**:
-runtime dependencies, provider settings, memory, one test channel, and the
-bounded Task 2 skills/policies. The remaining live-loop acceptance items stay open.
+On 24 September 2026, this setup verified the runtime dependencies, provider,
+memory, one test channel, and a small set of explicitly allowed skills. The
+results establish that setup on this machine; broader live-loop behavior needs
+its own checks.
 
-## Reproduce
+## Run this check again
 
 From `MetaMo/applications/omegaclaw_v1` in the workspace layout documented in
 `DEPENDENCIES.md`:
@@ -137,7 +138,7 @@ frame-memory overlays; the ChromaDB path override; and application startup,
 runtime-support and persistence changes. The retained JSON fingerprints all
 80 resolved/generated sources used in this check.
 
-This accepts setup readiness on this machine. It does not close Task 6's
-autonomous execution-feedback, failure/recovery, mode-transition, or full trace
-requirements. Reopening ChromaDB proves persistence availability, not durable
+This confirms setup readiness on this machine. It does not verify autonomous
+execution, failure/recovery, mode transitions, or complete execution traces.
+Reopening ChromaDB proves persistence availability, not durable
 agent recovery, policy restoration, or exactly-once execution across restarts.

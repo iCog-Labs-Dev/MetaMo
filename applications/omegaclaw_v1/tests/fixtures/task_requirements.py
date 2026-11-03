@@ -139,11 +139,7 @@ def provider(name, prompt, max_tokens, *args):
     if max_tokens == 16384:
         return prepare_answer(prompt)
     if max_tokens != 512:
-        if _scenario == 'before_dispatch' and not _changed:
-            _changed = True
-            mutate_during_classification('followup')
-        result = janus.query_once('eval([selectedHostCommand], Command), swrite(Command,Source)')
-        return result['Source'] if result['Command'] else '()'
+        raise AssertionError('Host commands must not require model reproduction')
     data = json.loads(prompt.split(':-:-:-:', 1)[1])
     if data['request'] != _request and 'read /secret' in data['request']:
         _changed_request_calls += 1
@@ -166,6 +162,15 @@ def provider(name, prompt, max_tokens, *args):
     if _scenario == 'failure':
         raise RuntimeError('fixture-provider-secret')
     return '{"kind":"Conversation","needs":[]}'
+
+
+# Example: a newer input after selection still prevents a prepared send.
+def before_dispatch():
+    global _changed
+    if _scenario == 'before_dispatch' and not _changed:
+        _changed = True
+        mutate_during_classification('followup')
+    return 1
 
 
 # Example: only text is returned; exact send construction stays in production code.

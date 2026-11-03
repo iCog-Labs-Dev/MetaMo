@@ -32,6 +32,7 @@
 !(test (coreDispatch (get-state &dispatch-ticket) (quote (dispatch-test-execute)))
    (DispatchResult Executed Feasible completed))
 !(test (get-state &dispatch-effects) 1)
+
 ;; Blocked dispatch must not be mistaken for completion by host bookkeeping.
 !(import! &self (library OmegaClaw-Core src/loop))
 !(bind! &error (new-state ()))
@@ -78,4 +79,34 @@
    (let $command (superpose $commands)
       (coreDispatchCommand (get-state &dispatch-ticket) $command)))
    (DispatchResult Blocked UnsupportedOperation none))
+!(test (get-state &dispatch-effects) 1)
+
+;; Trusted command sources opt in explicitly; standalone Core retains model generation.
+!(test (coreLoopModelCommandSource) ModelCommands)
+!(configureCoreLoopCommandSource coreLoopModelCommandSource)
+
+!(test (coreLoopCommandPlan) ModelCommands)
+!(configureCoreLoopCommandSource selectedHostCommandPlan)
+
+!(test (coreLoopCommandPlan) (HostCommands ()))
+
+;; Host input is already parsed data. Empty/malformed plans never call a model.
+!(test (coreLoopResponseForPlan (quote (HostCommands ())) "unused" "unused")
+   (CoreLoopResponse "()" ()))
+
+!(test (coreLoopResponseForPlan invalid "unused" "unused") (CoreLoopResponse "()" ()))
+
+!(test (get-state &error) (DispatchBlocked InvalidCommandPlan))
+
+!(bind! &direct-commands (new-state (quote ((send "I'm ready. You said \"hello\".\nNext line.")))))
+
+!(test (== (let (CoreLoopResponse $_ $commands)
+   (coreLoopResponseForPlan (HostCommands (get-state &direct-commands)) "unused" "unused")
+   $commands) (get-state &direct-commands)) True)
+
+;; Materializing a command plan never evaluates the contained expressions.
+!(test (let (CoreLoopResponse $_ $commands)
+   (coreLoopResponseForPlan (quote (HostCommands ((change-state! &dispatch-effects 100))))
+      "unused" "unused") $commands) (quote ((change-state! &dispatch-effects 100))))
+
 !(test (get-state &dispatch-effects) 1)

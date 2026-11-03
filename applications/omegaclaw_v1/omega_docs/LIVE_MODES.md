@@ -1,11 +1,15 @@
-# Live constitutional mode acceptance
+# Watching modes change in a live run
+
+This report records a controlled run through the four constitutional modes using
+real provider signals and Core handlers. It explains what changed, which checks
+passed, and what the run did not test.
 
 Verified 24 September 2026, 19:27 UTC: **61 assertions passed in ten cycles**,
 with one session and at most one active native Core frame. All six required
 transitions occurred through the real bridge and signal producers. The final
 invocation completed in 33.182 seconds without timeout or automatic retry.
 
-## Reproduce
+## Run this check again
 
 From `MetaMo/applications/omegaclaw_v1`:
 
@@ -122,6 +126,6 @@ completion-parser failure (`oc-cycle-x87q3ur1`) and a passing run before
 empty-frame diagnostic correction (`oc-cycle-givnc7v8`). The final run did not
 retry. The known nonfatal Janus module-import diagnostic remains present.
 
-This closes the requested live mode-transition checklist item for the bounded
-driver. It does not establish autonomous command generation, durable restart
+This verifies the recorded mode transitions for the bounded driver. It does not
+establish autonomous command generation, durable restart
 recovery, non-default live timing profiles, or live reasoner integration.

@@ -1,14 +1,17 @@
-# ContextFrames × MetaMo boundary contracts, version 1
+# Records exchanged by ContextFrames and MetaMo
 
-Status: v1 wire constructors, shape validation, explicit consumers, shared wire
-fixtures, and startup/default constructors implemented 16 September 2026.
-Host identity allocation and causal-link APIs are implemented in MeTTa; see
-[IDENTITY.md](IDENTITY.md). Live host migration and authoritative revision/
-transactional dispatch enforcement remain pending. This
-document specifies the six Phase 2 boundary records. Existing
-unversioned MeTTa records are legacy v0; they are not implicitly v1.
+This reference defines six version 1 records for sharing state, decisions,
+proposals, outcomes, and verification evidence. Constructors, shape validation,
+explicit consumers, shared fixtures, and startup/default constructors were
+implemented on 16 September 2026. Host identity and causal-link APIs are also
+available; see [host identities](IDENTITY.md).
 
-## Implemented API and scope
+The live runtime still uses unversioned records. Its session dispatch checks do
+not establish that the versioned records have been fully deployed. Read the
+implementation-status notes below before relying on a guarantee in this
+reference; some limits, revision checks, and durable behavior remain unfinished.
+
+## Available APIs and their limits
 
 `contracts.metta` exposes the shared implementation in `contracts.pl`; the
 context integration façade loads it once. It provides these executable APIs:
@@ -28,8 +31,9 @@ that could otherwise be evaluated by the language before the boundary call.
 Validation never evaluates the supplied claim, support, or prediction.
 
 `ContractValid` establishes representation validity, **not authorization**.
-These shape-only APIs do not allocate durable IDs, resolve references, authenticate
-producers, enforce state/policy revisions, or implement the host dispatch ledger.
+These APIs validate structure only. They do not allocate durable IDs, resolve
+references, authenticate producers, enforce state/policy revisions, or implement
+the host dispatch ledger.
 The opt-in trusted host APIs in `host_identity.metta` allocate persisted IDs and
 producer namespaces, preserve native frame IDs, and validate causal links using
 these constructors. `identity_store.py` supplies UUIDs and opaque durable storage;
@@ -72,7 +76,7 @@ that location does not give motivational scoring authority to change tasks.
 | Goal weights, motives, modulators, appraisal, extracted signals/history, constitutional mode, homeostatic quantities | MetaMo | Update locally from bounded observations. In particular `goal` weights in `&goal-space` are preferences, not host goals or commitments; constitutional modes are distinct from host Fast/Slow modes. |
 | Autonomy phase/counters, last motivational decision, cached policy/directive, source reliability | MetaMo/adapter local state | Scheduling memory and advisory output only; these cannot authorize execution or serve as authoritative task outcomes. |
 | Active bundle cache | Adapter, as a read-only copy of host publication | All consumers in a cycle use the same value. Changing local motivation does not republish or mutate host state. |
-| Capability/knowledge claims | Host adjudicated store | The declared self-model schema rejects these through initialization, updates and restore. Integration item 3.3 replaces retired performance/`memory_confidence` dependencies with existing factual signals or motivational preferences; no claim-store writer is added. |
+| Capability/knowledge claims | Host adjudicated store | The declared self-model schema rejects these through initialization, updates and restore. The current rule definitions replace retired performance/`memory_confidence` dependencies with existing factual signals or motivational preferences; no claim-store writer is added. |
 
 For the current serialized path, `prepareTaskStateForMetaMo` merges host execution
 observations and mirrors explicit host commitment state, then projects and
@@ -110,7 +114,7 @@ wire; it does not authenticate producers or implement a live host consumer.
 publication order and local-state isolation. Workspace JSON design fixtures are
 not this executable corpus and remain unwired, as their README states.
 
-## Encoding and compatibility
+## Record format and compatibility
 
 Every boundary message uses this envelope:
 
@@ -164,9 +168,10 @@ are invalid, rather than silently mapped to a permissive default.
 This section specifies the default v1 admission limits. Shape/type validation
 already exists; enforcement of the size limits and integer upper bounds below
 is pending. These are acceptance requirements, not claims about the current
-validator or legacy live loop. The MVP may use its smaller session-only
-interface from `INTEGRATION_PLAN.md`; it need not adopt all six v1 schemas.
-Apply the same conservative input handling to whichever MVP fields are used.
+validator or legacy live loop. The current runtime uses a smaller session-only
+interface described in [dispatch and outcomes](DISPATCH.md). It does not need to
+adopt all six v1 schemas to enforce that path's checks. Apply the same
+conservative input handling to the fields it does use.
 
 ### Required fields and absent values
 
@@ -233,7 +238,7 @@ a narrower snapshot or return no action. Consumers reject oversized records;
 they do not truncate identities, evidence, constraints, or executable arguments
 to make an invalid record valid.
 
-### Conservative consumer behavior
+### How readers handle invalid records
 
 | Input condition | Required behavior |
 | --- | --- |
@@ -267,7 +272,7 @@ policy objects for the captured revisions. Their contents must be available to
 the feasibility consumer and checked again by Core at dispatch. A reference
 whose contents cannot be resolved does not confer permission.
 
-For the MVP, retain Core's native typed policy values and existing permission
+For the initial implementation, retain Core's native typed policy values and existing permission
 checks where available. Use a small explicit adapter for the supported handlers;
 do not add a general policy language. If the native host value is prose, the
 adapter must map a recognized constraint identifier to a concrete host check.
@@ -310,7 +315,7 @@ For example, shortening a displayed description from “allow local lookup;
 deny external send” to “allow local lookup…” must not change the denial of
 external send. The machine check uses the intact typed policy in both cases.
 
-### Implementation status and acceptance
+### What is implemented and what remains
 
 The current legacy projection compacts global budget, global constraints, and
 current-frame constraints into text in `contexts/context_projection.metta`.
@@ -328,7 +333,7 @@ survive permissive frame rules, and dispatch checks the actual operation and
 current policy. Oversized policy must reject without partial admission. Tests
 must exercise both projection and the consumer, not just record shape validation.
 
-## Identity, causality, and revision rules
+## Identities, versions, and causal links
 
 ### ID ownership and lifetime
 
@@ -431,7 +436,7 @@ not a later version substituted by the scheduler. A dispatch has at most one
 execution attempt in v1; each authorized retry needs a new dispatch and execution
 ID. An execution may comprise a handler's command batch, with observations
 identifying its individual results. Handler-level partial execution and retry
-semantics remain Phase 5 work.
+semantics still need host integration.
 
 Before any invocation or frame mutation, the scheduler must:
 
@@ -566,7 +571,7 @@ No permission is inferred from a reference's presence: admission requires the
 referenced data to be available and validated. Missing policy means rejection
 of work requiring that policy. See [Typed policy data and display summaries](#typed-policy-data-and-display-summaries)
 for preservation and interpretation rules. Native adapter mappings, reference
-resolution, and enforcement remain Phase 2/3 implementation work.
+resolution, and enforcement still need implementation.
 
 The current frame ID must agree with the root; `current None` requires
 `current-frame-id None`. Runtime budget reference equals the current frame's
@@ -699,7 +704,7 @@ later. Verification references identify independently observed evidence,
 never a status copied from the prediction. The host checks all referenced IDs
 belong to this dispatch. Duplicate outcome record IDs are processed once;
 conflicting content under the same identity is rejected. Rules for transitions
-between successive outcomes and durable retry accounting remain Phase 5 work.
+between successive outcomes and durable retry accounting still need implementation.
 
 ## 6. FrameVerificationEvidence
 
@@ -748,7 +753,7 @@ and uses `NoCandidate` or the actual rejection reason; a no-action directive
 references that policy decision. No placeholder proposal, execution outcome,
 or verification evidence is emitted at startup.
 
-## Migration and acceptance
+## Deploying and checking the versioned records
 
 Current producers/consumers that must migrate together:
 
@@ -782,4 +787,4 @@ no-action records, absent current frames, proposal/outcome/evidence variants,
 malformed fields and versions, nonfinite numeric values, and local context/reference
 consistency. Durable replay, reference resolution, stale-decision enforcement,
 host rollout, collection limits, and lifecycle enforcement remain pending.
-Phase 2 remains open until its implementation gates pass.
+The versioned interface is not fully deployed until the remaining host checks are connected and verified.

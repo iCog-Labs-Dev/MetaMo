@@ -191,6 +191,13 @@
       ((HostOperation $_ $command $_ $_ $_ $_) $command)
       ($_ ()))))
 
+;; Example: host-selected commands enter Core as data, never model-rewritten text.
+;; No selected operation means no action; it cannot enable legacy model fallback.
+(= (selectedHostCommandPlan)
+   (case (selectedHostCommand) (
+      (() (HostCommands ()))
+      ($command (HostCommands (cons-atom $command ()))))))
+
 (= (selectedHostTicket)
    (case (get-state &selected-host-operation) (
       ((HostOperation $_ $_ $_ $_ $_ $ticket) $ticket)
@@ -354,7 +361,7 @@
                      False)))
              ($_ False))))))
 
-;; The model may repeat only the exact selected command. The ticket predates
+;; Host commands and untrusted attempts must match the exact selection. The ticket predates
 ;; scoring, so final Core checks also reject mutations during/after selection.
 (= (dispatchSelectedHostCommand $ticket $command)
    (let* (

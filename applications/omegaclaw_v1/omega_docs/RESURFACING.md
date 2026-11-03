@@ -1,4 +1,9 @@
-# Bounded live-frame resurfacing
+# Keeping waiting frames visible
+
+A blocked or deferred frame should not disappear from view just because another
+task wins attention. The review queue periodically brings waiting work back to
+the host's attention, within a fixed capacity and review rate. A review hint asks
+for reconsideration; it cannot clear a blocker or authorize a command.
 
 `resurfacing.metta` implements a pure MeTTa review policy and session-local
 queue on PeTTa. The live bridge advances it once after each scheduling decision
@@ -6,7 +11,7 @@ and publishes `FRAME_REVIEW_HINTS` in the prompt. A hint is `(FrameReview id rea
 it is not an AttentionDirective, permission grant, execution retry, or frame switch.
 Review can ask the host to reconsider a blocker; it cannot clear the blocker.
 
-## Eligibility and ownership
+## Which frames enter the review queue
 
 The host adapter reads Core's typed, list-backed frame index. It does not parse
 the compacted, first-20-reference display projection. The current frame's bundle
@@ -29,7 +34,7 @@ In particular, an inactive blocked frame still fails operational admission even
 when it has a review hint. The existing live dispatcher still does not support
 cross-frame execution; review hints do not add that support.
 
-## Bounds and fairness
+## Capacity, timing, and fairness
 
 Registry configuration is `(FrameResurfacingPolicy 128 2 3)`:
 

@@ -20,6 +20,13 @@
 !(fullLoopStartSession)
 !(py-call (task_requirements.install (requirementsScenario)))
 !(initializeHostStartup)
+;; Exercise revocation at the real boundary after selection, without a model echo.
+(= (requirementsCommandSource)
+   (let $plan (selectedHostCommandPlan)
+      (case $plan (
+         ((HostCommands ()) $plan)
+         ($_ (progn (py-call (task_requirements.before_dispatch)) $plan))))))
+!(configureCoreLoopCommandSource requirementsCommandSource)
 !(configure maxSessionCycles 6)
 !(configure maxNewInputLoops 3)
 !(configure maxWakeLoops 1)

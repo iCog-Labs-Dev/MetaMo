@@ -1,17 +1,64 @@
-# Session dispatch revalidation
+# From a selected command to execution
 
-The v1 entry point initializes Core's session dispatcher before starting the
-loop. Model commands and the loop's idle mode-switch request go through
-`coreLoopDispatchCommand`, whose v1 hook checks the selected exact command before
-calling `coreDispatchCommand`; v1 never falls back to arbitrary `eval` on missing policy
-or unsupported work. Standalone Core without this explicitly enabled integration
-retains its legacy behavior.
+A selected command still needs a final check before it runs. The enabled v1
+adapter passes the host's exact command and retained ticket through
+`coreLoopDispatchCommand`. Core then checks current state, policy, routing, and
+budget before invoking the handler. A changed command, stale decision, or missing
+grant blocks execution; it cannot fall back to arbitrary `eval`.
+
+This guide explains host configuration, reply preparation, final checks, and
+observed outcomes. Standalone Core keeps its existing behavior when this
+integration has not been enabled.
+
+The API sections describe current behavior. Dated verification paragraphs record
+what a particular run checked; a limitation of an older run is not a statement
+that every later path has the same limitation.
 
 **Startup is closed by default.** There are no implicit command grants or typed
 policy defaults. A trusted host must provision policies and exact command bindings
 before useful execution. Use the explicit startup configuration option below to provide these grants. Neither model output nor compacted constraint
 summaries may provision it. This is a single-frame, serialized, session-only
 implementation, not the durable v1 dispatch ledger in `CONTRACTS.md`.
+
+## Direct host command input
+
+The enabled v1 adapter installs `selectedHostCommandPlan` through Core's trusted
+`configureCoreLoopCommandSource` hook. After context/selection, Core retains the
+selected ticket and obtains `(HostCommands commands)` directly from the host.
+V1 supplies exactly its selected command as a one-item batch, or an explicit
+empty batch when no executable operation is selected. Core does not call a model
+to reproduce that command or to output `()` while idle.
+
+Host commands remain parsed data: `repr` supplies audit text only, without a
+`balance_parentheses`/`sread` round-trip. Apostrophes, quoted text and newlines
+therefore reach dispatch unchanged. The normal batch limit, exact-command check,
+current owner/requirements checks, route guard, policy revalidation, budget
+reservation/settlement and observed-outcome handling still apply. A stale or
+revoked selection blocks rather than regenerating a command or obtaining a
+fresh ticket behind the gate. No send is considered delivered without its normal
+observed handler result; uncertain delivery retains the existing hold semantics.
+
+Standalone Core defaults to `ModelCommands` and keeps its existing model command
+generation path. Host source configuration is trusted startup, not a model skill.
+Empty or malformed host plans cannot trigger model fallback. This removes the
+redundant final generation call, not the separate providers used for frame
+relations, task classification, signal extraction or reply preparation. Matching
+Core `src/dispatch.metta` and `src/loop.metta` overlays are required; v1 rejects an
+older Core missing the command-source hook.
+
+Existing conversational polling tests reject any command-generation provider
+call, verify one exact send containing apostrophes/quotes/newlines, and check
+idle suppression and ownership changes after selection. The same suite explicitly
+checks standalone Core's model fallback. Continuation/requirements fixtures now
+inject their adversarial changes at the trusted pre-dispatch boundary, preserving
+their stale-policy, uncertainty, clarification, correction and completion checks.
+
+Validation on 2 November 2026: all 82 v1 MeTTa files passed, including the actual
+conversational polling loop, 500 continuation assertions and 37 requirements
+scenarios. The 20-case Core dispatch suite, four boundary guards and 20 Python
+import/harness/service checks passed. Provider/socket boundaries were doubled;
+no live provider request or IRC submission was made. Load both component changes
+in a fresh interpreter before checking the live channel.
 
 ## Trusted host configuration
 
@@ -29,7 +76,7 @@ example is a template; importing the module installs nothing.
 
 The host supplies actual arguments, while the supported-handler catalog derives
 the default candidate, target, permissions, egress, and costs. An optional
-`candidate` selects only a supported catalog mapping (see F1.3 below); command
+`candidate` selects only a supported catalog mapping (see clarification binding below); command
 entries cannot override handler requirements. File arguments must exactly match an explicitly
 allowlisted canonical regular file. Other skills, arities, nested expressions,
 and unregistered paths receive no binding.
@@ -48,7 +95,7 @@ missing or invalid accounting blocks execution. Reprovisioning and new tasks
 preserve existing global consumption. Core now reserves before invocation and
 settles observed command-unit consumption afterward. Uncertain invocation or
 partial IRC submission retains the reservation. See
-[production accounting](BUDGET_ACCOUNTING.md#production-reservation-and-settlement).
+[production accounting](BUDGET_ACCOUNTING.md#reserving-and-spending-command-units).
 
 In trusted startup/admission code, after loading composition and dispatch and
 establishing the current frame, initialize dispatch and provision before starting
@@ -74,7 +121,7 @@ Both scope accounts reserve 1 unit before a handler starts; a definite returned
 invocation spends 1 even when it reports failure or duplicate suppression.
 Core ticket replay consumes nothing further. Unknown consumption remains pending.
 
-## Native constraints and justification (integration item 1.4)
+## Native constraints and justification
 
 Enabled v1 projects the complete raw Core root/current constraint lists into
 the host policy boundary. Compacted prompt summaries are never parsed for
@@ -130,7 +177,7 @@ maintenance remain trusted host services, outside the command catalog and its
 for those services is inferred from a send grant. This item adds no service or
 live rollout.
 
-Item 1.4 verification on 26 October 2026: all 82 MeTTa test files passed. The
+Native constraint checks on 26 October 2026: all 82 MeTTa test files passed. The
 focused host policy suite passed 105 assertions, continuation passed 500, and
 native creation/batch limits passed 19. These cover unknown root/frame
 constraints, live restrictions over cached rows, exact host justification,
@@ -165,7 +212,7 @@ automatic transition authorization or fallback through a `defer` candidate.
 
 ## Startup configuration
 
-### Destination metadata (F1.1)
+### Destination metadata
 
 Read-only configuration remains valid without a `destination` field. To declare
 the destination for the send binding, add this optional top-level
@@ -175,8 +222,8 @@ field to the existing version-1 JSON configuration:
 "destination": {"channel": "local", "recipient": "stdout"}
 ```
 
-F1.1 initially supports Core's local test-channel stdout outbox. F1.10 below
-extends metadata to IRC; executable IRC routing remains F1.11. Both fields are
+Destination metadata initially supports Core's local test-channel stdout outbox. Irc destination metadata and binding below
+extends metadata to IRC; executable IRC routing remains authoritative irc routing and dispatch guard. Both fields are
 required for local destinations; null, missing,
 unknown, extra or unsupported values are rejected before policy installation.
 There is no environment-derived destination or fallback to a network channel.
@@ -195,7 +242,7 @@ transport. The declaration does not change either scope's allowlists, initialize
 a channel, or enable `send`. Existing read-only dispatch records remain unchanged.
 The existing read-only example intentionally omits this optional field.
 
-### IRC destination metadata and binding (F1.10)
+### IRC destination metadata and binding
 
 Implemented 14 October 2026. The same version-1 configuration parser and send
 catalog now accept this explicit destination:
@@ -231,8 +278,8 @@ Derived permission and egress identifiers must also fit the existing 256-charact
 limit. Configuration inputs are not mutated and invalid destinations fail before
 policy installation or startup configuration replacement.
 
-F1.10 alone adds metadata/binding support. F1.11 below adds authoritative routing;
-F1.12–F1.13 below add observations and outcome handling; F1.14 supplies the
+Irc destination metadata and binding alone adds metadata/binding support. Authoritative irc routing and dispatch guard below adds authoritative routing;
+observable irc submission–consume irc observations below add observations and outcome handling; explicit irc startup profile supplies the
 explicit startup profile. Comparing only `commchannel` or raw configuration is insufficient.
 
 Verification: 28 host-configuration Python tests, 18 response-preparation tests
@@ -241,7 +288,7 @@ assertions pass. IRC cases install typed bindings for both candidates, reject
 missing exact permission/egress in either scope, and retain the routing block.
 No IRC transport or live provider was invoked.
 
-### Authoritative IRC routing and dispatch guard (F1.11)
+### Authoritative IRC routing and dispatch guard
 
 Implemented 14 October 2026 across the v1 adapter and matching Core changes in
 `src/dispatch.pl` and `channels/irc.py`. These Core sources must be deployed with
@@ -254,7 +301,7 @@ socket lock. Restarting the same endpoint changes the generation; retiring
 receiver threads cannot publish against or clear a newer connection. Old
 protocol callbacks cannot send through a replacement socket.
 
-`host_operations.irc_route_snapshot` applies F1.10's `destination_metadata`
+`host_operations.irc_route_snapshot` applies irc destination metadata and binding's `destination_metadata`
 normalization to that actual transport state. It returns bounded
 `(IrcRoute EGRESS GENERATION Ready|Unavailable)` data, or `IrcRouteUnavailable`
 for missing/incompatible/malformed transport state. It never starts or imports
@@ -306,12 +353,12 @@ python3 ../../scripts/run-omegaclaw.py tests/irc_dispatch_test.metta
 python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
 ```
 
-F1.11 alone does not define a submission result. F1.12 below adds observations;
-F1.13 below classifies confirmed submissions for the selected destination.
-Automatic greeting preparation remains F2.9, and no live-channel acceptance is
-claimed.
+Routing checks alone cannot establish whether a send was submitted. The
+submission handler records that observation; the next section explains how it is
+classified for the selected destination. Automatic conversational preparation is
+described separately. These routing tests made no live channel submissions.
 
-### Observable IRC submission (F1.12)
+### Observable IRC submission
 
 Implemented 14 October 2026 in Core `channels/irc.py` and `src/channels.metta`.
 The existing `send` handler parses the IRC adapter's safely encoded observation
@@ -349,7 +396,7 @@ CR, NUL, other disallowed ASCII controls, DEL and lone surrogates fail preflight
 Tabs and ordinary text/whitespace within nonempty lines are preserved. Blank-only
 messages are rejected and empty newline segments produce no empty wire message.
 
-F1.11's route lock covers the complete attempt, including all chunks. The first
+authoritative irc routing and dispatch guard's route lock covers the complete attempt, including all chunks. The first
 uncertain write stops the attempt; no remaining chunks, reconnect, or automatic
 whole-message retry are attempted. Core's existing ticket ledger replays the
 same recorded observation without reinvoking the socket. Exceptions are reduced
@@ -365,20 +412,21 @@ invalid, disconnected and uncertain attempts never become delivered duplicates.
 Reconnecting or changing destination cannot inherit an old connection's marker.
 Local/stdout and other channel paths keep their existing behavior. This is the
 channel's consecutive-text guard, not task completion or a new retry ledger;
-F1.9's task/input/evidence answer suppression remains separate.
+Task/input/evidence answer suppression is a separate check.
 
 Verification: 14 Python submission tests, seven routing tests and 29 MeTTa
 submission assertions use socket doubles with the real handler and dispatcher.
 They cover both send candidates, successful/uncertain replay, failed first and
 later chunks, definite non-submission, marker ownership, UTF-8 framing and input
-injection. Local behavior and the F1.11 concurrent-routing tests remain covered
+injection. Local behavior and the authoritative irc routing and dispatch guard concurrent-routing tests remain covered
 by the focused suite; all 59 MeTTa test files pass. No live IRC messages or
 provider requests are made.
 
-F1.12 supplies transport evidence; F1.13 below consumes it. Neither step
-completes a commitment or automatically queues a reply.
+The submission handler records transport evidence. The observation reader below
+uses that evidence to classify the selected send. Neither step completes a
+commitment or automatically queues a reply.
 
-### Consume IRC observations (F1.13)
+### Consume IRC observations
 
 Implemented 14 October 2026 in `channel_outcomes.metta` and
 `host_operations.py`, delegated from `operationOutcomeStatus`. The shared
@@ -405,7 +453,7 @@ Local/stdout classification is unchanged.
 
 Existing `ingestOperationOutcome` correlation, duplicate/conflicting replay
 checks and one-shot consumption remain the only feedback path. A successful
-prepared `respond` publishes the F1.9 answer key when consumed; a clarification
+prepared `respond` publishes the suppress repeated answers answer key when consumed; a clarification
 never publishes that marker. IRC answer identity includes the canonical server,
 port and channel, so equivalent destination spellings share suppression while
 different destinations do not. A reconnect to the same destination does not
@@ -419,10 +467,10 @@ disconnect after submission, answer suppression, uncertainty and no automatic
 retry. Twenty-one Python preparation tests include canonical IRC answer identity,
 channel routing and supported observation destinations. All 61 MeTTa test files, 14 Python submission
 tests and seven routing tests pass. No live IRC or provider calls are used.
-Automatic greeting preparation remains F2.9; F1.14 below supplies the explicit
+Automatic greeting preparation remains automatic conversational preparation; explicit irc startup profile below supplies the explicit
 IRC startup profile.
 
-### Explicit IRC startup profile (F1.14)
+### Explicit IRC startup profile
 
 Copy `host_dispatch.irc.example.json` to an operator-owned absolute path. It uses
 the existing version-1 schema and `frame_id: current-frame`, with exact `respond`
@@ -458,7 +506,7 @@ adapter's actual normalized server/port/channel with the host destination.
 `StartupIrcRouteUnavailable` raises a fixed diagnostic and prevents installation;
 an already installed configuration is not replaced. No endpoint, message or
 credential value is included in those diagnostics. A disconnected but configured
-matching route can install policy; F1.11 still blocks dispatch until ready.
+matching route can install policy; authoritative irc routing and dispatch guard still blocks dispatch until ready.
 
 Missing configuration prints `MissingReplyPolicy` once and keeps dispatch closed.
 A read-only profile without a destination prints `MissingReplyDestination` and
@@ -471,10 +519,10 @@ availability are still enforced by the existing gate. A preparation-only profile
 can intentionally omit static send bindings and receive that diagnostic.
 
 Repeated cycles neither reprint diagnostics nor reinstall the same owner's policy.
-F2.8 now installs the operator template separately for each admitted commitment;
+per-task provisioning now installs the operator template separately for each admitted commitment;
 arbitrary frame switches do not inherit grants.
-F1.14 does not queue a generated greeting or complete a task: automatic replies
-still require F2.9's response preparation after F2.1/F2.8 admission and provisioning.
+explicit irc startup profile does not queue a generated greeting or complete a task: automatic replies
+still require automatic conversational preparation's response preparation after automatic admission/F2.8 admission and provisioning.
 An explicitly authorized fixed binding is not
 the automatic conversational preparation path.
 
@@ -486,7 +534,7 @@ test files pass, as do the existing 28 configuration, 21 preparation, seven
 routing and 14 submission Python tests. All sockets/providers are doubled;
 no live IRC messages are sent.
 
-### Send binding (F1.2)
+### Send binding
 
 With the destination above, append an exact command to `commands`:
 
@@ -511,9 +559,9 @@ and exactly `local:stdout` operation egress; otherwise it is blocked with
 `DestinationMismatch`. The existing exact-command and replay checks apply.
 The host must initialize Core's local channel separately.
 
-This increment accepts fixed host-supplied text. F1.4 now provides a separate
-preparation helper; F1.5 connects explicitly queued preparation to normal capture.
-F1.6 exposes local stdout acceptance; F1.7 classifies that exact observation as
+This binding accepts fixed host-supplied text. Response preparation now provides a separate
+preparation helper; capture prepared commands connects explicitly queued preparation to normal capture.
+send observation exposes local stdout acceptance; send outcome classification classifies that exact observation as
 operation `Success`. Unknown delivery and suppressed duplicates remain `Unobserved`.
 
 Verification: 20 Python host-config tests and all 55 MeTTa test files pass,
@@ -521,7 +569,7 @@ including 24 assertions in `tests/host_send_binding_test.metta` exercising real
 local stdout output, preserved reads, policy denials, changed routing, exact
 arguments and replay protection. The dispatch boundary guard also passes.
 
-### Clarification binding (F1.3)
+### Clarification binding
 
 To bind a fixed question through the same local send handler, add an explicit
 candidate to its command entry:
@@ -554,13 +602,13 @@ files and the dispatch boundary guard pass. The extended local-send regression
 has 43 assertions checking coexistence, candidate isolation, a real question
 send, replay, unchanged reads/responses, policy denials and routing changes.
 
-### Response preparation (F1.4)
+### Response preparation
 
 `host_operations.prepare_response(provider, request, context, observations)` is a
 trusted Python host API. It calls the existing `lib_llm_ext.callProvider` interface
 to prepare text from successful read observations. It does not register commands,
 capture tickets, invoke a channel, consume feedback or complete a task. Startup
-does not automatically gather evidence or queue it; F1.5 provides that trusted
+does not automatically gather evidence or queue it; capture prepared commands provides that trusted
 queue interface and calls preparation during the normal pre-scoring capture.
 
 The host supplies list representations of the existing `OperationContext` and
@@ -624,8 +672,8 @@ as data in the returned MeTTa record:
 ```
 
 Structural validation is not proof of the answer's semantic accuracy. Prepared
-text remains a proposal, not an authorized command or observed delivery. F1.5
-binds/captures it through the existing gate, and F1.8 must determine whether
+text remains a proposal, not an authorized command or observed delivery. capture prepared commands
+binds/captures it through the existing gate, and answer availability must determine whether
 the task has enough observations to answer. This slice handles read-based answers;
 it does not automatically generate clarification questions or enable IRC sending.
 
@@ -639,10 +687,10 @@ registry. Run it with:
 python3 MetaMo/applications/omegaclaw_v1/tests/response_preparation_test.py
 ```
 
-### Capture prepared commands (F1.5)
+### Capture prepared commands
 
 After admission and a successful observed read, trusted host code can queue
-preparation using the F1.4 observation representation:
+preparation using the response preparation observation representation:
 
 ```python
 host_operations.queue_response_preparation(
@@ -661,7 +709,7 @@ scoring, the existing `host_operations.capture` consumes that request once:
 
 1. Under Core's existing mutex, clear any previous prepared command and verify
    ownership and the published bundle. Capture current context, snapshot and epoch.
-2. Release the mutex and call F1.4's bounded provider helper.
+2. Release the mutex and call response preparation's bounded provider helper.
 3. Reacquire the mutex. If owner, context, snapshot or epoch changed during the
    call, discard the result. Otherwise publish one `PreparedHostOperation` using
    the fixed send catalog's requirements and Core's exact native frame identity.
@@ -686,15 +734,15 @@ without another handler invocation.
 Dispatch snapshots now include the actual `commchannel` and prepared-command
 state. A channel change after capture causes `StaleSnapshot`; a fresh decision
 captured while routing to an unsupported channel still fails the final
-`DestinationMismatch` gate. Only local/stdout is supported in this increment.
+`DestinationMismatch` gate. This path supports local/stdout only.
 Relevant host mutations must still use the existing serialized mutation API;
 arbitrary concurrent writes or unsanctioned change-and-restore sequences are
 outside this session contract.
 
 The trusted caller remains responsible for admitted evidence and deciding when
 to queue it. Ordinary startup does not automatically gather a task's observations
-or generate an answer on every message. F1.8 adds host-declared answer readiness; F1.7
-provides classification of send observations, and F1.9 suppresses repeated
+or generate an answer on every message. Answer availability adds host-declared answer readiness; send outcome classification
+provides classification of send observations, and suppress repeated answers suppresses repeated
 accepted answers. An explicit new queue prepares another reply only when its
 task, input, request, destination or read evidence has changed.
 There is no new IRC support, autonomous task planning or durable recovery here.
@@ -705,7 +753,7 @@ dispatch. It checks provider-time invalidation, final stale tickets, exact text,
 replay, policy denials, no-action output, revocation and task/session ownership.
 Only external providers and memory are doubled.
 
-### Send observation (F1.6)
+### Send observation
 
 The real local channel now returns a constant observation only after its JSON
 output has been written and stdout has flushed. Core's existing `send` handler
@@ -729,11 +777,11 @@ exist: the existing dispatcher records `Unobserved ExecutionUncertain`, never
 including after an uncertain send. This does not add retries or task-level
 duplicate suppression.
 
-F1.7 classifies this observation through `operationOutcomeStatus` below.
+Send outcome classification classifies this observation through `operationOutcomeStatus` below.
 Tests cover actual stdout output,
 write/flush exceptions, suppression, acceptance replay and uncertain replay.
 
-### Send outcome classification (F1.7)
+### Send outcome classification
 
 For a local `send` command, `operationOutcomeStatus` recognizes exactly
 `(DispatchResult Executed Feasible (SendObservation "local:stdout" Accepted))`
@@ -753,8 +801,8 @@ failure streak, as it does for other successful operations.
 
 No task-completion rule changes: delivery success alone does not close a task or
 commitment. The real prepared-response regression verifies that a local reply
-produces success feedback while the task stays open. F1.8 adds answer availability
-below; F1.9 adds task-level suppression for prepared answers.
+produces success feedback while the task stays open. Answer availability adds answer availability
+below; suppress repeated answers adds task-level suppression for prepared answers.
 
 The existing signal projection now sees that success on the next cycle, rather
 than treating the send as an unknown result. In the prepared-response fixture,
@@ -764,7 +812,7 @@ cycle's reply binding has expired and no new answer has been prepared.
 Verification: all 56 MeTTa test files pass, including 69 outcome-ingestion and
 51 prepared-response assertions. Dispatch and commitment boundary guards pass.
 
-### Answer availability (F1.8)
+### Answer availability
 
 The trusted host can now state which reads its answer requires when queuing
 preparation. For example, after retaining admitted successful outcomes for both
@@ -803,14 +851,14 @@ permission and does not complete a task.
 The optional argument preserves existing four-argument callers: they can still
 prepare commands, but do not assert this new required-read readiness. Normal
 startup still needs trusted host code to collect observations and queue an answer.
-F1.9 below suppresses repeated accepted answers on subsequent queues.
+suppress repeated answers below suppresses repeated accepted answers on subsequent queues.
 
 Verification covers multi-read coverage, missing requirements, readiness without
 fresh result feedback, actual local dispatch, cycle expiry, provider invalidation
 and policy denial. The 17 Python preparation tests, all 56 MeTTa test files, and
 dispatch/commitment boundary guards pass.
 
-### Suppress repeated answers (F1.9)
+### Suppress repeated answers
 
 Prepared read-based answers now carry a host-generated answer key. It identifies
 the session, native frame, commitment snapshot, task, most recently admitted input
@@ -873,7 +921,7 @@ Repeated cycles for one owner do not reload the file or restore revoked grants.
 Later admitted commitments receive fresh bindings from the same operator template;
 arbitrary frame switches and mismatched fixed targets remain denied. Outstanding
 or unresolved invocations hold task handoff. See
-`COMMITMENTS.md#per-task-provisioning-f28` for ownership and diagnostics.
+`COMMITMENTS.md#per-task-provisioning` for ownership and diagnostics.
 Changing configuration requires explicit trusted reprovisioning or a new process.
 Only `read-file`, `show-current-frame` and local/IRC `send` are supported. Candidate
 generation and policy still determine which operation can be selected on a given cycle.
@@ -895,15 +943,16 @@ the raw bundle stays inside the host instead of being round-tripped through text
 `operation_selection.metta` applies `candidateAdmissionForOperation` to each
 available candidate using this captured metadata. Missing bindings reject with
 `UnsupportedOperation`; more than one binding for a candidate rejects with
-`AmbiguousOperation`. The current candidate scorer cannot select between multiple
-argument sets, so configure one exact command per candidate for this slice.
+`AmbiguousOperation`. The current scorer chooses operation classes rather than arguments. Configure
+one exact command per candidate so the host selection is unambiguous.
 Denied candidates never enter scheduling or numeric comparison.
 
 Selection retains the exact command and its original ticket. Core's MeTTa loop
-hooks return that ticket after prompting, without recapturing or refreshing it.
+hooks return that ticket after context/selection, without recapturing or refreshing it.
 Only the selected command and arguments reach the existing Core dispatcher;
-substitutions receive `UnselectedOperation`. The prompt requests one exact command.
-The default Core hooks continue to use its existing dispatcher when v1 is absent.
+substitutions receive `UnselectedOperation`. The host command-source hook supplies
+the command data directly, without asking a model to echo its syntax.
+The default Core hooks keep model command generation and its existing dispatcher when v1 is absent.
 V1 refuses startup with a Core revision lacking these hooks.
 
 The captured ticket contains intent, session revision and current context. The v1 context includes a
@@ -1039,13 +1088,12 @@ increment the streak twice. New decisions returning identical result text still
 count separately. After the cycle advances, even identical old callbacks are
 rejected as stale rather than reopening feedback. A frame change before consumption
 excludes the old feedback. Unknown execution remains `Unobserved`; later amendments
-to an accepted observation are outside this MVP.
+to an accepted observation are outside this initial implementation.
 
 This remains one in-memory latest-observation slot for the serialized selected
 invocation, not a durable ledger or asynchronous callback queue. Session reset
 clears its feedback and consumption marker. This completes session callback
-validation/deduplication; active multi-step continuation remains separate Task 3
-work. No Core or Prolog source changes are required.
+validation/deduplication; active multi-step continuation is described separately in the continuation guide. No Core or Prolog source changes are required.
 
 `tests/outcome_ingestion_test.metta` covers mismatched identity fields, malformed
 and inconsistent records, duplicates before/after consumption, conflicting replay,
@@ -1056,7 +1104,7 @@ decisions. Run it through the common launcher:
 python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/outcome_ingestion_test.metta
 ```
 
-## Verification and limits
+## Checks and current limits
 
 Core ticket UUID serialization was repaired on 24 September 2026. Previously,
 bare UUID atoms with numeric exponent-like prefixes (for example `18e99999-...`)
@@ -1136,7 +1184,7 @@ and establish the task before checking candidate admission. No live services or
 external channel messages were used.
 
 
-## Increment 1 acceptance
+## Local and IRC execution checks
 
 Verified 14 October 2026 after the candidate-availability refactor. F1.A1–F1.A11
 pass in the bounded offline scope: one active frame, serialized dispatch,
@@ -1200,9 +1248,9 @@ local temporary evidence, not portable release artifacts. The fixture
 sources and commands above are the reproducible acceptance record.
 
 
-## Automatic conversational preparation (F2.9)
+## Automatic conversational preparation
 
-### IRC input normalization (F2.9a)
+### IRC input normalization
 
 The v1 ingress callback reads the configured `commchannel`. For IRC only,
 `Nahom: hello` becomes body `hello` before routing, frame/commitment admission
@@ -1243,7 +1291,7 @@ replacement, native identity preservation, non-IRC colons and session reset.
 Conversational polling fixtures now feed transport-prefixed messages through
 Core's queue; providers and sockets remain doubled. No live channel is started.
 
-### Host-owned conversational requirements (F2.9b)
+### Host-owned conversational requirements
 
 Before automatic response preparation, v1 establishes requirements for the
 admitted request under the provisioned open commitment. This runs during
@@ -1255,7 +1303,7 @@ installs permissions, bindings, a read plan, answer readiness or completion.
 
 | Assessment | Meaning |
 | --- | --- |
-| `Conversational` | Eligible for the host-owned no-tool preparation contract described in F2.9c below. |
+| `Conversational` | Eligible for the host-owned no-tool preparation contract described in general conversational preparation below. |
 | `RequiresTools` | Retained work includes `Files`, `Browsing`, `CurrentData`, `PrivateData`, `Execution` or `ExternalAction`. No automatic conversational answer is queued. |
 | `NoAction` | Classification is uncertain, unavailable or invalid. No answer is queued and the task stays open. |
 
@@ -1280,7 +1328,7 @@ Classification is heuristic: a valid model proposal is not proof of semantic
 correctness. New external requirements depend on the model assessment; existing
 host requirements remain binding regardless of the wording of a follow-up. This assessment grants no execution authority. It cannot
 replace the existing answer validation, policy checks or evidence requirements.
-F2.9c below supplies answer readiness from the exact current assessment.
+general conversational preparation below supplies answer readiness from the exact current assessment.
 
 The provider receives only bounded request/summary text and requirement
 categories, with at most 512 output tokens; proposals exceeding 2048 UTF-8 bytes
@@ -1316,28 +1364,28 @@ python3 ../../scripts/run-tests.py --root . --jobs 2 --timeout 60
 provisioning and capture with provider/socket doubles. They cover classification,
 mixed/external work, uncertainty, malformed proposals, provider failure and
 follow-up/replacement/session/policy/route invalidation. Classification alone
-grants no tool/send/completion authority; the F2.9c scenarios also exercise preparation and sending. The read-capture regression verifies that
+grants no tool/send/completion authority; the general conversational preparation scenarios also exercise preparation and sending. The read-capture regression verifies that
 actual observed read work is retained in the requirements record.
 Each scenario launches the shared loop fixture in a fresh interpreter and
 requires all six original checks to pass. The single entry point replaces the
 eleven separate wrappers without sharing mutable state between scenarios.
 
-Historical F2.9b verification on 16 October 2026: all 92 MeTTa files, 108 relevant Python tests
+Historical host-owned conversational requirements verification on 16 October 2026: all 92 MeTTa files, 108 relevant Python tests
 and four boundary guards passed. The focused read-capture fixture was rerun
 with an additional real-state greeting-shortcut rejection. No live services
 were called. Local suite output is `/tmp/omegaclaw-f29b-suite.log`; the commands
 and fixtures above are the reproducible evidence.
 
-### General conversational preparation (F2.9c)
+### General conversational preparation
 
-After host ingress admits input and F2.8 provisions its open commitment,
-operation capture prepares an answer when F2.9b's exact current requirements
+After host ingress admits input and per-task provisioning provisions its open commitment,
+operation capture prepares an answer when host-owned conversational requirements's exact current requirements
 record says `Conversational`, has no required external work and no continuation.
 This includes greetings, explanations, stable general knowledge, casual
 conversation, and writing or rewriting supplied text. The greeting fast path
 only avoids a classifier call; it no longer restricts answer preparation.
-Automatic file planning and read-backed answers remain F3.1–F3.7; generated
-recovery questions remain F4.2.
+Automatic file planning and read-backed answers remain F3.1–completed read-plan answers; generated
+recovery questions remain missing-input clarification.
 
 Configure an explicit local/IRC `destination` and grant the required send skill,
 permissions, egress and command budget in both scopes. For automatic replies,
@@ -1366,7 +1414,7 @@ read, execution, delivery or completion evidence.
 Validated text is wrapped by the existing send catalog and publishes
 `(NoToolEvidenceReady Conversation TASK)` on the cycle-owned operation. It
 passes through ordinary operation admission, selection and Core dispatch.
-This marker establishes response readiness only; F2.10 still owns task completion.
+This marker establishes response readiness only; conversational completion still owns task completion.
 
 Response capture and publication are named predicates in the existing
 `dispatch.pl`: `mm_response_capture` and `mm_response_publish`. Python calls
@@ -1378,7 +1426,7 @@ retains requirements and continuation, so changes before invocation invalidate
 the selected command. Stale generation cannot overwrite newer input or work.
 
 There is one automatic attempt per unchanged owned input/destination, including
-no-action, provider failure or denied attempts. F1.9's accepted-answer key
+no-action, provider failure or denied attempts. suppress repeated answers's accepted-answer key
 suppresses reuse. Uncertain transport submission does not cause automatic
 regeneration or resend. Core's separate command-generation provider may still
 be called while its polling loop is active.
@@ -1390,32 +1438,32 @@ requests, malformed/no-action/failed providers, denied send policy, uncertain
 submission and changes during generation or before dispatch. Existing
 `tests/conversational_*_test.metta` retain the greeting regressions, and
 `tests/response_preparation_test.py` covers exact contracts, bounds and inert
-command-like output. No new test files were added for F2.9c.
+command-like output. No new test files were added for general conversational preparation.
 
 All scenarios use the actual Core loop and host boundary with provider/socket
 doubles. Successful conversational submissions leave commitments open pending
-F2.10; this is not a live-channel or task-completion acceptance claim.
+conversational completion; this is not a live-channel or task-completion acceptance claim.
 
-F2.9c verification on 16 October 2026: all 82 MeTTa test files (including the
+General conversational preparation verification on 16 October 2026: all 82 MeTTa test files (including the
 27 consolidated scenarios), 112 relevant Python tests and four boundary guards
 passed. The reduced file count reflects the earlier consolidation of eleven
 requirement wrappers into one entry point. Local suite output is
 `/tmp/omegaclaw-f29c-suite.log`. No live provider or IRC calls were made.
 
 
-### Conversational completion configuration (F2.10)
+### Conversational completion configuration
 
 To close eligible IRC conversational tasks after complete socket submission, add
 `"completion_criterion": "TransportSubmission"` to the trusted host JSON profile.
 The IRC example includes this setting. Omission defaults to `Disabled`, preserving
 existing profiles. `LocalAccepted` is available for local stdout;
 `RecipientAcknowledged` keeps a task open because submission does not establish
-recipient acknowledgement. See [explicit conversational completion](COMMITMENTS.md#explicit-conversational-completion-f210)
+recipient acknowledgement. See [explicit conversational completion](COMMITMENTS.md#explicit-conversational-completion)
 for evidence and lifecycle checks. Read requirements and clarification remain
 nonterminal under this no-tool rule.
 
 
-## Completed read-plan answers (F3.7)
+## Completed read-plan answers
 
 An installed read continuation retains its original steps and accepted successful
 outcomes in `ContinuationEvidence`, owned by its session, commitment and plan.
@@ -1436,14 +1484,14 @@ automatic preparation. An explicit configured destination and send permissions
 remain necessary.
 
 After a separately admitted answer is accepted at `local:stdout`, the existing
-completion hook checks the exact read decisions and answer through F2.5/F2.6.
-It requires the explicit `LocalAccepted` completion policy. F2.7 retains frame
+completion hook checks the exact read decisions and answer through pure completion check/F2.6.
+It requires the explicit `LocalAccepted` completion policy. Core frame completion retains frame
 reconciliation; read completion does not reinterpret IRC submission as recipient
-acknowledgement. Automatic user-request extraction/installation uses the separate F3.A1
+acknowledgement. Automatic user-request extraction/installation uses the separate automatic admitted read plans
 host cycle hook described below.
 
 
-## Automatic admitted read plans (F3.A1)
+## Automatic admitted read plans
 
 At the normal cycle boundary, `prepareAutomaticReadPlan` runs after previous
 feedback is consumed and selection is cleared, before the one published frame
@@ -1457,7 +1505,7 @@ after provider inference. The final transaction reuses normal admission and
 safe-point installation. Active continuations cannot be overwritten. Idle cycles
 do not retry unchanged extraction attempts; a sleeping host waits to wake first.
 A task requiring files without an admitted plan does not offer arbitrary catalog
-reads for execution. Completed plans then use the F3.7 evidence/answer path.
+reads for execution. Completed plans then use the completed read-plan answers evidence/answer path.
 
 The Core-loop regression supplies one plain-path request and model responses;
 it never installs a plan itself. File handlers, local sends, task completion and

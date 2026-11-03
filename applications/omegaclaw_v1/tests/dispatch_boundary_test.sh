@@ -19,7 +19,8 @@ assert '($admittedCommands (coreLoopCommands $sexpr))' in loop
 assert '(let $s (superpose $admittedCommands)' in loop
 assert '(coreLoopDispatchCommand $dispatchTicket (quote (switch-mode)))' in loop
 assert '(if (== (get-state &cfv2-root-mode) Fast) (switch-mode)' not in loop
-assert loop.index('($dispatchTicket (coreLoopDispatchBegin))') < loop.index('lib_llm_ext.callProvider')
+assert loop.index('($dispatchTicket (coreLoopDispatchBegin))') < loop.index('(coreLoopResponseForPlan (quote $commandPlan)')
+assert '(coreLoopCommandPlan)' in loop
 assert loop.index('(recordDispatchFailure $R)') < loop.index('(py-call (helper.normalize_string $R))')
 assert startup.index('!(initMetaMoDispatch)') < startup.index('!(motivatedOmegaclaw)')
 PY
@@ -34,4 +35,5 @@ bridge=(app/'bridge.metta').read_text()
 assert bridge.index('admitCapturedOperations $bundle') < bridge.index('scheduleAdmittedActions (getSignals) $admittedActions') < bridge.index('runMetaMoCycleDefault')
 adapter=(app/'dispatch.metta').read_text()
 assert 'configureCoreLoopDispatch selectedHostTicket dispatchSelectedHostCommand' in adapter
+assert 'configureCoreLoopCommandSource selectedHostCommandPlan' in adapter
 PYCODE

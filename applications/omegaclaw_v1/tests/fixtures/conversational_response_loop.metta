@@ -17,6 +17,14 @@
 !(fullLoopStartSession)
 !(py-call (conversational_response.install (conversationScenario)))
 !(initializeHostStartup)
+;; Example: preserve a real ownership-change race without a model-echo stage.
+(= (conversationCommandSource)
+   (let $plan (selectedHostCommandPlan)
+      (case $plan (
+         ((HostCommands ()) $plan)
+         ($_ (progn (py-call (conversational_response.before_dispatch)) $plan))))))
+!(if (== (conversationScenario) "before_dispatch")
+     (configureCoreLoopCommandSource conversationCommandSource) True)
 !(configure maxSessionCycles 4)
 !(configure maxNewInputLoops 3)
 !(configure maxWakeLoops 1)

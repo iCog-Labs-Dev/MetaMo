@@ -1188,6 +1188,12 @@
 !(configure reasoningMode medium)
 !(configure useFrames True)
 
+;; Example: keep adversarial pre-invocation hooks without command model reproduction.
+(= (continuationCommandSource)
+   (let $plan (selectedHostCommandPlan)
+      (if (== (py-call (continuation_fixture.auto_before_dispatch)) 1)
+          $plan (HostCommands ()))))
+
 ;; Example: reset independent scenarios; within each run only Core receives the one request.
 (= (runAutomaticReadScenario $scenario)
    (progn
@@ -1198,6 +1204,7 @@
       (initOmegaClawMotivation)
       (py-call (continuation_fixture.install_auto_loop $scenario))
       (initializeHostStartup)
+      (configureCoreLoopCommandSource continuationCommandSource)
       (change-state! &prevmsg "")
       (change-state! &lastsend "")
       (change-state! &lastresults "")

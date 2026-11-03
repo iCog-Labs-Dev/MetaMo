@@ -1,6 +1,11 @@
-# Predictable v1 module composition
+# Loading modules without losing state
 
-## Diagnosis
+Use `scripts/run-omegaclaw.py` to load this application. It resolves package paths
+and loads each physical module once. `composition.metta` defines the application's
+import order; `run.metta` adds the host and starts it. Importing composition alone
+does not start a channel or restore a task.
+
+## Why import order matters
 
 PeTTa's native importer processes a file on every import. Each MeTTa function
 definition adds another global Prolog clause, and each top-level `bind!` runs
@@ -21,7 +26,7 @@ decision scorer. PeTTa could compile the unresolved scorer call as data; using
 the production composition in the reasoner test reproduced an arithmetic type
 error on `omegaclawScoreForBundle`.
 
-## Contract
+## Loading rules
 
 - Use `scripts/run-omegaclaw.py` for v1 execution and import auditing. Native
   `petta`/`run.sh` do not provide these import semantics.
@@ -117,7 +122,7 @@ and under the same native compiler constrained to a 64 MiB stack. The existing
 inference, evidence, negative-premise, rejection, and reliability assertions
 are unchanged. No deduplication or blanket result collapsing was added.
 
-## Verification and inspection
+## Checking imports and initialization
 
 From the MetaMo repository root:
 

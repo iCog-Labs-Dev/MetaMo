@@ -1,12 +1,12 @@
-# Offline ContextFrames service boundaries
+# Testing the loop without external services
 
-The final Task 5 local regression run passed all 18 commands without retries:
+The local regression run on 24 September 2026 passed all 18 commands without retries:
 46 MeTTa files, 377 full-loop assertions, 64 Python tests, Core dispatch,
 contract/commitment suites, four shell guards and the startup import audit.
 See [the dated regression report](REGRESSION_RESULTS_2026-09-24.md) for exact
-commands, results, source revisions, artifact paths and scope. Task 5's local
-offline checklist is complete; live, durable recovery and CI acceptance remain
-separate.
+commands, results, source revisions, artifact paths and scope. These are dated
+offline results. Live services, durable recovery, and CI need separate
+verification.
 
 ## Shared full-loop harness
 
@@ -69,10 +69,10 @@ It writes a failure report and exits nonzero on interruption. It never retries a
 failed scenario automatically. The ticket UUID `float_overflow` described in
 historical results below is fixed by the updated Core `src/dispatch.pl` overlay:
 ticket IDs are strings before serialization and ledger insertion. See
-[DISPATCH.md](DISPATCH.md#verification-and-limits). Older Core overlays still
+[DISPATCH.md](DISPATCH.md#checks-and-current-limits). Older Core overlays still
 have the failure; the harness itself does not retry or suppress it.
 
-This implements Task 5's shared harness and scenario-coverage items. The original
+These scenarios use the shared offline harness. The original
 two-scenario verification on 24 September 2026 passed all 239
 integration assertions (59 scoring, 180 modes). Four harness tests covering
 verdicts, subprocess output and timeout/child cleanup, eight import-resolution
@@ -81,7 +81,7 @@ retained known UUID-parser failures as nonzero results. Invocation from outside
 the repository resolved the same sources and correctly reported a scoring parser
 interruption while completing the mode scenario.
 
-### Complete session-only scenario coverage — 24 September 2026
+### Session scenarios checked on 24 September 2026
 
 | Requirement | Scenario and acceptance evidence |
 | --- | --- |
@@ -111,9 +111,9 @@ and import reports are retained by the harness. The harness test also verifies
 that a failed callback scenario makes the aggregate run fail while preserving
 all four scenario results.
 
-This closes the named offline coverage item, not live-provider/channel acceptance,
-durable restart recovery, or deferred CI/reasoner integration. The other Task 5
-checklist items remain separately tracked.
+These checks cover the named offline scenarios. They do not establish real
+provider/channel behavior, recovery across a restart, or the deferred CI/reasoner
+integration. The remaining offline checks are described below.
 
 Test the entry point itself with:
 
@@ -121,9 +121,9 @@ Test the entry point itself with:
 python3 applications/omegaclaw_v1/tests/offline_harness_test.py
 ```
 
-### Outcome/effect assertions and failed-run traces — 24 September 2026
+### Checking effects and keeping failure traces
 
-The third Task 5 checklist item is verified by the following assertions:
+The following assertions check observed effects and retained failure traces:
 
 | Obligation | Executable evidence |
 | --- | --- |
@@ -171,7 +171,7 @@ and policy admission/rejection. The appraisal changes the real `respond` score
 from the same neutral initial state; there is no fixed scorer or synthetic
 `FrameStateBundle` replacing projection.
 
-## Doubled boundaries
+## Which services the tests replace
 
 | Test-only Python module | Replaced external behavior |
 | --- | --- |
@@ -257,7 +257,7 @@ test snapshot isolation within the serialized motivational calculation; they do
 not authorize execution against stale host state. The dispatcher must still
 revalidate current state and policy before invoking a handler.
 
-## Multiple feasible candidates
+## Choosing among several allowed candidates
 
 `multiple_candidates_test.metta` ingests a real Core task and exercises its open,
 awaiting-first-execution state: the message has been ingested, no fresh message is
@@ -283,12 +283,12 @@ that require them; this test supplies no replacements for those functions.
 All 30 assertions pass. The focused suite now passes 38 MeTTa files, with 32 Python
 tests, eight import regressions and four shell boundary checks. The goal change is
 a controlled motivational input, not an observed execution outcome; this verifies
-Task 1's candidate competition requirement, not the execution-feedback MVP.
+competition between allowed candidates, rather than a complete execution-feedback loop.
 
 
 ## Outcome-driven scoring — 23 September 2026
 
-`outcome_scoring_test.metta` demonstrates the Task 3 score-change criterion with
+`outcome_scoring_test.metta` shows how an observed outcome changes a later score using
 real Core ingestion, bounded projection, the full bridge, typed admission,
 scheduling, numeric scoring, Core dispatch, callback validation and next-cycle
 feedback consumption. It passes 59 assertions. Run from the workspace root:

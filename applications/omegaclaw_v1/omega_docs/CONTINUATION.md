@@ -1,6 +1,15 @@
-# Explicit session continuation
+# Continuing a task after a read succeeds or fails
 
-## Holding uncertain reads (F4.8)
+A read plan records which approved file to read next and which results have
+actually been observed. The host advances it after a matching result, holds it
+when input is missing or execution is uncertain, and checks any correction before
+retrying. The plan belongs to the current session, frame, and commitment.
+
+This guide covers setup, progress, missing-file questions, corrected paths, retry
+limits, and uncertainty. A model's claim that a read succeeded cannot advance the
+plan.
+
+## Holding uncertain reads
 
 An uncertain read is not a missing file. `hostCorrectionTarget` remains available
 only for typed MissingInput recovery; timeout, unknown output or absent feedback
@@ -52,7 +61,7 @@ from the application directory with
 `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 60`.
 Local full-suite log: `/tmp/f48-metta-suite.log`. No live requests/messages were sent.
 
-## Per-step retry limits (F4.7)
+## Per-step retry limits
 
 The trusted registry declares exactly one `(ContinuationRetryPolicy 2)` row.
 The integer limit is 0–16; zero disables correction retries. The default allows
@@ -67,7 +76,7 @@ a path or advancing the plan revision does not change step identity or reset its
 allowance. Successful successor installation replaces the counters; session reset
 clears them. The state is session-only and is not restored across restart.
 
-F4.5's existing locked resume transition validates the retained state, then checks
+resuming a held read's existing locked resume transition validates the retained state, then checks
 the held step's count against its captured limit. Preparation computes the next
 count without writing; only an accepted resume commits that increment alongside
 the revised plan/evidence, with the existing single epoch invalidation. Denied or
@@ -78,7 +87,7 @@ allowance even if the later model emits no command or execution fails.
 
 At the limit, resume returns `(ContinuationRejected RetryLimitExceeded)`. The
 pending step, correction, revision, successful-read evidence, counters and epoch
-stay unchanged. F4.6's automatic hook uses the same guard, so later idle cycles
+stay unchanged. automatic correction capture and fresh retry tickets's automatic hook uses the same guard, so later idle cycles
 cannot dispatch another retry. The commitment stays open and the step stays Held
 for host review. Another path or a higher registry limit cannot restart that
 exhausted step. Invalid, missing or mismatched stored counters return
@@ -96,12 +105,12 @@ Python tests and all four boundary guards pass. Reproduce from the application
 directory with `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 60`.
 Local log: `/tmp/f47-metta-suite.log`. No live provider/channel calls were made.
 
-## Automatic correction capture and fresh retry tickets (F4.6)
+## Automatic correction capture and fresh retry tickets
 
 `prepareTaskStateForMetaMo` now calls `prepareAutomaticContinuationResume` after
 consuming prior feedback and clearing the old selection through
 `beginOperationCycleForFrame`. Before publishing the cycle's one frame bundle,
-the hook checks a recorded correction through F4.4 and F4.5. No correction is a
+the hook checks a recorded correction through validating a corrected path and resuming a held read. No correction is a
 no-op; stale, denied or unsupported corrections leave the read held. The existing
 planning hook refreshes the resulting continuation view before snapshot capture.
 No model proposal, correction text or plan grants permission.
@@ -130,9 +139,8 @@ execute the corrected read once with a fresh ticket, answer from actual evidence
 complete the local task/frame and remain idle. A plan awaiting completion cannot
 select its obsolete input-recovery clarification. The IRC socket-double scenario
 uses the same hook and submits one question and one answer; its read commitment
-stays open under the existing local-only read-completion contract. F4.7 now bounds
-accepted resumes; F4.8 now holds uncertain reads. Live acceptance and trusted
-uncertainty reconciliation remain separate work.
+stays open under the existing local-only read-completion contract. Retry limits bound accepted resumes, and unresolved reads remain on hold.
+Live verification and trusted uncertainty reconciliation are separate work.
 
 Verified 26 October 2026: all 75 MeTTa files pass (428 continuation test markers),
 97 preparation/requirements/ingress/configuration Python tests, all four boundary
@@ -141,9 +149,9 @@ guards and Core dispatch's 20 declared tests / 22 generated cases pass. Run
 application directory. Local full-suite log: `/tmp/f46-metta-suite.log`.
 Providers/memory/sockets are doubled; no live requests/messages were sent.
 
-## Resuming a held read (F4.5)
+## Resuming a held read
 
-Trusted host callers pass F4.4's result to `(hostResumeContinuation ADMISSION)`.
+Trusted host callers pass validating a corrected path's result to `(hostResumeContinuation ADMISSION)`.
 The existing Core dispatch mutex spans fresh correction admission, exact comparison
 with the supplied resolved step, safe-point checks, state changes and dispatch-epoch
 invalidation. Earlier admission grants no durable authority: a replaced owner,
@@ -172,15 +180,14 @@ another revision/epoch change.
 
 Resume itself invokes no provider, file handler, send or completion, and allocates
 no ticket. Normal selection/capture still owns execution and final dispatch
-revalidation. This is a trusted session-only API, not a model skill. F4.6 now
-connects it to the automatic host cycle above. It supports the existing MissingInput
+revalidation. This is a trusted session-only API, not a model skill. The automatic correction path connects it to the host cycle described above. It supports the existing MissingInput
 correction target;
 general replanning and resolving uncertain effects remain outside this slice.
-F4.7 now applies its per-step retry guard and F4.8 holds unresolved reads;
-full recovery acceptance remains separately tracked.
+The per-step retry guard applies, and unresolved reads remain on hold. Broader
+recovery behavior still needs its own verification.
 
 The existing continuation regression performs a real first read, a missing second
-read, explicit correction ingress, F4.4 admission and F4.5 resume. A normal cycle
+read, explicit correction ingress, admission of the corrected path and resuming the held read. A normal cycle
 then reads the replacement, and the existing answer collector accepts both actual
 results without rereading the first file. Tests also cover preserved pending tails,
 post-admission revocation, wrong resolved steps, replay, stale ownership/revision/
@@ -194,9 +201,9 @@ continuation test markers; preparation/requirements/ingress Python suites pass
 directory with `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 120`.
 Local full-suite log: `/tmp/f45-metta-suite.log`. No live provider/channel calls.
 
-## Validating a corrected path (F4.4)
+## Validating a corrected path
 
-Trusted host callers validate F4.3's retained proposal through
+Trusted host callers validate correlating a correction's retained proposal through
 `(hostAdmitCorrection (hostContinuationCorrection))`, after loading dispatch.
 The supplied record must still equal the current held MissingInput correction.
 Core's existing dispatch mutex covers that comparison and the existing
@@ -218,8 +225,8 @@ proof that the file exists. Rechecking after policy revocation can reject an
 earlier success. Neither success nor rejection edits the plan, cursor, revision,
 completed evidence, pending correction, clarification receipt, selection or ticket
 ledger. No provider, file handler, send, reservation or completion is invoked.
-F4.5 revalidates before applying a correction and F4.6 connects normal ticket
-capture. F4.7 bounds retries and F4.8 holds uncertainty. F4.4 itself
+resuming a held read revalidates before applying a correction and automatic correction capture and fresh retry tickets connects normal ticket
+capture. Per-step retry limits bounds retries and holding uncertain reads holds uncertainty. Validating a corrected path itself
 does not resume or execute a read.
 
 Verification extends the existing continuation fixture with allowed absolute,
@@ -239,7 +246,7 @@ the application directory:
 `python3 ../../scripts/run-tests.py --root tests --jobs 4 --timeout 120`.
 Local log: `/tmp/f44-metta-suite.log`. No live provider/channel calls were made.
 
-## Correlating a correction (F4.3)
+## Correlating a correction
 
 For a current Held/MissingInput read, `(hostCorrectionTarget)` returns
 `(CorrectionTarget SESSION COMMITMENT PLAN STEP REVISION)`. The trusted host
@@ -272,12 +279,12 @@ return `Held StaleCorrection`. Correlation preserves the held cursor, prior read
 evidence, clarification receipt, task state, response input, transport provenance
 and dispatch tickets. It does not append the protocol message as fresh task input
 or invoke a provider, file handler or send. Proposed paths remain inert data;
-catalog/policy validation and resume are F4.4–F4.5.
+catalog/policy validation and resume are validating a corrected path–resuming a held read.
 
 Plan installation initializes the session-local plan revision to zero and clears
-pending corrections; session reset does the same. F4.5 advances this revision
+pending corrections; session reset does the same. Resuming a held read advances this revision
 when changing the plan and invalidates old decisions under the existing mutex.
-F4.3 neither edits the plan nor advances its revision. This is not restart-safe
+correlating a correction neither edits the plan nor advances its revision. This is not restart-safe
 correction storage or automatic interpretation of free-form replies.
 
 Verification extends the existing continuation and ingress tests: valid/replayed
@@ -332,7 +339,7 @@ session. Automatic production admission/startup provisioning remains host work.
 These are trusted serialized host APIs, not model skills, concurrent callback
 APIs or a security boundary against arbitrary code in the interpreter.
 
-## Publication, selection and progress
+## Publishing the next step and recording progress
 
 Before snapshot publication, the host mirrors commitment state, consumes validated
 operation feedback, then refreshes continuation. Only a newly applied, matching
@@ -371,13 +378,13 @@ revalidation; a plan grants no permissions.
   is recorded, the pending step remains eligible for a later policy evaluation;
   a recorded blocked attempt holds it.
 
-F4.5 now provides the bounded trusted correction/resume API above; arbitrary
+Resuming a held read now provides the bounded trusted correction/resume API above; arbitrary
 replanning remains unsupported. Restarting a host session is an
 explicit operator action, not evidence that uncertain effects can safely repeat.
 There is no durable progress, restart recovery, general task planner, multi-frame
 continuation, budget settlement or arbitrary-handler support.
 
-## Held-read recovery classification (F4.1)
+## Held-read recovery classification
 
 The host retains a newly consumed unsuccessful read observation in
 `&continuation-recovery`. `hostContinuationRecovery` returns it only for the
@@ -411,10 +418,10 @@ it. Ownership displacement can hold a plan without inventing a read failure.
 
 This is host-side bookkeeping, not a new signal substrate or motivational repair
 rule. Constitutional modes do not establish recovery need. The existing
-`ContinuationView` and bounded frame bundle remain unchanged. F4.1 neither sends
+`ContinuationView` and bounded frame bundle remain unchanged. Held-read recovery classification neither sends
 a clarification nor admits a correction or retry.
 
-## Missing-input clarification (F4.2)
+## Missing-input clarification
 
 A current held `MissingInput` step becomes eligible for the existing
 `ask-clarification` candidate. Configure exactly one question binding and the
@@ -428,7 +435,7 @@ normal destination-specific send permissions, egress and budget in both scopes:
 The question text is operator-configured, not generated by another provider call.
 Normal candidate admission, scheduling, exact-command selection, route validation
 and Core dispatch still govern it. A missing/ambiguous binding or denied send
-policy cannot produce a question. F4.2 grants no permission or retry authority.
+policy cannot produce a question. Missing-input clarification grants no permission or retry authority.
 
 Selection retains the exact held recovery and operation decision. When the next
 host cycle consumes its validated outcome, it records:
@@ -456,7 +463,7 @@ two-file planning, a real missing-file result, one local question, and later idl
 cycles. It also covers empty command output, denied egress, missing/ambiguous
 bindings, stale tickets, an uncertain-send callback fixture, and the same question
 through the real IRC handler with a socket double. No live provider/IRC calls run.
-Correction correlation and resume remain F4.3 onward.
+Correction correlation and resume remain correlating a correction onward.
 
 ## Core helper interfaces
 
