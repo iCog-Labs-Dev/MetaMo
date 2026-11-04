@@ -513,7 +513,40 @@
     (quote (ReasonerProposalOutcomeEvent (outcome-id (ReasonerOutcomeRef "s" "t"))
         (proposal-event (reasonerAccessorEffect)) (execution-status Completed)
         (execution-evidence (reasonerAccessorEffect)) (frame-evidence-status Unresolved)
-        (frame-state-evidence ()) (outcome Unresolved) (grade 0.75))))
+        (frame-state-evidence ()) (outcome Unresolved) (grade Ungraded))))
     (ReasonerOutcomeRef "s" "t"))
 
 !(test (get-state &reasoner-accessor-effects) 0)
+
+;; Execution status cannot supply the missing prediction observation.
+!(test (map-atom (Completed Failed Blocked Unobserved) $status
+    (reasonerProposalOutcomeGrade $status Unresolved))
+    (Ungraded Ungraded Ungraded Ungraded))
+
+!(test (map-atom (Completed Failed Blocked Unobserved) $status
+    (reasonerProposalOutcomeClass $status Unresolved))
+    (Unresolved Unresolved Unresolved Unresolved))
+
+;; Blocking and non-execution do not establish even an asserted conclusion.
+!(test (map-atom (Confirmed Refuted Unresolved) $verification
+    (reasonerProposalOutcomeGrade Blocked $verification))
+    (Ungraded Ungraded Ungraded))
+
+!(test (map-atom (Confirmed Refuted Unresolved) $verification
+    (reasonerProposalOutcomeGrade Unobserved $verification))
+    (Ungraded Ungraded Ungraded))
+
+!(test (map-atom (Confirmed Refuted Unresolved) $verification
+    (reasonerProposalOutcomeClass Blocked $verification))
+    (Unresolved Unresolved Unresolved))
+
+!(test (map-atom (Confirmed Refuted Unresolved) $verification
+    (reasonerProposalOutcomeClass Unobserved $verification))
+    (Unresolved Unresolved Unresolved))
+
+;; Invalid or missing statuses fail closed; the public writer also checks receipts.
+!(test (map-atom (Rejected () Unknown) $status
+    (reasonerProposalOutcomeGrade $status Confirmed))
+    (Ungraded Ungraded Ungraded))
+
+!(test (reasonerProposalOutcomeGrade Completed Unknown) Ungraded)

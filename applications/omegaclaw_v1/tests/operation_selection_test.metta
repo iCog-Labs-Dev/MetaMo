@@ -627,10 +627,10 @@
     (recordReasonerProposalOutcome (get-state &reasoner-host-event)
         Completed (get-state &reasoner-host-evidence) Unresolved ())))
 !(test (case (get-state &reasoner-recorded-grade)
-    (((ReasonerProposalOutcomeEvent (outcome-id $_id) $_ $_ $_ $_ $_ (outcome Unresolved) (grade 0.75)) True)
+    (((ReasonerProposalOutcomeEvent (outcome-id $_id) $_ $_ $_ $_ $_ (outcome Unresolved) (grade Ungraded)) True)
         ($_ False))) True)
 
-!(test (!= (reasonerSourceReliability nars) (get-state &reasoner-grade-before)) True)
+!(test (reasonerSourceReliability nars) (get-state &reasoner-grade-before))
 !(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
 
 ;; Outcome identity comes from the observed execution, never its result text.
@@ -702,25 +702,35 @@
     Completed (get-state &reasoner-failed-evidence) Unresolved ())
     (ReasonerOutcomeRejected ExecutionStatusMismatch))
 
-;; An exception after the audit insertion must roll back it and the replay marker.
+;; Exercise the internal graded transaction: a write error must roll back the audit.
+;; The public host adapter deliberately cannot confirm predictions yet.
 !(bind! &reasoner-before-failed-commit (new-state (reasonerProposalOutcomes)))
 !(bind! &reasoner-reliability-row (new-state
     (ReasonerSourceReliability nars (reasonerSourceReliability nars))))
 !(let $row (get-state &reasoner-reliability-row) (remove-atom &reasoner-source-reliability $row))
 !(add-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
-!(test (recordReasonerProposalOutcome (get-state &reasoner-host-next)
-    Failed (get-state &reasoner-failed-evidence) Unresolved ())
+!(test (commitReasonerOutcome (ReasonerOutcomeRef "rollback-test" "rollback-ticket")
+    (get-state &reasoner-host-next) Failed (get-state &reasoner-failed-evidence) Confirmed ())
     (ReasonerOutcomeRejected OutcomeCommitFailed))
 
 !(test (reasonerProposalOutcomes) (get-state &reasoner-before-failed-commit))
 !(test (reasonerSourceReliability nars) "invalid-number")
+
+;; An unresolved failure must not even perform reliability arithmetic.
+!(bind! &reasoner-failed-ungraded (new-state
+    (recordReasonerProposalOutcome (get-state &reasoner-host-next)
+        Failed (get-state &reasoner-failed-evidence) Unresolved ())))
+!(test (case (get-state &reasoner-failed-ungraded)
+    (((ReasonerProposalOutcomeEvent (outcome-id $_id) $_ $_ $_ $_ $_ (outcome Unresolved) (grade Ungraded)) True)
+        ($_ False))) True)
+
+!(test (reasonerSourceReliability nars) "invalid-number")
 !(remove-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
 !(let $row (get-state &reasoner-reliability-row) (add-atom &reasoner-source-reliability $row))
 
-!(test (case (recordReasonerProposalOutcome (get-state &reasoner-host-next)
-        Failed (get-state &reasoner-failed-evidence) Unresolved ())
-    (((ReasonerProposalOutcomeEvent (outcome-id $_id) $_ $_ $_ $_ $_ (outcome Refuted) (grade 0.0)) True)
-        ($_ False))) True)
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-next)
+    Failed (get-state &reasoner-failed-evidence) Unresolved ())
+    (get-state &reasoner-failed-ungraded))
 
 ;; Equal command text and output from distinct executions remain distinct observations.
 !(py-call (host_config_fixture.replace_file_content))
@@ -761,6 +771,7 @@
 !(bind! &reasoner-after-independent (new-state (reasonerSourceReliability nars)))
 !(bind! &reasoner-independent-count (new-state (size-atom (reasonerProposalOutcomes))))
 !(test (get-state &reasoner-independent-count) 4)
+!(test (reasonerSourceReliability nars) (get-state &reasoner-grade-before))
 !(test (recordReasonerProposalOutcome (get-state &reasoner-repeat-event-2)
     Completed (get-state &reasoner-repeat-evidence-1) Unresolved ())
     (ReasonerOutcomeRejected MissingExecutionEvidence))
@@ -786,6 +797,16 @@
 !(test (recordReasonerProposalOutcome (get-state &reasoner-revoked-event)
     Completed (ReasonerExecutionEvidence (selectedHostTicket)) Unresolved ())
     (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+;; A blocked ticket supplies no grade for either a blocked or unobserved report.
+!(test (map-atom (Blocked Unobserved) $status
+    (recordReasonerProposalOutcome (get-state &reasoner-revoked-event)
+        $status (ReasonerExecutionEvidence (selectedHostTicket)) Unresolved ()))
+    ((ReasonerOutcomeRejected MissingExecutionEvidence)
+        (ReasonerOutcomeRejected MissingExecutionEvidence)))
+
+!(test (reasonerSourceReliability nars) (get-state &reasoner-grade-before))
+!(test (size-atom (reasonerProposalOutcomes)) (get-state &reasoner-independent-count))
 
 ;; An old captured receipt stays historical; later ownership cannot relabel it.
 !(commitmentFixtureApply

@@ -24,8 +24,8 @@
 
 ;; Eight tagged fields: outcome-id, proposal-event, execution-status,
 ;; execution-evidence, frame-evidence-status, frame-state-evidence, outcome, grade.
-;; Each argument is an expression, including (grade NUMBER); value and causal
-;; validation remain the responsibility of the existing recording boundary.
+;; Each argument is an expression, including (grade Ungraded) or (grade NUMBER).
+;; Value and causal validation remain at the existing recording boundary.
 (: ReasonerProposalOutcomeEventType Type)
 (: ReasonerProposalOutcomeEvent
    (-> Expression Expression Expression Expression
@@ -410,25 +410,33 @@
 ;; Execution status: Completed | Failed | Blocked | Unobserved
 ;; Frame evidence:   Confirmed | Refuted | Unresolved
 
-(= (reasonerProposalOutcomeGrade Completed Confirmed) 1.0)
-(= (reasonerProposalOutcomeGrade Completed Unresolved) 0.75)
-(= (reasonerProposalOutcomeGrade Completed Refuted) 0.0)
-(= (reasonerProposalOutcomeGrade Failed Confirmed) 0.25)
-(= (reasonerProposalOutcomeGrade Failed Unresolved) 0.0)
-(= (reasonerProposalOutcomeGrade Failed Refuted) 0.0)
-(= (reasonerProposalOutcomeGrade Blocked Confirmed) 0.25)
-(= (reasonerProposalOutcomeGrade Blocked Unresolved) 0.25)
-(= (reasonerProposalOutcomeGrade Blocked Refuted) 0.0)
-(= (reasonerProposalOutcomeGrade Unobserved Confirmed) 0.5)
-(= (reasonerProposalOutcomeGrade Unobserved Unresolved) 0.5)
-(= (reasonerProposalOutcomeGrade Unobserved Refuted) 0.0)
+;; Missing observations have no numerical grade. Confirmed/Refuted labels must
+;; first pass the trusted evidence boundary; execution failure is not refutation.
+;; Example: (reasonerProposalOutcomeGrade Failed Unresolved) -> Ungraded.
+(= (reasonerProposalOutcomeGrade $execution $verification)
+    (if (or (== $execution Completed) (== $execution Failed))
+        (case $verification
+            (
+                (Confirmed 1.0)
+                (Refuted 0.0)
+                ($_ Ungraded)
+            )
+        )
+        Ungraded
+    )
+)
 
-(= (reasonerProposalOutcomeClass Completed Confirmed) Confirmed)
-(= (reasonerProposalOutcomeClass Completed Unresolved) Unresolved)
-(= (reasonerProposalOutcomeClass Completed Refuted) Refuted)
-(= (reasonerProposalOutcomeClass Failed $_) Refuted)
-(= (reasonerProposalOutcomeClass Blocked $_) Unresolved)
-(= (reasonerProposalOutcomeClass Unobserved $_) Unresolved)
+;; Classify the supported prediction conclusion independently of command success.
+;; Example: (reasonerProposalOutcomeClass Failed Unresolved) -> Unresolved.
+(= (reasonerProposalOutcomeClass $execution $verification)
+    (case (reasonerProposalOutcomeGrade $execution $verification)
+        (
+            (1.0 Confirmed)
+            (0.0 Refuted)
+            ($_ Unresolved)
+        )
+    )
+)
 
 ;; Invoke only a trusted installed reader, passing every input as quoted data.
 ;; Example: absent host wiring returns (ReasonerOutcomeRejected MissingHostEvidence).
@@ -580,7 +588,9 @@
       ($_ (add-atom &reasoner-proposal-outcomes $event))
       ($proposal (getProposalEventProposal $proposal-event))
       ($source (getProposalSource $proposal))
-      ($_ (updateReasonerSourceReliability $source $grade)))
+      ($_ (if (== $grade Ungraded)
+              True
+              (updateReasonerSourceReliability $source $grade))))
       $event))
 
 (= (reasonerProposalOutcomes)

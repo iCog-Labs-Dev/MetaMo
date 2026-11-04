@@ -255,9 +255,18 @@ evidence returns `MissingVerificationEvidence`, and arbitrary nonempty text
 returns `UnsupportedVerificationEvidence`. An executed read cannot establish a
 frame claim merely by returning successfully.
 
-The existing status-based grade table remains provisional. Prediction comparison
-and reasoner-native interpretation remain separate unfinished work. Tests extend the real Core
-operation-selection suite with successful and failed reads, missing/forged
+Observed execution with unresolved prediction evidence is retained with
+`(outcome Unresolved)` and `(grade Ungraded)`. It does not update source
+reliability. This applies to successful and failed commands alike: command
+failure does not refute a prediction. Blocked and unobserved execution receive
+no numerical grade, and rejected alternatives cannot be penalized simply for
+being rejected. Their original proposal/decision audit remains available.
+
+Numerical grades require authoritative confirmation or refutation. The current
+host adapter does not accept either, so its retained execution outcomes are all
+ungraded. Prediction comparison, observation-backed evaluation of rejected
+alternatives, and reasoner-native interpretation remain separate unfinished work.
+Tests extend the real Core operation-selection suite with successful and failed reads, missing/forged
 observations, mismatched receipts/statuses, stale/revoked selections, ownership
 changes and session isolation. External services remain doubled.
 
@@ -311,7 +320,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 116 assertions respectively without import caching. Native
+They pass all 6 and 124 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure
