@@ -231,7 +231,7 @@ and Core/v1 dispatch. It does not load inference engines or start a service.
 | --- | --- |
 | `retainReasonerProposalSelection EVENT` | Before invocation, explicitly attribute the exact selected operation to a retained Accepted event. Checks the event's original operation context, published bundle, open commitment, candidate/target and current Core ticket/snapshot. Returns `(ReasonerProposalLinked OPERATION-DECISION)` or a rejection. |
 | `observeReasonerProposalExecution EVENT` | After normal dispatch, while its owner and selection remain current, validate the correlated callback against Core's exact retained command/result. Returns `(ReasonerExecutionEvidence TICKET)` or a rejection. The opaque reference exposes no file contents. |
-| `recordReasonerProposalOutcome EVENT STATUS EVIDENCE Unresolved ()` | Resolve the captured evidence for this exact event and recheck Core's receipt before recording an execution-backed grade. Observed `Success` corresponds to execution status `Completed`; observed `Failure` corresponds to `Failed`. |
+| `recordReasonerProposalOutcome EVENT STATUS EVIDENCE Unresolved ()` | Resolve the captured evidence for this exact event and recheck Core's receipt before the first recording. Return the original result on identical redelivery. Observed `Success` corresponds to execution status `Completed`; observed `Failure` corresponds to `Failed`. |
 
 The retained chain is proposal event and publication → selected operation/ticket
 → Core's single execution attempt → validated observation. A matching candidate
@@ -256,11 +256,42 @@ returns `UnsupportedVerificationEvidence`. An executed read cannot establish a
 frame claim merely by returning successfully.
 
 The existing status-based grade table remains provisional. Prediction comparison
-and grade/outcome deduplication are separate unfinished work; retaining a causal
-receipt does not by itself implement either. Tests extend the real Core
+and reasoner-native interpretation remain separate unfinished work. Tests extend the real Core
 operation-selection suite with successful and failed reads, missing/forged
 observations, mismatched receipts/statuses, stale/revoked selections, ownership
 changes and session isolation. External services remain doubled.
+
+### Outcome identities and redelivery
+
+Each locally recorded `ReasonerProposalOutcomeEvent` now starts with
+`(outcome-id (ReasonerOutcomeRef SESSION TICKET-ID))`. Both names are host-issued
+strings from the retained operation session and Core dispatch ticket. The host
+resolves this identity through the captured proposal/selection/observation link;
+callers cannot supply a new ID to count the same execution again.
+`getProposalOutcomeId` reads this field from the exact outcome record layout.
+
+| Incoming report | Recording behavior |
+| --- | --- |
+| Same identity and identical proposal, statuses and evidence | Return the original record, including its original grade, without another audit insertion or reliability update. |
+| Same identity with changed report contents | Return `(ReasonerOutcomeRejected ConflictingReplay)` and preserve the original record and reliability. |
+| Evidence belonging to another proposal or execution | Reject attribution before recording. One selected ticket cannot be linked to competing proposal events. |
+| A distinct real execution, even with identical command text and output | Give it a distinct outcome identity and retain it as a separate observation. |
+| A failure during the first write | Return `OutcomeCommitFailed`, roll back the outcome and reliability writes, and allow a later valid retry. |
+
+Replay lookup and recording share Core's dispatch mutex. The first outcome
+insertion and the existing reliability update use one transaction over the
+dynamic spaces. Invalid first reports reserve no identity. Identical redelivery
+uses the retained report rather than recomputing its grade against later state.
+It remains valid across later cycles and commitment replacement in the same
+session; starting another operation session does not adopt the old evidence.
+
+This is delivery bookkeeping. It does not deduplicate conclusions or equal
+observation contents, change NARS/PLN truth values, or define how a reasoner learns.
+Independent measurements remain distinct. Later verification or revised
+assessments need separate linked records rather than silently rewriting an
+already recorded execution outcome. The local outcome layout changes with this
+field; the versioned wire schemas are unchanged. The session store provides no
+durable replay guarantee across process restart.
 
 From the PeTTa workspace root, run the offline integration checks:
 
@@ -280,7 +311,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 112 assertions respectively without import caching. Native
+They pass all 6 and 116 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure

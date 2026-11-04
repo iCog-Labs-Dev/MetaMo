@@ -627,11 +627,53 @@
     (recordReasonerProposalOutcome (get-state &reasoner-host-event)
         Completed (get-state &reasoner-host-evidence) Unresolved ())))
 !(test (case (get-state &reasoner-recorded-grade)
-    (((ReasonerProposalOutcomeEvent $_ $_ $_ $_ $_ (outcome Unresolved) (grade 0.75)) True)
+    (((ReasonerProposalOutcomeEvent (outcome-id $_id) $_ $_ $_ $_ $_ (outcome Unresolved) (grade 0.75)) True)
         ($_ False))) True)
 
 !(test (!= (reasonerSourceReliability nars) (get-state &reasoner-grade-before)) True)
 !(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
+
+;; Outcome identity comes from the observed execution, never its result text.
+!(test (getProposalOutcomeId (get-state &reasoner-recorded-grade))
+    (let* (
+        ((OperationContext $session $_ $_) (get-state &operation-context))
+        ((DispatchTicket $ticket) (selectedHostTicket)))
+        (ReasonerOutcomeRef $session $ticket)))
+
+!(bind! &reasoner-once-reliability (new-state (reasonerSourceReliability nars)))
+!(bind! &reasoner-once-outcomes (new-state (reasonerProposalOutcomes)))
+!(test (map-atom (1 2 3 4 5) $delivery
+    (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+        Completed (get-state &reasoner-host-evidence) Unresolved ()))
+    (map-atom (1 2 3 4 5) $delivery (get-state &reasoner-recorded-grade)))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Failed (get-state &reasoner-host-evidence) Unresolved ())
+    (ReasonerOutcomeRejected ConflictingReplay))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Confirmed ())
+    (ReasonerOutcomeRejected ConflictingReplay))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Unresolved (quote (new-observation)))
+    (ReasonerOutcomeRejected ConflictingReplay))
+
+!(test (reasonerSourceReliability nars) (get-state &reasoner-once-reliability))
+!(test (reasonerProposalOutcomes) (get-state &reasoner-once-outcomes))
+
+;; A second retained proposal cannot claim the already attributed ticket.
+!(bind! &reasoner-alternative (new-state
+    (ReasonerMotivationalProposal alternative nars propose-candidate current-frame
+        execute-skill claim support 0.9 (EvidenceReferences (e1)) prediction)))
+!(bind! &reasoner-alternative-decision (new-state
+    (reasonerProposalDecision (activeFrameBundle) (motivosToMetamoState)
+        (get-state &reasoner-alternative))))
+!(test (recordReasonerProposalOutcome
+    (ReasonerProposalEvent (proposal (get-state &reasoner-alternative))
+        (decision (get-state &reasoner-alternative-decision)) (disposition Accepted))
+    Completed (get-state &reasoner-host-evidence) Unresolved ())
+    (ReasonerOutcomeRejected MissingSelectionLink))
 
 ;; A later cycle cannot adopt the old proposal or supply its execution evidence.
 !(bind! &reasoner-host-next (new-state (reasonerHostReadCycle proposal-B)))
@@ -660,10 +702,74 @@
     Completed (get-state &reasoner-failed-evidence) Unresolved ())
     (ReasonerOutcomeRejected ExecutionStatusMismatch))
 
+;; An exception after the audit insertion must roll back it and the replay marker.
+!(bind! &reasoner-before-failed-commit (new-state (reasonerProposalOutcomes)))
+!(bind! &reasoner-reliability-row (new-state
+    (ReasonerSourceReliability nars (reasonerSourceReliability nars))))
+!(let $row (get-state &reasoner-reliability-row) (remove-atom &reasoner-source-reliability $row))
+!(add-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-next)
+    Failed (get-state &reasoner-failed-evidence) Unresolved ())
+    (ReasonerOutcomeRejected OutcomeCommitFailed))
+
+!(test (reasonerProposalOutcomes) (get-state &reasoner-before-failed-commit))
+!(test (reasonerSourceReliability nars) "invalid-number")
+!(remove-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
+!(let $row (get-state &reasoner-reliability-row) (add-atom &reasoner-source-reliability $row))
+
 !(test (case (recordReasonerProposalOutcome (get-state &reasoner-host-next)
         Failed (get-state &reasoner-failed-evidence) Unresolved ())
-    (((ReasonerProposalOutcomeEvent $_ $_ $_ $_ $_ (outcome Refuted) (grade 0.0)) True)
+    (((ReasonerProposalOutcomeEvent (outcome-id $_id) $_ $_ $_ $_ $_ (outcome Refuted) (grade 0.0)) True)
         ($_ False))) True)
+
+;; Equal command text and output from distinct executions remain distinct observations.
+!(py-call (host_config_fixture.replace_file_content))
+!(bind! &reasoner-repeat-event-1 (new-state (reasonerHostReadCycle repeat-1)))
+!(test (retainReasonerProposalSelection (get-state &reasoner-repeat-event-1))
+    (ReasonerProposalLinked (get-state &selected-operation-decision)))
+!(test (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))
+    (DispatchResult Executed Feasible "changed after invocation"))
+!(bind! &reasoner-repeat-evidence-1 (new-state
+    (observeReasonerProposalExecution (get-state &reasoner-repeat-event-1))))
+!(bind! &reasoner-repeat-grade-1 (new-state
+    (recordReasonerProposalOutcome (get-state &reasoner-repeat-event-1)
+        Completed (get-state &reasoner-repeat-evidence-1) Unresolved ())))
+!(bind! &reasoner-repeat-event-2 (new-state (reasonerHostReadCycle repeat-2)))
+!(test (retainReasonerProposalSelection (get-state &reasoner-repeat-event-2))
+    (ReasonerProposalLinked (get-state &selected-operation-decision)))
+!(bind! &reasoner-competing-proposal (new-state
+    (ReasonerMotivationalProposal competing nars propose-candidate current-frame
+        execute-skill claim support 0.9 (EvidenceReferences (e1)) prediction)))
+!(bind! &reasoner-competing-decision (new-state
+    (reasonerProposalDecision (activeFrameBundle) (motivosToMetamoState)
+        (get-state &reasoner-competing-proposal))))
+!(test (retainReasonerProposalSelection
+    (ReasonerProposalEvent (proposal (get-state &reasoner-competing-proposal))
+        (decision (get-state &reasoner-competing-decision)) (disposition Accepted)))
+    (ReasonerOutcomeRejected ConflictingSelection))
+
+!(test (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))
+    (DispatchResult Executed Feasible "changed after invocation"))
+!(bind! &reasoner-repeat-evidence-2 (new-state
+    (observeReasonerProposalExecution (get-state &reasoner-repeat-event-2))))
+!(bind! &reasoner-repeat-grade-2 (new-state
+    (recordReasonerProposalOutcome (get-state &reasoner-repeat-event-2)
+        Completed (get-state &reasoner-repeat-evidence-2) Unresolved ())))
+!(test (!= (getProposalOutcomeId (get-state &reasoner-repeat-grade-1))
+    (getProposalOutcomeId (get-state &reasoner-repeat-grade-2))) True)
+
+!(bind! &reasoner-after-independent (new-state (reasonerSourceReliability nars)))
+!(bind! &reasoner-independent-count (new-state (size-atom (reasonerProposalOutcomes))))
+!(test (get-state &reasoner-independent-count) 4)
+!(test (recordReasonerProposalOutcome (get-state &reasoner-repeat-event-2)
+    Completed (get-state &reasoner-repeat-evidence-1) Unresolved ())
+    (ReasonerOutcomeRejected MissingExecutionEvidence))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-repeat-event-1)
+    Completed (get-state &reasoner-repeat-evidence-1) Unresolved ())
+    (get-state &reasoner-repeat-grade-1))
+!(test (reasonerSourceReliability nars) (get-state &reasoner-after-independent))
+!(test (size-atom (reasonerProposalOutcomes)) (get-state &reasoner-independent-count))
 
 ;; Revocation after linking cannot create observed execution or a grade.
 !(py-call (host_config_fixture.replace_file_content))
@@ -690,6 +796,11 @@
 
 !(test (validateReasonerExecutionEvidence (get-state &reasoner-host-event)
     Completed (get-state &reasoner-host-evidence) Unresolved ()) ReasonerExecutionEvidenceValid)
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Unresolved ())
+    (get-state &reasoner-recorded-grade))
+!(test (reasonerSourceReliability nars) (get-state &reasoner-after-independent))
 
 ;; Unknown sessions do not borrow evidence from the old session's ledger.
 !(initOperationSession)

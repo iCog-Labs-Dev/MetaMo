@@ -501,3 +501,19 @@
 !(test (reasonerProposalOutcomes) (get-state &reasoner-validation-outcomes))
 
 !(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))
+
+;; An outcome ID accessor checks the whole local layout and returns inert data.
+!(test (getProposalOutcomeId ()) (ReasonerAccessorRejected InvalidProposalOutcome))
+
+!(test (getProposalOutcomeId
+    (quote (WrongOutcome (outcome-id (ReasonerOutcomeRef "s" "t")))))
+    (ReasonerAccessorRejected InvalidProposalOutcome))
+
+!(test (getProposalOutcomeId
+    (quote (ReasonerProposalOutcomeEvent (outcome-id (ReasonerOutcomeRef "s" "t"))
+        (proposal-event (reasonerAccessorEffect)) (execution-status Completed)
+        (execution-evidence (reasonerAccessorEffect)) (frame-evidence-status Unresolved)
+        (frame-state-evidence ()) (outcome Unresolved) (grade 0.75))))
+    (ReasonerOutcomeRef "s" "t"))
+
+!(test (get-state &reasoner-accessor-effects) 0)

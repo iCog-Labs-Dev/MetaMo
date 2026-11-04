@@ -288,6 +288,24 @@
 )
 
 
+;; Return the host identity only from the exact outcome layout, without evaluating data.
+;; Example: (getProposalOutcomeId ()) -> (ReasonerAccessorRejected InvalidProposalOutcome).
+(= (getProposalOutcomeId $record)
+    (if (is-ground $record)
+        (case $record
+            (
+                ((ReasonerProposalOutcomeEvent (outcome-id (ReasonerOutcomeRef $session $ticket))
+                    (proposal-event $event) (execution-status $status) (execution-evidence $execution)
+                    (frame-evidence-status $frame-status) (frame-state-evidence $frame-evidence)
+                    (outcome $outcome) (grade $grade))
+                    (quote (ReasonerOutcomeRef $session $ticket)))
+                ($_ (ReasonerAccessorRejected InvalidProposalOutcome))
+            )
+        )
+        (ReasonerAccessorRejected InvalidProposalOutcome)
+    )
+)
+
 (= (getStatus (ReasonerMotivationalDecision $status $reason $proposal $candidate $score)) $status)
 (= (getStatus (ReasonerProposalActionResult $status $reason $candidate $action)) $status)
 (= (getReason (ReasonerMotivationalDecision $status $reason $proposal $candidate $score)) $reason)

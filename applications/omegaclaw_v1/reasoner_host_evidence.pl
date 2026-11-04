@@ -94,12 +94,33 @@ mmre_fresh_ticket(Ticket,Candidate,Epoch,Snapshot) :-
 % One event names one selection; this is attribution, not grading deduplication.
 % Example: reattaching the same event to another ticket returns ConflictingSelection.
 mmre_store_link(Session,Event,Owner,Decision,Epoch,Snapshot) :-
+    Decision=['OperationDecision',_,_,_,Ticket],
+    mmre_require(\+ (mmre_link(Session,Other,_,D,_,_), Other \== Event,
+        D=['OperationDecision',_,_,_,Ticket]), 'ConflictingSelection'),
     (mmre_link(Session,Event,O,D,E,S)
      -> mmre_require((O==Owner,D==Decision,E==Epoch,S==Snapshot),'ConflictingSelection')
      ; findall(1,mmre_link(Session,_,_,_,_,_),Rows), length(Rows,N),
        mmre_require(N < 128,'EvidenceCapacity'),
        mmre_start_session(Session),
        assertz(mmre_link(Session,Event,Owner,Decision,Epoch,Snapshot))).
+
+% Resolve identity from already captured evidence, without regrading or allocating.
+% Example: the same session/ticket always gives the same ReasonerOutcomeRef.
+resolveReasonerOutcomeIdentity(Event,Execution,Result) :-
+    mmre_run(mmre_identity(Event,Execution),Result).
+
+% Retained receipts may be redelivered after later cycles or frame completion.
+% New reports still undergo the full validation before their first commit.
+% Example: another proposal or execution cannot claim this receipt's identity.
+mmre_identity(Event,Execution,['ReasonerOutcomeIdentity',['ReasonerOutcomeRef',Session,Id]]) :-
+    mmre_require(ground(Event-Execution),'MalformedEvidence'),
+    mmre_require((nb_current('&operation-context',Context), ground(Context),
+        Context=['OperationContext',Session,_,_], string(Session)), 'MissingOperationContext'),
+    mmre_require(mmre_link(Session,Event,_,Decision,_,_),'MissingSelectionLink'),
+    mmre_require((Decision=['OperationDecision',_,_,_,Ticket],
+        Ticket=['DispatchTicket',Id], string(Id),
+        Execution == ['ReasonerExecutionEvidence',Ticket],
+        mmre_observation(Session,Event,Stored,_), Stored == Decision), 'MissingExecutionEvidence').
 
 % Capture the validated callback plus Core's exact immutable receipt, without executing.
 % Example: observeReasonerProposalExecution(Event, Evidence) after normal dispatch.

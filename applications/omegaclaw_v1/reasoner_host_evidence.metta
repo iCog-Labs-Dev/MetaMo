@@ -5,7 +5,8 @@
 !(import_prolog_functions_from_file
     (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence.pl)
     (retainReasonerProposalSelection observeReasonerProposalExecution
-        validateReasonerExecutionEvidence))
+        validateReasonerExecutionEvidence resolveReasonerOutcomeIdentity))
 
 ;; Installation is host configuration, never a model skill or permission grant.
 !(change-state! &reasoner-evidence-validator validateReasonerExecutionEvidence)
+!(change-state! &reasoner-outcome-identity-provider resolveReasonerOutcomeIdentity)

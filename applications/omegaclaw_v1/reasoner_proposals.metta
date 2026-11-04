@@ -40,6 +40,7 @@
 !(bind! &reasoner-proposal-origins (new-space))
 ;; A trusted optional host adapter installs evidence validation explicitly.
 !(bind! &reasoner-evidence-validator (new-state ()))
+!(bind! &reasoner-outcome-identity-provider (new-state ()))
 
 (= (reasonerProposalSources) (nars pln llm rule-engine human-adapter))
 (= (reasonerInferenceSources) (nars pln))
@@ -436,29 +437,122 @@
     )
 )
 
-;; Execution-backed grades require host-retained causal links and observations.
-;; Example: caller-supplied Completed/Confirmed labels with () evidence reject.
-(= (recordReasonerProposalOutcome
-      $proposal-event $execution-status $execution-evidence
-      $frame-evidence-status $frame-state-evidence)
-    (let $validation (reasonerOutcomeEvidenceCheck $proposal-event $execution-status
-            $execution-evidence $frame-evidence-status $frame-state-evidence)
-        (case $validation
+;; Resolve a stable host identity without allocating one from model-supplied text.
+;; Example: absent host wiring returns (ReasonerOutcomeRejected MissingHostEvidence).
+(= (reasonerOutcomeIdentityCheck $event $execution)
+    (case (get-state &reasoner-outcome-identity-provider)
+        (
+            (() (ReasonerOutcomeRejected MissingHostEvidence))
+            ($provider (eval ($provider (quote $event) (quote $execution))))
+        )
+    )
+)
+
+;; Read the exact submitted report as data, excluding the derived grade/class.
+;; Example: report equality distinguishes a redelivery from changed evidence.
+(= (reasonerOutcomeReport $record)
+    (case $record
+        (
+            ((ReasonerProposalOutcomeEvent (outcome-id $id) (proposal-event $event)
+                (execution-status $status) (execution-evidence $execution)
+                (frame-evidence-status $frame-status) (frame-state-evidence $frame-evidence)
+                (outcome $outcome) (grade $grade))
+                (quote (ReasonerOutcomeReport $event $status $execution $frame-status $frame-evidence)))
+            ($_ (ReasonerOutcomeRejected MalformedOutcome))
+        )
+    )
+)
+
+;; Exact ID lookup uses the retained outcome itself as the replay record.
+;; Example: a new execution identity has no matching outcome rows.
+(= (reasonerOutcomesForId $id)
+    (collapse (match &reasoner-proposal-outcomes
+        (ReasonerProposalOutcomeEvent (outcome-id $id) (proposal-event $event)
+            (execution-status $status) (execution-evidence $execution)
+            (frame-evidence-status $frame-status) (frame-state-evidence $frame-evidence)
+            (outcome $outcome) (grade $grade))
+        (ReasonerProposalOutcomeEvent (outcome-id $id) (proposal-event $event)
+            (execution-status $status) (execution-evidence $execution)
+            (frame-evidence-status $frame-status) (frame-state-evidence $frame-evidence)
+            (outcome $outcome) (grade $grade))))
+)
+
+;; Roll back both dynamic spaces on write errors; do not memoize a failed commit.
+;; Example: invalid retained reliability yields OutcomeCommitFailed with no outcome.
+(= (commitReasonerOutcome $id $event $status $execution $frame-status $frame-evidence)
+    (case (catch (transaction (recordValidatedReasonerProposalOutcome $id $event $status
+            $execution $frame-status $frame-evidence)))
+        (
+            ((Error $reason $context) (ReasonerOutcomeRejected OutcomeCommitFailed))
+            ((Error $reason) (ReasonerOutcomeRejected OutcomeCommitFailed))
+            ($record $record)
+        )
+    )
+)
+
+;; Validate new evidence before atomically storing the outcome and reliability update.
+;; Example: failure during the write rolls back both dynamic spaces.
+(= (recordFreshReasonerOutcome $id $event $status $execution $frame-status $frame-evidence)
+    (case (reasonerOutcomeEvidenceCheck $event $status $execution $frame-status $frame-evidence)
+        (
+            (ReasonerExecutionEvidenceValid
+                (commitReasonerOutcome $id $event $status $execution $frame-status $frame-evidence))
+            ((ReasonerOutcomeRejected $reason) (ReasonerOutcomeRejected $reason))
+            ($_ (ReasonerOutcomeRejected InvalidHostEvidence))
+        )
+    )
+)
+
+;; Preserve the original record on redelivery; changed contents never overwrite it.
+;; Example: the same identity with a changed execution status returns ConflictingReplay.
+(= (recordReasonerOutcomeById $id $event $status $execution $frame-status $frame-evidence)
+    (case (reasonerOutcomesForId $id)
+        (
+            (() (recordFreshReasonerOutcome $id $event $status $execution $frame-status $frame-evidence))
+            (($existing)
+                (if (== (reasonerOutcomeReport $existing)
+                        (quote (ReasonerOutcomeReport $event $status $execution $frame-status $frame-evidence)))
+                    $existing
+                    (ReasonerOutcomeRejected ConflictingReplay)
+                )
+            )
+            ($_ (ReasonerOutcomeRejected ConflictingReplay))
+        )
+    )
+)
+
+;; Serialize lookup and commit with the host; data is never interpreted as code.
+;; Example: an identical valid redelivery returns its original outcome unchanged.
+(= (recordReasonerOutcomeOnce $event $status $execution $frame-status $frame-evidence)
+    (with_mutex omegaclaw_dispatch
+        (case (reasonerOutcomeIdentityCheck $event $execution)
             (
-                (ReasonerExecutionEvidenceValid
-                    (recordValidatedReasonerProposalOutcome $proposal-event $execution-status
-                        $execution-evidence $frame-evidence-status $frame-state-evidence))
-                ((ReasonerOutcomeRejected $reason) $validation)
+                ((ReasonerOutcomeIdentity $id)
+                    (recordReasonerOutcomeById $id $event $status $execution $frame-status $frame-evidence))
+                ((ReasonerOutcomeRejected $reason) (ReasonerOutcomeRejected $reason))
                 ($_ (ReasonerOutcomeRejected InvalidHostEvidence))
             )
         )
     )
 )
 
+;; Execution-backed grades require host identity and observed causal evidence.
+;; Example: non-ground or caller-invented evidence cannot allocate an outcome.
+(= (recordReasonerProposalOutcome
+      $proposal-event $execution-status $execution-evidence
+      $frame-evidence-status $frame-state-evidence)
+    (if (is-ground ($proposal-event $execution-status $execution-evidence
+            $frame-evidence-status $frame-state-evidence))
+        (recordReasonerOutcomeOnce $proposal-event $execution-status $execution-evidence
+            $frame-evidence-status $frame-state-evidence)
+        (ReasonerOutcomeRejected MalformedEvidence)
+    )
+)
+
 ;; Internal writer used only after the host evidence check; it executes no data.
 ;; Example: a validated read result can be recorded with frame status Unresolved.
 (= (recordValidatedReasonerProposalOutcome
-      $proposal-event $execution-status $execution-evidence
+      $id $proposal-event $execution-status $execution-evidence
       $frame-evidence-status $frame-state-evidence)
    (let* (
       ($grade (reasonerProposalOutcomeGrade
@@ -466,6 +560,7 @@
       ($outcome (reasonerProposalOutcomeClass
          $execution-status $frame-evidence-status))
       ($event (ReasonerProposalOutcomeEvent
+         (outcome-id $id)
          (proposal-event $proposal-event)
          (execution-status $execution-status)
          (execution-evidence $execution-evidence)
@@ -482,6 +577,7 @@
 (= (reasonerProposalOutcomes)
    (collapse (match &reasoner-proposal-outcomes
       (ReasonerProposalOutcomeEvent
+         (outcome-id $id)
          (proposal-event $proposal-event)
          (execution-status $execution-status)
          (execution-evidence $execution-evidence)
@@ -489,6 +585,7 @@
          (frame-state-evidence $frame-state-evidence)
          (outcome $outcome) (grade $grade))
       (ReasonerProposalOutcomeEvent
+         (outcome-id $id)
          (proposal-event $proposal-event)
          (execution-status $execution-status)
          (execution-evidence $execution-evidence)
