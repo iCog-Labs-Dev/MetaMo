@@ -613,3 +613,61 @@
 
 !(test (compareReasonerOperationResult (quote (ExpectedOperationResult "x" extra)) "x")
     (ReasonerPredictionComparison Unresolved Ungraded))
+
+;; Real negative evidence must survive querying without becoming a recommendation.
+!(test (map-atom (nars pln) $engine
+    (reasonerQuery $engine
+        ((Sentence ((Recommend demo-frame repair-failure) (stv 0.0 0.99)) (negative-observation)))
+        (Recommend demo-frame repair-failure) (reasonerInferenceLimits)))
+    (((stv 0.0 0.99) (negative-observation)) ((stv 0.0 0.99) (negative-observation))))
+
+!(test (map-atom (nars pln) $engine
+    (reasonerInferProposal $engine negative-native demo-frame
+        ((Sentence ((Recommend demo-frame repair-failure) (stv 0.0 0.99)) (negative-observation)))
+        repair-failure (Expected recovered) (reasonerInferenceLimits))) (() ()))
+
+;; PLN also needs its premise; an implication alone is not an inferred result.
+!(test (reasonerInferProposal pln missing-pln demo-frame
+    ((Sentence ((Implication (Failed demo-frame) (Recommend demo-frame repair-failure))
+        (stv 1.0 0.9)) (rule-1)))
+    repair-failure (Expected recovered) (reasonerInferenceLimits)) ())
+
+;; Both real engine results still face the same constitutional rejection.
+!(change-state! &constitutional-mode Sleep)
+!(test (map-atom ((narsRepairProposal) (plnRepairProposal)) $proposal
+    (getStatus (reasonerProposalAdmission (minimalDemoBundle) $proposal))) (Rejected Rejected))
+!(change-state! &constitutional-mode Engaged)
+!(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))
+
+;; Isolate outcome layout errors using a valid event and inert payloads.
+;; Example: (reasonerOutcomeAccessorFixture) has exactly eight ordered tagged fields.
+(= (reasonerOutcomeAccessorFixture)
+    (let $event (reasonerAccessorTestEvent (reasonerAccessorTestProposal))
+        (quote (ReasonerProposalOutcomeEvent (outcome-id (ReasonerOutcomeRef "s" "t"))
+            (proposal-event $event) (execution-status Completed)
+            (execution-evidence (reasonerAccessorEffect)) (frame-evidence-status Unresolved)
+            (frame-state-evidence ()) (outcome Unresolved) (grade Ungraded)))
+    )
+)
+
+!(test (getProposalOutcomeId (reasonerOutcomeAccessorFixture)) (ReasonerOutcomeRef "s" "t"))
+
+!(test (getProposalOutcomeId (map-atom (0 1 2 3 4 5 6 7) $index
+    (index-atom (reasonerOutcomeAccessorFixture) $index)))
+    (ReasonerAccessorRejected InvalidProposalOutcome))
+
+!(test (getProposalOutcomeId (concat (reasonerOutcomeAccessorFixture) (extra)))
+    (ReasonerAccessorRejected InvalidProposalOutcome))
+
+;; Alter every field tag while retaining the rest of the exact record.
+!(test (map-atom (1 2 3 4 5 6 7 8) $changed
+    (getProposalOutcomeId (map-atom (0 1 2 3 4 5 6 7 8) $index
+        (if (== $index $changed)
+            (cons-atom WrongField (cdr-atom (index-atom (reasonerOutcomeAccessorFixture) $index)))
+            (index-atom (reasonerOutcomeAccessorFixture) $index)))))
+    (map-atom (1 2 3 4 5 6 7 8) $changed (ReasonerAccessorRejected InvalidProposalOutcome)))
+
+!(test (get-state &reasoner-accessor-effects) 0)
+!(test (reasonerProposalOutcomes) (get-state &reasoner-validation-outcomes))
+!(test (reasonerProposalAssessments) ())
+!(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))

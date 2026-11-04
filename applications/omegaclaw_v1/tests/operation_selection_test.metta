@@ -565,6 +565,42 @@
         (disposition Accepted))))
     (ReasonerOutcomeRejected UnretainedDecision))
 
+;; Host attribution must reject malformed event/decision layouts before linking.
+;; Example: every row from (reasonerHostMalformedEvents EVENT) is rejected as data.
+(= (reasonerHostMalformedEvents $event)
+    (let*
+        (
+            ((ReasonerProposalEvent (proposal $proposal) (decision $decision) (disposition $disposition)) $event)
+            ($wrong-decision (cons-atom WrongDecision (cdr-atom $decision)))
+            ($short-decision (map-atom (0 1 2 3 4) $index (index-atom $decision $index)))
+            ($long-decision (concat $decision (extra)))
+        )
+        (quote (
+            (WrongEvent (proposal $proposal) (decision $decision) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision $decision))
+            (ReasonerProposalEvent (proposal $proposal) (decision $decision) (disposition Accepted) extra)
+            (ReasonerProposalEvent (proposal $proposal extra) (decision $decision) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision $wrong-decision) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision $short-decision) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision $long-decision) (disposition Accepted))
+            (ReasonerProposalEvent (proposal $proposal) (decision $decision) (disposition Rejected))
+        ))
+    )
+)
+
+!(bind! &host-malformed-events-before (new-state (reasonerProposalEvents)))
+!(bind! &host-malformed-outcomes-before (new-state (reasonerProposalOutcomes)))
+!(bind! &host-malformed-reliability-before (new-state
+    (collapse (match &reasoner-source-reliability $row $row))))
+!(test (map-atom (reasonerHostMalformedEvents (get-state &reasoner-host-event)) $event
+    (retainReasonerProposalSelection $event))
+    (map-atom (1 2 3 4 5 6 7 8) $index (ReasonerOutcomeRejected InvalidProposalDecision)))
+
+!(test (reasonerProposalEvents) (get-state &host-malformed-events-before))
+!(test (reasonerProposalOutcomes) (get-state &host-malformed-outcomes-before))
+!(test (collapse (match &reasoner-source-reliability $row $row))
+    (get-state &host-malformed-reliability-before))
+
 !(test (retainReasonerProposalSelection (get-state &reasoner-host-event))
     (ReasonerProposalLinked (get-state &selected-operation-decision)))
 
@@ -616,9 +652,36 @@
     Completed (ReasonerExecutionEvidence (selectedHostTicket) (get-state &last-operation-outcome))
     Unresolved ()) (ReasonerOutcomeRejected MissingExecutionEvidence))
 
+;; Neither confirmation nor refutation can be established by empty verification.
+!(test (map-atom (Confirmed Refuted) $verification
+    (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+        Completed (get-state &reasoner-host-evidence) $verification ()))
+    ((ReasonerOutcomeRejected MissingVerificationEvidence)
+        (ReasonerOutcomeRejected MissingVerificationEvidence)))
+
+;; Evidence constructors and arities must match the retained receipt exactly.
+!(test (map-atom (let $ticket (selectedHostTicket)
+    (quote (
+        (WrongEvidence $ticket)
+        (ReasonerExecutionEvidence)
+        (ReasonerExecutionEvidence (DispatchTicket "invented"))
+        (ReasonerExecutionEvidence $ticket extra)))) $evidence
+    (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+        Completed $evidence Unresolved ()))
+    ((ReasonerOutcomeRejected MissingExecutionEvidence) (ReasonerOutcomeRejected MissingExecutionEvidence)
+        (ReasonerOutcomeRejected MissingExecutionEvidence) (ReasonerOutcomeRejected MissingExecutionEvidence)))
+
 !(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
-    Completed (get-state &reasoner-host-evidence) Confirmed ())
-    (ReasonerOutcomeRejected MissingVerificationEvidence))
+    Completed (quote (ReasonerExecutionEvidence $unknown-ticket)) Unresolved ())
+    (ReasonerOutcomeRejected MalformedEvidence))
+
+!(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
+    Completed (get-state &reasoner-host-evidence) Unresolved (quote (model-says-completed)))
+    (ReasonerOutcomeRejected UnsupportedVerificationEvidence))
+
+!(test (reasonerProposalOutcomes) (get-state &host-malformed-outcomes-before))
+!(test (collapse (match &reasoner-source-reliability $row $row))
+    (get-state &host-malformed-reliability-before))
 
 !(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
     Completed (get-state &reasoner-host-evidence) Confirmed (quote (model-says-confirmed)))
@@ -638,6 +701,8 @@
         ($_ False))) True)
 
 !(test (reasonerSourceReliability nars) (get-state &reasoner-grade-before))
+!(test (collapse (match &reasoner-source-reliability $row $row))
+    (get-state &host-malformed-reliability-before))
 !(test (frameRuntimeTaskOpen (activeFrameBundle)) True)
 
 ;; Outcome identity comes from the observed execution, never its result text.
@@ -668,6 +733,8 @@
 
 !(test (reasonerSourceReliability nars) (get-state &reasoner-once-reliability))
 !(test (reasonerProposalOutcomes) (get-state &reasoner-once-outcomes))
+!(test (collapse (match &reasoner-source-reliability $row $row))
+    (get-state &host-malformed-reliability-before))
 
 ;; A second retained proposal cannot claim the already attributed ticket.
 !(bind! &reasoner-alternative (new-state

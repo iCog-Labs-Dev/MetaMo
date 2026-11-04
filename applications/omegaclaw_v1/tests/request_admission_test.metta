@@ -156,3 +156,54 @@
    (quote (ReasonerMotivationalProposal p nars propose-candidate current-frame
       execute-skill claim support 0.9 (EvidenceReferences (unresolved-stamp)) prediction))
    (readOp execute-skill "origin") (requestScope Global) (requestScope (FrameTarget "origin")))) Accepted)
+
+;; Exercise the concrete gate with invalid records, rather than accessor tests alone.
+;; Example: (requestInvalidReasonerProposals) contains no admissible proposal.
+(= (requestInvalidReasonerProposals)
+    (let $valid (proposalFixture propose-candidate current-frame execute-skill)
+        (
+            (cons-atom WrongProposal (cdr-atom $valid))
+            (map-atom (0 1 2 3 4 5 6 7 8 9) $index (index-atom $valid $index))
+            (concat $valid (extra))
+            (ReasonerMotivationalProposal p nars propose-candidate current-frame
+                execute-skill claim () 0.9 (EvidenceReferences (e1)) prediction)
+            (ReasonerMotivationalProposal p pln propose-candidate current-frame
+                execute-skill claim () 0.9 (EvidenceReferences (e1)) prediction)
+            (ReasonerMotivationalProposal p nars propose-candidate current-frame
+                execute-skill claim support 0.9 (EvidenceReferences ()) prediction)
+            (ReasonerMotivationalProposal p pln propose-candidate current-frame
+                execute-skill claim support 0.9 (EvidenceReferences ()) prediction)
+            (ReasonerMotivationalProposal p nars propose-candidate current-frame
+                execute-skill claim support 0.9 (EvidenceReferences (e1)) ())
+            (ReasonerMotivationalProposal p pln propose-candidate current-frame
+                execute-skill claim support 0.9 (EvidenceReferences (e1)) ())
+        )
+    )
+)
+
+!(bind! &request-reasoner-events-before (new-state (reasonerProposalEvents)))
+!(bind! &request-reasoner-outcomes-before (new-state (reasonerProposalOutcomes)))
+!(bind! &request-reasoner-reliability-before (new-state
+    (collapse (match &reasoner-source-reliability $row $row))))
+!(test (map-atom (requestInvalidReasonerProposals) $proposal
+    (reasonerProposalAdmissionForOperation (originBundle) (originBundle) $proposal
+        (readOp execute-skill "origin") (requestScope Global) (requestScope (FrameTarget "origin"))))
+    (map-atom (requestInvalidReasonerProposals) $proposal
+        (ReasonerMotivationalDecision Malformed InvalidProposal $proposal none 0.0)))
+
+;; Invalid policy and scorer values must never be inspected for malformed proposals.
+!(test (map-atom (requestInvalidReasonerProposals) $proposal
+    (reasonerProposalScoreForOperation (originBundle) (originBundle) invalid-scoring-state
+        $proposal invalid-operation invalid-global-policy invalid-frame-policy))
+    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0))
+
+!(test (map-atom (requestInvalidReasonerProposals) $proposal
+    (reasonerProposalToActionForOperation (originBundle) (originBundle) $proposal
+        (readOp execute-skill "origin") (requestScope Global) (requestScope (FrameTarget "origin"))))
+    (map-atom (requestInvalidReasonerProposals) $proposal
+        (ReasonerProposalActionResult Malformed InvalidProposal none (action none () 0.0 ()))))
+
+!(test (reasonerProposalEvents) (get-state &request-reasoner-events-before))
+!(test (reasonerProposalOutcomes) (get-state &request-reasoner-outcomes-before))
+!(test (collapse (match &reasoner-source-reliability $row $row))
+    (get-state &request-reasoner-reliability-before))

@@ -370,6 +370,20 @@ in both engines, evidence and target preservation, missing-premise behavior,
 engine isolation, negative evidence, policy rejection, malformed input, and
 cumulative reliability updates. No LLM, network, or persistence is needed.
 
+The concrete `request_admission_test.metta` cases also send wrong constructors,
+short/long records, and missing support, evidence or predictions for both
+inference sources through admission, action conversion and scoring. Malformed
+inputs produce no action and leave proposal/outcome audits and reliability rows
+unchanged, even when policy or scorer inputs are unusable.
+
+`operation_selection_test.metta` checks malformed event/decision layouts before
+host attribution, exact execution-evidence constructors, mismatched causal
+links, duplicate/conflicting reports and unchanged reliability rows for ungraded
+receipts. Empty verification evidence establishes neither confirmation nor
+refutation. The existing `host_completion_test.metta` separately rejects empty
+completion evidence and preserves commitment state. These regressions use real
+Core dispatch receipts; provider and channel services remain offline doubles.
+
 Both offline tests also run with the workspace-local native runner:
 
 ```bash
@@ -377,7 +391,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 140 assertions respectively without import caching. Native
+They pass all 6 and 153 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure
