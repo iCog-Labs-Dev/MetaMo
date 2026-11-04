@@ -185,3 +185,21 @@ mmre_validate(Event,Status,Execution,FrameStatus,FrameEvidence,'ReasonerExecutio
     mmre_receipt(Decision,Epoch,Snapshot,Outcome,ObservedStatus),
     mmre_require(Status == ObservedStatus,'ExecutionStatusMismatch'),
     mmre_verification(FrameStatus,FrameEvidence).
+
+% Return the retained prediction and exact Core payload, never caller-supplied values.
+% Example: readReasonerPredictionObservation(Event, Execution, Observation).
+readReasonerPredictionObservation(Event, Execution, Result) :-
+    mmre_run(mmre_prediction_observation(Event,Execution),Result).
+
+% Historical evidence stays tied to its original decision, ticket and session.
+% Example: an unrelated execution returns MissingExecutionEvidence before comparison.
+mmre_prediction_observation(Event, Execution,
+        ['ReasonerPredictionObservation',Id,Event,Prediction,Actual,Execution]) :-
+    mmre_identity(Event,Execution,['ReasonerOutcomeIdentity',Id]),
+    mmre_event(Event,Proposal,_),
+    Id=['ReasonerOutcomeRef',Session,_],
+    mmre_link(Session,Event,_,Decision,Epoch,Snapshot),
+    mmre_observation(Session,Event,Decision,Outcome),
+    mmre_receipt(Decision,Epoch,Snapshot,Outcome,_),
+    Proposal=['ReasonerMotivationalProposal',_,_,_,_,_,_,_,_,_,Prediction],
+    Outcome=['OperationOutcome',_,_,_,['DispatchResult','Executed','Feasible',Actual]].

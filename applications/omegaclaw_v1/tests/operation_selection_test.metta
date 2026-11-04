@@ -505,6 +505,7 @@
 ;; Optional proposal attribution uses real host selection, Core tickets and reads.
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))
 !(commitmentFixtureReset)
 !(initContextFrame)
 !(initOmegaClawMotivation)
@@ -524,6 +525,12 @@
 ;; Select an actually admitted read and retain the proposal's exact origin.
 ;; Example: (reasonerHostReadCycle proposal-A) returns a retained Accepted event.
 (= (reasonerHostReadCycle $id)
+    (reasonerHostReadCycle $id (Expected ReadSucceeded))
+)
+
+;; Publish the supplied prediction before observing any execution.
+;; Example: (reasonerHostReadCycle p (ExpectedOperationResult "expected text")).
+(= (reasonerHostReadCycle $id $prediction)
     (let*
         (
             ($bundle (prepareTaskStateForMetaMo))
@@ -534,7 +541,7 @@
             ($proposal (ReasonerMotivationalProposal $id nars propose-candidate
                 (FrameTarget (frameBundleCurrentId $bundle)) execute-skill
                 inspect-input observed-request 0.9 (EvidenceReferences (input-request))
-                (Expected ReadSucceeded)))
+                $prediction))
             ($decision (reasonerProposalDecision $bundle (motivosToMetamoState) $proposal))
         )
         (if (== $pruning (CandidatePruning (admitted (cons-atom $action ())) (rejected ())))
@@ -702,19 +709,11 @@
     Completed (get-state &reasoner-failed-evidence) Unresolved ())
     (ReasonerOutcomeRejected ExecutionStatusMismatch))
 
-;; Exercise the internal graded transaction: a write error must roll back the audit.
-;; The public host adapter deliberately cannot confirm predictions yet.
-!(bind! &reasoner-before-failed-commit (new-state (reasonerProposalOutcomes)))
+;; Even unusable reliability cannot affect an ungraded execution receipt.
 !(bind! &reasoner-reliability-row (new-state
     (ReasonerSourceReliability nars (reasonerSourceReliability nars))))
 !(let $row (get-state &reasoner-reliability-row) (remove-atom &reasoner-source-reliability $row))
 !(add-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
-!(test (commitReasonerOutcome (ReasonerOutcomeRef "rollback-test" "rollback-ticket")
-    (get-state &reasoner-host-next) Failed (get-state &reasoner-failed-evidence) Confirmed ())
-    (ReasonerOutcomeRejected OutcomeCommitFailed))
-
-!(test (reasonerProposalOutcomes) (get-state &reasoner-before-failed-commit))
-!(test (reasonerSourceReliability nars) "invalid-number")
 
 ;; An unresolved failure must not even perform reliability arithmetic.
 !(bind! &reasoner-failed-ungraded (new-state
@@ -829,5 +828,198 @@
 !(test (recordReasonerProposalOutcome (get-state &reasoner-host-event)
     Completed (get-state &reasoner-host-evidence) Unresolved ())
     (ReasonerOutcomeRejected MissingSelectionLink))
+
+
+;; External assessment resolves actual receipts without changing their ungraded audit.
+!(commitmentFixtureReset)
+!(commitmentFixtureOpen "assessment-owner" "configured-frame" "Inspect evidence input")
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "allowed"))))
+!(py-call (host_config_fixture.replace_file_content))
+
+;; Publish before execution, then observe the real Core callback.
+;; Example: (reasonerAssessmentRead p (ExpectedOperationResult "expected")) -> (event evidence).
+(= (reasonerAssessmentRead $id $prediction)
+    (let*
+        (
+            ($event (reasonerHostReadCycle $id $prediction))
+            ($_ (retainReasonerProposalSelection $event))
+            ($_ (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand)))
+            ($evidence (observeReasonerProposalExecution $event))
+        )
+        ($event $evidence)
+    )
+)
+
+;; Read the comparison tag for assertions without changing production assessment behavior.
+;; Example: (reasonerFixtureComparison ASSESSMENT) -> (ReasonerPredictionComparison Confirmed 1.0).
+(= (reasonerFixtureComparison $assessment)
+    (case $assessment
+        (
+            ((ReasonerProposalAssessment $_ $_ $_ $_ $_ $_ (comparison $comparison)) $comparison)
+            ($_ InvalidAssessment)
+        )
+    )
+)
+
+!(bind! &assessment-read (new-state
+    (reasonerAssessmentRead assessment-match (ExpectedOperationResult "changed after invocation"))))
+!(bind! &assessment-event (new-state (index-atom (get-state &assessment-read) 0)))
+!(bind! &assessment-evidence (new-state (index-atom (get-state &assessment-read) 1)))
+!(bind! &assessment-receipt (new-state (recordReasonerProposalOutcome
+    (get-state &assessment-event) Completed (get-state &assessment-evidence) Unresolved ())))
+!(bind! &assessment-before (new-state (reasonerSourceReliability nars)))
+!(bind! &assessment-record (new-state (assessReasonerProposalOutcome
+    (get-state &assessment-event) (get-state &assessment-evidence))))
+!(test (reasonerFixtureComparison (get-state &assessment-record))
+    (ReasonerPredictionComparison Confirmed 1.0))
+
+!(test (reasonerSourceReliability nars) (+ (* 0.80 (get-state &assessment-before)) 0.20))
+!(test (size-atom (reasonerProposalAssessments)) 1)
+!(bind! &assessment-once (new-state (reasonerSourceReliability nars)))
+!(test (map-atom (1 2 3) $delivery (assessReasonerProposalOutcome
+    (get-state &assessment-event) (get-state &assessment-evidence)))
+    (map-atom (1 2 3) $delivery (get-state &assessment-record)))
+
+!(test (reasonerSourceReliability nars) (get-state &assessment-once))
+!(test (recordReasonerProposalOutcome (get-state &assessment-event)
+    Completed (get-state &assessment-evidence) Unresolved ()) (get-state &assessment-receipt))
+
+;; The same successful read refutes a different prediction; status is identical.
+!(bind! &assessment-mismatch (new-state
+    (reasonerAssessmentRead assessment-mismatch (ExpectedOperationResult "different content"))))
+!(test (reasonerFixtureComparison (assessReasonerProposalOutcome
+    (index-atom (get-state &assessment-mismatch) 0) (index-atom (get-state &assessment-mismatch) 1)))
+    (ReasonerPredictionComparison Refuted 0.0))
+
+!(test (reasonerSourceReliability nars) (* 0.80 (get-state &assessment-once)))
+!(test (assessReasonerProposalOutcome (get-state &assessment-event)
+    (index-atom (get-state &assessment-mismatch) 1))
+    (ReasonerAssessmentRejected MissingExecutionEvidence))
+
+;; Predicting an actual handler error correctly earns confirmation, not punishment.
+!(py-call (host_config_fixture.remove_file))
+!(bind! &assessment-failure (new-state
+    (reasonerAssessmentRead assessment-failure
+        (quote (ExpectedOperationResult (Error read-file FileUnavailable))))))
+!(test (reasonerFixtureComparison (assessReasonerProposalOutcome
+    (index-atom (get-state &assessment-failure) 0) (index-atom (get-state &assessment-failure) 1)))
+    (ReasonerPredictionComparison Confirmed 1.0))
+
+;; Unknown syntax is deferred; a configured engine-specific comparator may handle it later.
+!(py-call (host_config_fixture.replace_file_content))
+!(bind! &assessment-deferred (new-state
+    (reasonerAssessmentRead assessment-deferred (Expected "changed after invocation"))))
+!(bind! &assessment-before-deferred (new-state (reasonerSourceReliability nars)))
+!(bind! &assessment-before-rows (new-state (reasonerProposalAssessments)))
+!(test (assessReasonerProposalOutcome (index-atom (get-state &assessment-deferred) 0)
+    (index-atom (get-state &assessment-deferred) 1))
+    (ReasonerAssessmentDeferred InsufficientEvidence))
+
+!(test (reasonerSourceReliability nars) (get-state &assessment-before-deferred))
+!(test (reasonerProposalAssessments) (get-state &assessment-before-rows))
+
+;; Trusted test comparator deliberately produces malformed grades to exercise the boundary.
+;; Example: (reasonerFixtureComparator prediction observation) returns configured test data.
+!(bind! &assessment-fixture-comparison (new-state ()))
+(= (reasonerFixtureComparator $prediction $observation)
+    (get-state &assessment-fixture-comparison)
+)
+!(change-state! &reasoner-prediction-comparator reasonerFixtureComparator)
+!(test (map-atom (quote (
+    (ReasonerPredictionComparison Confirmed "1.0")
+    (ReasonerPredictionComparison Refuted -0.1)
+    (ReasonerPredictionComparison Confirmed 1.1)
+    (ReasonerPredictionComparison Unresolved 0.5)
+    (ReasonerPredictionComparison Confirmed 1.0 extra))) $comparison
+    (progn (change-state! &assessment-fixture-comparison $comparison)
+        (assessReasonerProposalOutcome (index-atom (get-state &assessment-deferred) 0)
+            (index-atom (get-state &assessment-deferred) 1))))
+    ((ReasonerAssessmentRejected InvalidComparison) (ReasonerAssessmentRejected InvalidComparison)
+        (ReasonerAssessmentRejected InvalidComparison) (ReasonerAssessmentRejected InvalidComparison)
+        (ReasonerAssessmentRejected InvalidComparison)))
+
+!(test (reasonerProposalAssessments) (get-state &assessment-before-rows))
+!(test (reasonerSourceReliability nars) (get-state &assessment-before-deferred))
+
+;; Comparator exceptions are explicit rejections, without consuming the identity.
+;; Example: reasonerFixtureThrowingComparator exercises a trusted adapter failure.
+(= (reasonerFixtureThrowingComparator $prediction $actual) (/ 1 0))
+!(change-state! &reasoner-prediction-comparator reasonerFixtureThrowingComparator)
+!(test (assessReasonerProposalOutcome (index-atom (get-state &assessment-deferred) 0)
+    (index-atom (get-state &assessment-deferred) 1))
+    (ReasonerAssessmentRejected InvalidComparison))
+
+!(test (reasonerProposalAssessments) (get-state &assessment-before-rows))
+!(test (reasonerSourceReliability nars) (get-state &assessment-before-deferred))
+
+;; Translate an alternate prediction schema externally; the proposal stays unchanged.
+;; Example: (reasonerFixtureExpectedComparator (Expected "x") "x") -> confirmed.
+(= (reasonerFixtureExpectedComparator $prediction $actual)
+    (case $prediction
+        (
+            ((Expected $expected) (compareReasonerOperationResult (ExpectedOperationResult $expected) $actual))
+            ($_ (ReasonerPredictionComparison Unresolved Ungraded))
+        )
+    )
+)
+!(change-state! &reasoner-prediction-comparator reasonerFixtureExpectedComparator)
+;; Invalid learning state must not poison the assessment's replay identity.
+!(bind! &assessment-valid-row (new-state
+    (ReasonerSourceReliability nars (reasonerSourceReliability nars))))
+!(let $row (get-state &assessment-valid-row) (remove-atom &reasoner-source-reliability $row))
+!(add-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
+!(test (assessReasonerProposalOutcome (index-atom (get-state &assessment-deferred) 0)
+    (index-atom (get-state &assessment-deferred) 1))
+    (ReasonerAssessmentRejected InvalidReliability))
+
+!(test (reasonerProposalAssessments) (get-state &assessment-before-rows))
+!(test (reasonerSourceReliability nars) "invalid-number")
+!(remove-atom &reasoner-source-reliability (ReasonerSourceReliability nars "invalid-number"))
+!(let $row (get-state &assessment-valid-row) (add-atom &reasoner-source-reliability $row))
+!(bind! &assessment-later (new-state (assessReasonerProposalOutcome
+    (index-atom (get-state &assessment-deferred) 0) (index-atom (get-state &assessment-deferred) 1))))
+!(test (reasonerFixtureComparison (get-state &assessment-later))
+    (ReasonerPredictionComparison Confirmed 1.0))
+
+!(test (size-atom (reasonerProposalAssessments)) 4)
+!(change-state! &reasoner-prediction-comparator compareReasonerOperationResult)
+!(test (assessReasonerProposalOutcome (index-atom (get-state &assessment-deferred) 0)
+    (index-atom (get-state &assessment-deferred) 1)) (get-state &assessment-later))
+
+!(test (assessReasonerProposalOutcome (get-state &reasoner-revoked-event)
+    (ReasonerExecutionEvidence (selectedHostTicket)))
+    (ReasonerAssessmentRejected MissingSelectionLink))
+
+;; A current linked selection blocked before invocation cannot be assessed.
+!(bind! &assessment-final-rows (new-state (reasonerProposalAssessments)))
+!(bind! &assessment-final-reliability (new-state (reasonerSourceReliability nars)))
+!(bind! &assessment-blocked (new-state
+    (reasonerHostReadCycle assessment-blocked (ExpectedOperationResult "changed after invocation"))))
+!(test (retainReasonerProposalSelection (get-state &assessment-blocked))
+    (ReasonerProposalLinked (get-state &selected-operation-decision)))
+!(py-call (host_dispatch_config.provision (py-call (host_config_fixture.write "permission-denied"))))
+!(test (coreLoopDispatchCommand (selectedHostTicket) (selectedHostCommand))
+    (DispatchResult Blocked StaleSnapshot none))
+!(test (assessReasonerProposalOutcome (get-state &assessment-blocked)
+    (ReasonerExecutionEvidence (selectedHostTicket)))
+    (ReasonerAssessmentRejected MissingExecutionEvidence))
+
+;; A retained rejected decision also supplies no observation or learning signal.
+!(change-state! &constitutional-mode Sleep)
+!(bind! &assessment-rejected-proposal (new-state
+    (ReasonerMotivationalProposal rejected-assessment nars propose-candidate current-frame
+        execute-skill claim support 0.9 (EvidenceReferences (e1))
+        (ExpectedOperationResult "changed after invocation"))))
+!(bind! &assessment-rejected-decision (new-state (reasonerProposalDecision
+    (activeFrameBundle) (motivosToMetamoState) (get-state &assessment-rejected-proposal))))
+!(test (getStatus (get-state &assessment-rejected-decision)) Rejected)
+!(test (assessReasonerProposalOutcome
+    (ReasonerProposalEvent (proposal (get-state &assessment-rejected-proposal))
+        (decision (get-state &assessment-rejected-decision)) (disposition Rejected))
+    (ReasonerExecutionEvidence (selectedHostTicket)))
+    (ReasonerAssessmentRejected MissingSelectionLink))
+
+!(test (reasonerProposalAssessments) (get-state &assessment-final-rows))
+!(test (reasonerSourceReliability nars) (get-state &assessment-final-reliability))
 
 !(test (py-call (host_config_fixture.cleanup)) 1)

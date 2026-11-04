@@ -15,6 +15,7 @@ REASONER_MODULES = {
         "reasoner_integration.metta", "reasoner_engines.pl",
     )
 }
+ASSESSMENT_MODULES = {str(APP / "reasoner_outcome_assessment.metta")}
 HOST_EVIDENCE_MODULES = {
     str(APP / name) for name in ("reasoner_host_evidence.metta", "reasoner_host_evidence.pl")
 }
@@ -35,7 +36,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
                 with self.subTest(entry=name):
                     edges = self.audit(APP / name, Path(directory) / "imports.json")
                     resolved = {edge["resolved"] for edge in edges}
-                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES))
+                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES))
                     self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
                     # The native decision and policy path still loads.
                     self.assertIn(str(APP / "omegaclaw_decision.metta"), resolved)
@@ -67,6 +68,22 @@ class ReasonerBoundaryTests(unittest.TestCase):
             edges = self.audit(entry, Path(directory) / "imports.json")
             resolved = {edge["resolved"] for edge in edges}
             self.assertTrue(HOST_EVIDENCE_MODULES <= resolved)
+            self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
+            proposals = [e for e in edges if e["resolved"] == str(APP / "reasoner_proposals.metta")]
+            self.assertEqual(len(proposals), 1)
+
+    def test_external_assessment_is_explicit_and_does_not_load_inference_engines(self):
+        with tempfile.TemporaryDirectory(prefix="reasoner-assessment-") as directory:
+            entry = Path(directory) / "assessment.metta"
+            entry.write_text(
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/composition))\n"
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))\n"
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence))\n"
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))\n"
+            )
+            edges = self.audit(entry, Path(directory) / "imports.json")
+            resolved = {edge["resolved"] for edge in edges}
+            self.assertTrue(ASSESSMENT_MODULES | HOST_EVIDENCE_MODULES <= resolved)
             self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
             proposals = [e for e in edges if e["resolved"] == str(APP / "reasoner_proposals.metta")]
             self.assertEqual(len(proposals), 1)

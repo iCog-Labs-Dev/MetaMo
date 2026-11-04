@@ -262,13 +262,69 @@ failure does not refute a prediction. Blocked and unobserved execution receive
 no numerical grade, and rejected alternatives cannot be penalized simply for
 being rejected. Their original proposal/decision audit remains available.
 
-Numerical grades require authoritative confirmation or refutation. The current
-host adapter does not accept either, so its retained execution outcomes are all
-ungraded. Prediction comparison, observation-backed evaluation of rejected
-alternatives, and reasoner-native interpretation remain separate unfinished work.
-Tests extend the real Core operation-selection suite with successful and failed reads, missing/forged
-observations, mismatched receipts/statuses, stale/revoked selections, ownership
-changes and session isolation. External services remain doubled.
+Numerical grades belong to the optional external assessment service described
+below. Receipt recording always retains `Unresolved` / `Ungraded`, even after a
+separate assessment exists. It never calls a comparator or a learner.
+
+### External prediction assessment
+
+Load `reasoner_outcome_assessment.metta` once after proposal support. The host
+evidence adapter installs the trusted observation reader; neither module starts
+inference engines, providers, channels or execution. Default composition and
+the optional inference extension do not load assessment or learning implicitly.
+
+```metta
+;; After composition, proposal support, Core/v1 dispatch, and host evidence:
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))
+;; Host calls this only after its existing selection and observation capture:
+;; (assessReasonerProposalOutcome EVENT (ReasonerExecutionEvidence TICKET))
+```
+
+The service asks the host for the exact retained proposal prediction and the
+actual `DispatchResult Executed Feasible PAYLOAD` payload. Callers do not submit
+an expected value, observed value, execution status or grade to this API. The
+host rechecks the retained decision, ticket, immutable receipt and session.
+Another execution or a rewritten proposal cannot substitute its evidence.
+
+The default comparator recognizes `(ExpectedOperationResult VALUE)` and checks
+exact data equality with the observed operation payload. A match returns
+`(ReasonerPredictionComparison Confirmed 1.0)`; a mismatch returns
+`(ReasonerPredictionComparison Refuted 0.0)`. A correctly predicted handler error
+can therefore be confirmed, while a successful operation with the wrong result
+can refute its prediction. These conclusions describe that prediction, not
+completion of a frame, user goal or commitment.
+
+Other prediction schemas remain unchanged and return
+`(ReasonerAssessmentDeferred InsufficientEvidence)`. No assessment identity is
+reserved and no reliability update occurs, allowing a later configured comparator
+to handle the retained prediction. Trusted host configuration can set
+`&reasoner-prediction-comparator` to an implementation that accepts quoted
+prediction/observation data. No arbitrary expression in either payload is run.
+
+A comparator must return an exact, ground `ReasonerPredictionComparison` with
+`Confirmed` or `Refuted` and a finite numeric grade in `[0,1]`, or
+`Unresolved Ungraded`. Strings, out-of-range values, infinities, NaNs, unknown
+conclusions and malformed constructors reject before learning. Comparator errors
+also reject. An unresolved comparison defers without writing or learning.
+
+Accepted assessments are separate `ReasonerProposalAssessment` records, carrying
+outcome identity, retained event, prediction, observation, execution reference,
+comparator and comparison. The external learner applies the existing 20% source
+weight update only after grade and existing reliability validation. Assessment
+insertion and learning share one transaction and the host dispatch mutex.
+Identical redelivery returns the retained assessment without another update,
+even if comparator configuration changes. Invalid attempts reserve no identity.
+
+MetaMo only reads source reliability as a bounded advisory influence on ordinary
+candidate scoring. This application-level source weighting does not revise NARS
+truth values, PLN truth values or either engine's native learning rules. General
+frame-claim verification, observations for unexecuted alternatives and durable
+cross-session assessment remain unsupported; those proposals stay ungraded.
+
+Tests exercise real Core reads and failures, different predictions for the same
+execution status, malformed comparator outputs, unsupported schemas, adapter
+failures, replay, missing evidence, ownership and session isolation. External
+services remain doubled.
 
 ### Outcome identities and redelivery
 
@@ -285,12 +341,13 @@ callers cannot supply a new ID to count the same execution again.
 | Same identity with changed report contents | Return `(ReasonerOutcomeRejected ConflictingReplay)` and preserve the original record and reliability. |
 | Evidence belonging to another proposal or execution | Reject attribution before recording. One selected ticket cannot be linked to competing proposal events. |
 | A distinct real execution, even with identical command text and output | Give it a distinct outcome identity and retain it as a separate observation. |
-| A failure during the first write | Return `OutcomeCommitFailed`, roll back the outcome and reliability writes, and allow a later valid retry. |
+| A failure during the first write | Return `OutcomeCommitFailed`, roll back the receipt write, and allow a later valid retry. |
 
-Replay lookup and recording share Core's dispatch mutex. The first outcome
-insertion and the existing reliability update use one transaction over the
-dynamic spaces. Invalid first reports reserve no identity. Identical redelivery
-uses the retained report rather than recomputing its grade against later state.
+Replay lookup and receipt recording share Core's dispatch mutex. Receipt
+insertion uses a transaction over the dynamic audit space. Invalid first reports
+reserve no identity. Identical redelivery uses the retained report. External
+assessments use the same outcome identity with their own idempotent audit and
+learning transaction; they never rewrite the receipt.
 It remains valid across later cycles and commitment replacement in the same
 session; starting another operation session does not adopt the old evidence.
 
@@ -320,7 +377,7 @@ sh run.sh MetaMo/applications/omegaclaw_v1/tests/minimal_loop_test.metta -s
 sh run.sh MetaMo/applications/omegaclaw_v1/tests/reasoner_integration_test.metta -s
 ```
 
-They pass all 6 and 124 assertions respectively without import caching. Native
+They pass all 6 and 140 assertions respectively without import caching. Native
 compiler regression checks run both with a 64 MiB stack limit as well.
 
 ## Module Structure

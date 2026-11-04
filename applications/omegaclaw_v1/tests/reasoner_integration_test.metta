@@ -4,6 +4,7 @@
 !(import! &self ../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))
 !(initMinimalLoopFixture)
 
 (= (narsRepairFacts)
@@ -550,3 +551,65 @@
     (Ungraded Ungraded Ungraded))
 
 !(test (reasonerProposalOutcomeGrade Completed Unknown) Ungraded)
+
+;; Motivational helpers never derive grades from status labels, even strong ones.
+!(test (map-atom (Completed Failed Blocked Unobserved) $status
+    (reasonerProposalOutcomeGrade $status Confirmed))
+    (Ungraded Ungraded Ungraded Ungraded))
+
+;; Comparison operates on retained data, including executable-looking payloads.
+!(test (compareReasonerOperationResult (quote (ExpectedOperationResult (reasonerAccessorEffect)))
+    (quote (reasonerAccessorEffect))) (ReasonerPredictionComparison Confirmed 1.0))
+
+!(test (compareReasonerOperationResult (ExpectedOperationResult "expected") "other")
+    (ReasonerPredictionComparison Refuted 0.0))
+
+!(test (compareReasonerOperationResult "vague prediction" "observation")
+    (ReasonerPredictionComparison Unresolved Ungraded))
+
+!(test (get-state &reasoner-accessor-effects) 0)
+
+;; Validate every comparator grade before changing external source weights.
+!(test (map-atom (quote (
+    (ReasonerPredictionComparison Confirmed "1.0")
+    (ReasonerPredictionComparison Confirmed -0.1)
+    (ReasonerPredictionComparison Refuted 1.1)
+    (ReasonerPredictionComparison Unresolved 0.5)
+    (ReasonerPredictionComparison Confirmed Ungraded)
+    (ReasonerPredictionComparison Unknown 0.5)
+    (WrongComparison Confirmed 1.0)
+    (ReasonerPredictionComparison Confirmed 1.0 extra))) $comparison
+    (reasonerComparisonValid $comparison))
+    (False False False False False False False False))
+
+!(test (reasonerComparisonValid
+    (ReasonerPredictionComparison Confirmed (reasonerValidationNumber "1.0Inf"))) False)
+
+!(test (reasonerComparisonValid
+    (ReasonerPredictionComparison Refuted (reasonerValidationNumber "1.5NaN"))) False)
+
+!(test (map-atom (quote ((ReasonerPredictionComparison Confirmed 0.9)
+    (ReasonerPredictionComparison Refuted 0.1)
+    (ReasonerPredictionComparison Unresolved Ungraded))) $comparison
+    (reasonerComparisonValid $comparison)) (True True True))
+
+!(test (map-atom (quote (Ungraded "0.5" -1 2)) $grade
+    (updateReasonerSourceReliability nars $grade))
+    ((ReasonerAssessmentRejected InvalidGrade) (ReasonerAssessmentRejected InvalidGrade)
+        (ReasonerAssessmentRejected InvalidGrade) (ReasonerAssessmentRejected InvalidGrade)))
+
+!(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))
+
+!(test (assessReasonerProposalOutcome (car-atom (reasonerProposalEvents)) ())
+    (ReasonerAssessmentRejected MissingHostEvidence))
+
+!(test (reasonerProposalAssessments) ())
+
+;; A code-shaped grade stays data and is rejected before numerical arithmetic.
+!(test (reasonerComparisonValid
+    (quote (ReasonerPredictionComparison Confirmed (reasonerAccessorEffect)))) False)
+
+!(test (get-state &reasoner-accessor-effects) 0)
+
+!(test (compareReasonerOperationResult (quote (ExpectedOperationResult "x" extra)) "x")
+    (ReasonerPredictionComparison Unresolved Ungraded))

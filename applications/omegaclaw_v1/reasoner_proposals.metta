@@ -50,6 +50,7 @@
 ;; A trusted optional host adapter installs evidence validation explicitly.
 !(bind! &reasoner-evidence-validator (new-state ()))
 !(bind! &reasoner-outcome-identity-provider (new-state ()))
+!(bind! &reasoner-prediction-observer (new-state ()))
 
 (= (reasonerProposalSources) (nars pln llm rule-engine human-adapter))
 (= (reasonerInferenceSources) (nars pln))
@@ -316,26 +317,6 @@
           (reasonerSourceReliabilityPrior $source)
           (index-atom (car-atom $rows) 2))))
 
-;; The learned reliability uses a 20% update step so one noisy outcome cannot
-;; dominate the source prior. Grades come only from observed outcomes.
-(= (reasonerSourceReliabilityAfterGrade $source $grade)
-   (clampValue (+ (* 0.80 (reasonerSourceReliability $source))
-                  (* 0.20 $grade))))
-
-(= (updateReasonerSourceReliability $source $grade)
-   (let* (
-      ($oldRows (collapse (match &reasoner-source-reliability
-         (ReasonerSourceReliability $source $old)
-         (ReasonerSourceReliability $source $old))))
-      ($new (reasonerSourceReliabilityAfterGrade $source $grade))
-      ($_ (if (== $oldRows ())
-              True
-              (let $oldRow (car-atom $oldRows)
-                 (remove-atom &reasoner-source-reliability $oldRow))))
-      ($_ (add-atom &reasoner-source-reliability
-             (ReasonerSourceReliability $source $new))))
-      $new))
-
 ;; Influence is bounded by both source reliability and the proposal's own
 ;; confidence. It never bypasses feasibility and never creates an action.
 (= (reasonerProposalInfluence $proposal)
@@ -410,33 +391,13 @@
 ;; Execution status: Completed | Failed | Blocked | Unobserved
 ;; Frame evidence:   Confirmed | Refuted | Unresolved
 
-;; Missing observations have no numerical grade. Confirmed/Refuted labels must
-;; first pass the trusted evidence boundary; execution failure is not refutation.
-;; Example: (reasonerProposalOutcomeGrade Failed Unresolved) -> Ungraded.
-(= (reasonerProposalOutcomeGrade $execution $verification)
-    (if (or (== $execution Completed) (== $execution Failed))
-        (case $verification
-            (
-                (Confirmed 1.0)
-                (Refuted 0.0)
-                ($_ Ungraded)
-            )
-        )
-        Ungraded
-    )
-)
+;; Compatibility readers report uncertainty; motivational code never grades.
+;; Example: (reasonerProposalOutcomeGrade Completed Confirmed) -> Ungraded.
+(= (reasonerProposalOutcomeGrade $execution $verification) Ungraded)
 
-;; Classify the supported prediction conclusion independently of command success.
-;; Example: (reasonerProposalOutcomeClass Failed Unresolved) -> Unresolved.
-(= (reasonerProposalOutcomeClass $execution $verification)
-    (case (reasonerProposalOutcomeGrade $execution $verification)
-        (
-            (1.0 Confirmed)
-            (0.0 Refuted)
-            ($_ Unresolved)
-        )
-    )
-)
+;; Execution status cannot classify the correctness of a retained prediction.
+;; Example: (reasonerProposalOutcomeClass Failed Refuted) -> Unresolved.
+(= (reasonerProposalOutcomeClass $execution $verification) Unresolved)
 
 ;; Invoke only a trusted installed reader, passing every input as quoted data.
 ;; Example: absent host wiring returns (ReasonerOutcomeRejected MissingHostEvidence).
@@ -494,8 +455,8 @@
             (outcome $outcome) (grade $grade))))
 )
 
-;; Roll back both dynamic spaces on write errors; do not memoize a failed commit.
-;; Example: invalid retained reliability yields OutcomeCommitFailed with no outcome.
+;; Roll back a failed receipt write; do not memoize a failed commit.
+;; Example: a failed audit insertion yields OutcomeCommitFailed with no outcome.
 (= (commitReasonerOutcome $id $event $status $execution $frame-status $frame-evidence)
     (case (catch (transaction (recordValidatedReasonerProposalOutcome $id $event $status
             $execution $frame-status $frame-evidence)))
@@ -507,8 +468,8 @@
     )
 )
 
-;; Validate new evidence before atomically storing the outcome and reliability update.
-;; Example: failure during the write rolls back both dynamic spaces.
+;; Validate new evidence before atomically storing the ungraded receipt.
+;; Example: failure during the write leaves no retained outcome.
 (= (recordFreshReasonerOutcome $id $event $status $execution $frame-status $frame-evidence)
     (case (reasonerOutcomeEvidenceCheck $event $status $execution $frame-status $frame-evidence)
         (
@@ -572,10 +533,6 @@
       $id $proposal-event $execution-status $execution-evidence
       $frame-evidence-status $frame-state-evidence)
    (let* (
-      ($grade (reasonerProposalOutcomeGrade
-         $execution-status $frame-evidence-status))
-      ($outcome (reasonerProposalOutcomeClass
-         $execution-status $frame-evidence-status))
       ($event (ReasonerProposalOutcomeEvent
          (outcome-id $id)
          (proposal-event $proposal-event)
@@ -583,14 +540,9 @@
          (execution-evidence $execution-evidence)
          (frame-evidence-status $frame-evidence-status)
          (frame-state-evidence $frame-state-evidence)
-         (outcome $outcome)
-         (grade $grade)))
-      ($_ (add-atom &reasoner-proposal-outcomes $event))
-      ($proposal (getProposalEventProposal $proposal-event))
-      ($source (getProposalSource $proposal))
-      ($_ (if (== $grade Ungraded)
-              True
-              (updateReasonerSourceReliability $source $grade))))
+         (outcome Unresolved)
+         (grade Ungraded)))
+      ($_ (add-atom &reasoner-proposal-outcomes $event)))
       $event))
 
 (= (reasonerProposalOutcomes)
