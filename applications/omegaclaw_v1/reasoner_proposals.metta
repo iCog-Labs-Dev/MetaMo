@@ -22,6 +22,15 @@
    (-> Expression Symbol Symbol Expression Symbol Expression Expression
        Number Expression Expression ReasonerMotivationalProposalType))
 
+;; Eight tagged fields: outcome-id, proposal-event, execution-status,
+;; execution-evidence, frame-evidence-status, frame-state-evidence, outcome, grade.
+;; Each argument is an expression, including (grade NUMBER); value and causal
+;; validation remain the responsibility of the existing recording boundary.
+(: ReasonerProposalOutcomeEventType Type)
+(: ReasonerProposalOutcomeEvent
+   (-> Expression Expression Expression Expression
+       Expression Expression Expression Expression ReasonerProposalOutcomeEventType))
+
 ;; Typed inference payloads accepted by the NARS/PLN adapters. These are
 ;; provenance records, not executable terms.
 (: ReasonerInferenceFactType Type)
