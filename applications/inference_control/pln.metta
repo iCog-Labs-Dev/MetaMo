@@ -1,31 +1,37 @@
 ;; Sentence: (Sentence (term (stv strength confidence)) evidence-ids).
-;; Proposal: (PLN.Proposal rule first-sentence second-sentence).
+;; Proposal: (plnProposal rule first-sentence second-sentence).
 
-(= (PLN.TruthStrength (stv $strength $confidence)) $strength)
-(= (PLN.TruthConfidence (stv $strength $confidence)) $confidence)
+(: PlnProposal Type)
+(: plnProposal (-> Symbol Expression Expression PlnProposal))
 
-(= (PLN.Clamp $v $lo $hi) (min $hi (max $lo $v)))
+(: PlnStepResult Type)
+(: plnStepResult (-> Expression Expression Expression PlnStepResult))
 
-(= (PLN.SmallestIntersection $a $b)
-   (PLN.Clamp (/ (- (+ $a $b) 1.0) $a) 0.0 1.0))
+(= (plnTruthStrength (stv $strength $confidence)) $strength)
+(= (plnTruthConfidence (stv $strength $confidence)) $confidence)
 
-(= (PLN.LargestIntersection $a $b)
-   (PLN.Clamp (/ $b $a) 0.0 1.0))
+(= (plnClamp $v $lo $hi) (min $hi (max $lo $v)))
 
-(= (PLN.ConditionalConsistent $a $b $conditional)
+(= (plnSmallestIntersection $a $b)
+   (plnClamp (/ (- (+ $a $b) 1.0) $a) 0.0 1.0))
+
+(= (plnLargestIntersection $a $b)
+   (plnClamp (/ $b $a) 0.0 1.0))
+
+(= (plnConditionalConsistent $a $b $conditional)
    (if (<= $a 0.0)
        False
-       (and (<= (PLN.SmallestIntersection $a $b) $conditional)
-            (<= $conditional (PLN.LargestIntersection $a $b)))))
+       (and (<= (plnSmallestIntersection $a $b) $conditional)
+            (<= $conditional (plnLargestIntersection $a $b)))))
 
 ;; Inconsistent term probabilities yield zero confidence.
-(= (PLN.TruthDeduction (stv $as $ac)
+(= (plnTruthDeduction (stv $as $ac)
                        (stv $bs $bc)
                        (stv $cs $cc)
                        (stv $abs $abc)
                        (stv $bcs $bcc))
-   (if (and (PLN.ConditionalConsistent $as $bs $abs)
-            (PLN.ConditionalConsistent $bs $cs $bcs))
+   (if (and (plnConditionalConsistent $as $bs $abs)
+            (plnConditionalConsistent $bs $cs $bcs))
        (stv (if (> $bs 0.9999)
                 $cs
                 (+ (* $abs $bcs)
@@ -34,12 +40,12 @@
             (min $ac (min $bc (min $cc (min $abc $bcc)))))
        (stv 1.0 0.0)))
 
-(= (PLN.TruthModusPonens (stv $f1 $c1) (stv $f2 $c2))
+(= (plnTruthModusPonens (stv $f1 $c1) (stv $f2 $c2))
    (stv (+ (* $f1 $f2) (* 0.02 (- 1.0 $f1)))
         (* $c1 $c2)))
 
 ;; Exact-confidence premises avoid division by zero during revision.
-(= (PLN.TruthRevision (stv $s1 $c1) (stv $s2 $c2))
+(= (plnTruthRevision (stv $s1 $c1) (stv $s2 $c2))
    (if (>= $c1 1.0)
        (stv $s1 $c1)
        (if (>= $c2 1.0)
@@ -52,177 +58,177 @@
                      (stv (/ (+ (* $w1 $s1) (* $w2 $s2)) $w)
                           (/ $w (+ $w 1.0))))))))
 
-(= (PLN.StampDisjoint $left $right)
+(= (plnStampDisjoint $left $right)
    (== ()
        (collapse (let* (($x (superpose $left))
                         ($y (superpose $right)))
                       (case (== $x $y) ((True True)))))))
 
-(= (PLN.StampUnion $left $right)
+(= (plnStampUnion $left $right)
    (msort (append $left $right)))
 
 ;; Match premises without computing truth values.
-(= (PLN.ProposePair $first $second)
+(= (plnProposePair $first $second)
    (case ($first $second)
      (
        (((Sentence ((Implication $a $b) $t1) $e1)
          (Sentence ((Implication $b $c) $t2) $e2))
-        (if (PLN.StampDisjoint $e1 $e2)
-            (PLN.Proposal deduction $first $second)
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal deduction $first $second)
             (empty)))
        (((Sentence ((Inheritance $a $b) $t1) $e1)
          (Sentence ((Inheritance $b $c) $t2) $e2))
-        (if (PLN.StampDisjoint $e1 $e2)
-            (PLN.Proposal deduction $first $second)
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal deduction $first $second)
             (empty)))
        (((Sentence ($term $t1) $e1)
          (Sentence ($term $t2) $e2))
-        (if (PLN.StampDisjoint $e1 $e2)
-            (PLN.Proposal revision $first $second)
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal revision $first $second)
             (empty)))
        (((Sentence ($a $t1) $e1)
          (Sentence ((Implication $a $b) $t2) $e2))
-        (if (PLN.StampDisjoint $e1 $e2)
-            (PLN.Proposal modus-ponens $first $second)
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal modus-ponens $first $second)
             (empty)))
        ($_ (empty)))))
 
-(= (PLN.Propose $beliefs)
+(= (plnPropose $beliefs)
    (collapse (let* (($first (superpose $beliefs))
                     ($second (superpose $beliefs)))
-                  (PLN.ProposePair $first $second))))
+                  (plnProposePair $first $second))))
 
-(= (PLN.ApplyOne
-      (PLN.Proposal deduction
+(= (plnApplyOne
+      (plnProposal deduction
         (Sentence ((Implication $a $b) $t1) $e1)
         (Sentence ((Implication $b $c) $t2) $e2)))
-   (if (PLN.StampDisjoint $e1 $e2)
+   (if (plnStampDisjoint $e1 $e2)
        (Sentence ((Implication $a $c)
-                  (PLN.TruthDeduction (STV $a) (STV $b) (STV $c) $t1 $t2))
-                 (PLN.StampUnion $e1 $e2))
+                  (plnTruthDeduction (plnTermStv $a) (plnTermStv $b) (plnTermStv $c) $t1 $t2))
+                 (plnStampUnion $e1 $e2))
        (empty)))
 
-(= (PLN.ApplyOne
-      (PLN.Proposal deduction
+(= (plnApplyOne
+      (plnProposal deduction
         (Sentence ((Inheritance $a $b) $t1) $e1)
         (Sentence ((Inheritance $b $c) $t2) $e2)))
-   (if (PLN.StampDisjoint $e1 $e2)
+   (if (plnStampDisjoint $e1 $e2)
        (Sentence ((Inheritance $a $c)
-                  (PLN.TruthDeduction (STV $a) (STV $b) (STV $c) $t1 $t2))
-                 (PLN.StampUnion $e1 $e2))
+                  (plnTruthDeduction (plnTermStv $a) (plnTermStv $b) (plnTermStv $c) $t1 $t2))
+                 (plnStampUnion $e1 $e2))
        (empty)))
 
-(= (PLN.ApplyOne
-      (PLN.Proposal modus-ponens
+(= (plnApplyOne
+      (plnProposal modus-ponens
         (Sentence ($a $t1) $e1)
         (Sentence ((Implication $a $b) $t2) $e2)))
-   (if (PLN.StampDisjoint $e1 $e2)
-       (Sentence ($b (PLN.TruthModusPonens $t1 $t2))
-                 (PLN.StampUnion $e1 $e2))
+   (if (plnStampDisjoint $e1 $e2)
+       (Sentence ($b (plnTruthModusPonens $t1 $t2))
+                 (plnStampUnion $e1 $e2))
        (empty)))
 
-(= (PLN.ApplyOne
-      (PLN.Proposal revision
+(= (plnApplyOne
+      (plnProposal revision
         (Sentence ($term $t1) $e1)
         (Sentence ($term $t2) $e2)))
-   (if (PLN.StampDisjoint $e1 $e2)
-       (Sentence ($term (PLN.TruthRevision $t1 $t2))
-                 (PLN.StampUnion $e1 $e2))
+   (if (plnStampDisjoint $e1 $e2)
+       (Sentence ($term (plnTruthRevision $t1 $t2))
+                 (plnStampUnion $e1 $e2))
        (empty)))
 
 ;; Consider both premise orders for a selected task.
-(= (PLN.ProposeTask $task $beliefs)
+(= (plnProposeTask $task $beliefs)
    (collapse (let $belief (superpose $beliefs)
-                  (superpose ((PLN.ProposePair $task $belief)
-                              (PLN.ProposePair $belief $task))))))
+                  (superpose ((plnProposePair $task $belief)
+                              (plnProposePair $belief $task))))))
 
 ;; Keep exactly the requested queue limit.
-(= (PLN.PriorityRank (Sentence ($term (stv $s $c)) $evidence)) $c)
-(= (PLN.PriorityRank ()) -99999.0)
-(= (PLN.NegPriorityRank (Sentence ($term (stv $s $c)) $evidence)) (- 0.0 $c))
-(= (PLN.NegPriorityRank ()) -99999.0)
+(= (plnPriorityRank (Sentence ($term (stv $s $c)) $evidence)) $c)
+(= (plnPriorityRank ()) -99999.0)
+(= (plnNegPriorityRank (Sentence ($term (stv $s $c)) $evidence)) (- 0.0 $c))
+(= (plnNegPriorityRank ()) -99999.0)
 
-(= (PLN.BestCandidate $rank $best $items)
+(= (plnBestCandidate $rank $best $items)
    (if (== $items ())
        $best
        (let* (($head (car-atom $items))
               ($tail (cdr-atom $items)))
              (if (> ($rank $head) ($rank $best))
-                 (PLN.BestCandidate $rank $head $tail)
-                 (PLN.BestCandidate $rank $best $tail)))))
+                 (plnBestCandidate $rank $head $tail)
+                 (plnBestCandidate $rank $best $tail)))))
 
-(= (PLN.LimitSize $items $limit)
+(= (plnLimitSize $items $limit)
    (if (<= (length $items) $limit)
        $items
-       (let $lowest (PLN.BestCandidate PLN.NegPriorityRank () $items)
-            (PLN.LimitSize (exclude-item $lowest $items) $limit))))
+       (let $lowest (plnBestCandidate plnNegPriorityRank () $items)
+            (plnLimitSize (exclude-item $lowest $items) $limit))))
 
-(= (PLN.CommitOne $tasks $beliefs $selectedTask $derived $taskLimit $beliefLimit)
+(= (plnCommitOne $tasks $beliefs $selectedTask $derived $taskLimit $beliefLimit)
    (let* (($remaining (exclude-item $selectedTask $tasks))
-          ($nextTasks (PLN.LimitSize
+          ($nextTasks (plnLimitSize
                         (list_to_set (append $remaining ($derived))) $taskLimit))
-          ($nextBeliefs (PLN.LimitSize
+          ($nextBeliefs (plnLimitSize
                           (list_to_set (append $beliefs ($derived))) $beliefLimit)))
          ($nextTasks $nextBeliefs)))
 
-(= (PLN.Step $tasks $beliefs $selectedTask $proposal $taskLimit $beliefLimit)
-   (let $eligible (PLN.ProposeTask $selectedTask $beliefs)
+(= (plnStep $tasks $beliefs $selectedTask $proposal $taskLimit $beliefLimit)
+   (let $eligible (plnProposeTask $selectedTask $beliefs)
         (if (is-member $proposal $eligible)
-            (let $derived (PLN.ApplyOne $proposal)
+            (let $derived (plnApplyOne $proposal)
                  (let ($nextTasks $nextBeliefs)
-                      (PLN.CommitOne $tasks $beliefs $selectedTask $derived $taskLimit $beliefLimit)
-                      (PLN.StepResult $derived $nextTasks $nextBeliefs)))
+                      (plnCommitOne $tasks $beliefs $selectedTask $derived $taskLimit $beliefLimit)
+                      (plnStepResult $derived $nextTasks $nextBeliefs)))
             (empty))))
 
-(= (PLN.StepDerived (PLN.StepResult $derived $tasks $beliefs)) $derived)
-(= (PLN.StepTasks (PLN.StepResult $derived $tasks $beliefs)) $tasks)
-(= (PLN.StepBeliefs (PLN.StepResult $derived $tasks $beliefs)) $beliefs)
+(= (plnStepDerived (plnStepResult $derived $tasks $beliefs)) $derived)
+(= (plnStepTasks (plnStepResult $derived $tasks $beliefs)) $tasks)
+(= (plnStepBeliefs (plnStepResult $derived $tasks $beliefs)) $beliefs)
 
-(= (PLN.Config.MaxSteps) 100)
-(= (PLN.Config.TaskQueueSize) 10)
-(= (PLN.Config.BeliefQueueSize) 100)
+(= (PLN_MAX_STEPS) 100)
+(= (PLN_TASK_QUEUE_SIZE) 10)
+(= (PLN_BELIEF_QUEUE_SIZE) 100)
 
-(= (PLN.ExpandTask $task $beliefs)
-   (let $proposals (PLN.ProposeTask $task $beliefs)
+(= (plnExpandTask $task $beliefs)
+   (let $proposals (plnProposeTask $task $beliefs)
         (collapse (let $proposal (superpose $proposals)
-                       (PLN.ApplyOne $proposal)))))
+                       (plnApplyOne $proposal)))))
 
-(= (PLN.Derive $tasks $beliefs $steps $maxSteps $taskLimit $beliefLimit)
+(= (plnDerive $tasks $beliefs $steps $maxSteps $taskLimit $beliefLimit)
    (if (or (>= $steps $maxSteps) (== $tasks ()))
        ($tasks $beliefs)
-       (let* (($selected (PLN.BestCandidate PLN.PriorityRank () $tasks))
-              ($derivations (PLN.ExpandTask $selected $beliefs))
+       (let* (($selected (plnBestCandidate plnPriorityRank () $tasks))
+              ($derivations (plnExpandTask $selected $beliefs))
               ($remaining (exclude-item $selected $tasks))
-              ($nextTasks (PLN.LimitSize
+              ($nextTasks (plnLimitSize
                             (list_to_set (append $remaining $derivations)) $taskLimit))
-              ($nextBeliefs (PLN.LimitSize
+              ($nextBeliefs (plnLimitSize
                               (list_to_set (append $beliefs $derivations)) $beliefLimit)))
-             (PLN.Derive $nextTasks $nextBeliefs (+ $steps 1)
+             (plnDerive $nextTasks $nextBeliefs (+ $steps 1)
                          $maxSteps $taskLimit $beliefLimit))))
 
-(= (PLN.Answer $beliefs $term)
+(= (plnAnswer $beliefs $term)
    (let* (($matches
             (collapse (let (Sentence ($candidate $truth) $evidence)
                            (superpose $beliefs)
                            (if (== $candidate $term)
                                (Sentence ($candidate $truth) $evidence)
                                (empty)))))
-          ($best (PLN.BestCandidate PLN.PriorityRank () $matches)))
+          ($best (plnBestCandidate plnPriorityRank () $matches)))
          (case $best
            (((Sentence ($candidate $truth) $evidence) ($truth $evidence))
             ($_ ())))))
 
-(= (PLN.Query $tasks $beliefs $term $maxSteps $taskLimit $beliefLimit)
+(= (plnQuery $tasks $beliefs $term $maxSteps $taskLimit $beliefLimit)
    (let ($tasksOut $beliefsOut)
-        (PLN.Derive $tasks $beliefs 0 $maxSteps $taskLimit $beliefLimit)
-        (PLN.Answer $beliefsOut $term)))
+        (plnDerive $tasks $beliefs 0 $maxSteps $taskLimit $beliefLimit)
+        (plnAnswer $beliefsOut $term)))
 
-(= (PLN.Query $beliefs $term $maxSteps $taskLimit $beliefLimit)
-   (PLN.Query $beliefs $beliefs $term $maxSteps $taskLimit $beliefLimit))
+(= (plnQuery $beliefs $term $maxSteps $taskLimit $beliefLimit)
+   (plnQuery $beliefs $beliefs $term $maxSteps $taskLimit $beliefLimit))
 
-(= (PLN.Query $beliefs $term $maxSteps)
-   (PLN.Query $beliefs $term $maxSteps
-              (PLN.Config.TaskQueueSize) (PLN.Config.BeliefQueueSize)))
+(= (plnQuery $beliefs $term $maxSteps)
+   (plnQuery $beliefs $term $maxSteps
+              (PLN_TASK_QUEUE_SIZE) (PLN_BELIEF_QUEUE_SIZE)))
 
-(= (PLN.Query $beliefs $term)
-   (PLN.Query $beliefs $term (PLN.Config.MaxSteps)))
+(= (plnQuery $beliefs $term)
+   (plnQuery $beliefs $term (PLN_MAX_STEPS)))
