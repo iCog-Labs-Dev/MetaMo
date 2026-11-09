@@ -29,6 +29,8 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/dispatch))
 !(initMetaMoDispatch)
 !(import! &self (library MetaMo applications/omegaclaw_v1/host_startup))
-!(initializeHostStartup)
 !(bind! &error (new-state ""))
-!(motivatedOmegaclaw)
+!(case (initializeHostStartup) (
+    (True (motivatedOmegaclaw))
+    ($rejection $rejection)
+))

@@ -129,8 +129,11 @@ fixed score; the real bundle feasibility gate is still exercised and asserted.
 
 Live proposal intake is not connected yet. The default `composition.metta` and
 `run.metta` do not import the MetaMo proposal adapter or inference extension.
-Native candidates, scoring, policy and dispatch operate independently. Existing
-reasoner code/tests are retained as an explicit optional extension.
+Native candidates, scoring, policy and dispatch operate independently. Startup
+can select a local adapter with `reasoner=nars` or `reasoner=pln` appended to the
+common launcher command; `reasoner=disabled` is the default and loads no engines
+or reasoner audit state. Selection loads the existing inference extension but
+does not yet collect proposals or deliver feedback automatically.
 
 The proposed runtime architecture, adapter contracts and staged rollout are in
 [REASONER_INTEGRATION_DESIGN.md](REASONER_INTEGRATION_DESIGN.md).

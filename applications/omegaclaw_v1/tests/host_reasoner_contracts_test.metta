@@ -324,3 +324,87 @@
     (ReasonerContractRejected InvalidRegistration))
 
 !(test (hostReasonerRegistration) (reasonerContractFixture registration))
+
+;; Trusted registration and selection are independent of proposal/intake state.
+!(change-state! &host-reasoner-registration ())
+!(bind! &contract-loader-calls (new-state 0))
+
+;; A test adapter needs no engine or provider resources.
+;; Example: (contractLoadAdapter) -> True and one observed load.
+(= (contractLoadAdapter)
+    (progn
+        (change-state! &contract-loader-calls (+ (get-state &contract-loader-calls) 1))
+        True
+    )
+)
+
+;; A loader must explicitly report success before selection is retained.
+;; Example: (contractFailedLoader) -> False.
+(= (contractFailedLoader) False)
+
+!(test (selectHostReasoner disabled) True)
+
+!(test (hostReasonerRegistration) ())
+
+!(test (get-state &contract-loader-calls) 0)
+
+!(test (selectHostReasoner "unknown") (ReasonerStartupRejected UnknownAdapter))
+
+!(test (registerHostReasoner (quote (ReasonerAdapterRegistration broken)) (quote contractLoadAdapter))
+    (ReasonerContractRejected InvalidRegistration))
+
+!(test (registerHostReasoner (reasonerContractFixture registration) (quote (contractLoadAdapter)))
+    (ReasonerStartupRejected InvalidLoader))
+
+!(test (registerHostReasoner (reasonerContractFixture registration) (quote contractFailedLoader)) True)
+
+!(test (selectHostReasoner "nars-local") (ReasonerStartupRejected AdapterLoadFailed))
+
+!(test (hostReasonerRegistration) ())
+
+;; A conflicting registration cannot replace an existing trusted binding.
+!(test (registerHostReasoner (reasonerContractFixture registration) (quote contractLoadAdapter))
+    (ReasonerStartupRejected ConflictingRegistration))
+
+!(change-state! &host-reasoner-adapters ())
+!(test (registerHostReasoner (reasonerContractFixture registration) (quote contractLoadAdapter)) True)
+
+!(test (registerHostReasoner (reasonerContractFixture registration) (quote contractLoadAdapter)) True)
+
+!(test (get-state &contract-loader-calls) 0)
+
+!(test (prepareHostReasoner (reasonerContractFixture registration))
+    (ReasonerContractValid ReasonerAdapterRegistration 1))
+
+!(test (hostReasonerSelection) disabled)
+
+!(test (selectHostReasoner "nars-local") True)
+
+!(test (get-state &contract-loader-calls) 1)
+
+!(test (hostReasonerRegistration) (reasonerContractFixture registration))
+
+!(test (selectHostReasoner "nars-local") True)
+
+!(test (get-state &contract-loader-calls) 1)
+
+!(test (selectHostReasoner "other") (ReasonerStartupRejected AlreadySelected))
+
+!(test (selectHostReasoner disabled) (ReasonerStartupRejected AlreadySelected))
+
+!(test (validateReasonerAdapterRegistration (builtinHostReasoner nars))
+    (ReasonerContractValid ReasonerAdapterRegistration 1))
+
+!(test (validateReasonerAdapterRegistration (builtinHostReasoner pln))
+    (ReasonerContractValid ReasonerAdapterRegistration 1))
+
+;; Registration may advertise only observation feedback, without proposal stages.
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (adapter)) "observer"
+        (reasonerContractSet (quote (capabilities))
+            (quote (ReasonerCapabilities (proposal-kinds ()) (candidates ())
+                (prediction-schemas ()) (feedback (Observation))))
+            (reasonerContractFixture registration)))
+    (quote contractLoadAdapter)) True)
+
+!(test (get-state &contract-loader-calls) 1)

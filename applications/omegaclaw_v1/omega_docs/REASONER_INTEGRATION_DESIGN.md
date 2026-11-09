@@ -169,8 +169,30 @@ python3 MetaMo/applications/omegaclaw_v1/tests/reasoner_boundary_test.py
 `host_reasoner.metta` provides the optional trusted `prepareHostReasoner` entry
 point. It validates and retains a registration, including its configuration
 version, and leaves the previous value unchanged on rejection.
-`hostReasonerRegistration` reads that value, initially `()`. This preparation
-loads no adapter; default startup and runtime intake are not connected yet.
+`hostReasonerRegistration` reads that value, initially `()`.
+
+Trusted host code registers adapters with
+`registerHostReasoner REGISTRATION (quote LOADER)`. Registration validates the
+record and retains its loader without invoking it. Identical registration is
+idempotent; conflicting bindings reject. `selectHostReasoner "adapter-id"` invokes
+that trusted loader, requires literal True, and retains the registration only on
+success. `hostReasonerSelection` returns the selected ID or `disabled`, separately
+from prepared configuration. Repeating selection does not load twice; changing a successful selection
+requires a fresh process. `selectHostReasoner disabled` loads nothing before any
+adapter is selected. These functions are not registered model skills.
+
+Normal startup reads `reasoner=disabled` (default), `reasoner=nars` or
+`reasoner=pln` from the common launcher's existing runtime arguments. Another name
+selects an adapter registered by trusted host code before startup. Unknown or
+multiple selections reject before entering the agent loop. Disabled startup does
+not import the coordinator, load engines or allocate reasoner audit state.
+
+The built-in registrations declare candidate proposals, the existing candidates,
+`ExpectedOperationResult` predictions and no feedback capability. Other adapters
+may declare only their supported stages. NARS/PLN reuse the existing inference
+extension, which loads both local engines in separate namespaces; selection
+retains one adapter. No provider, automatic intake, grading or learning is enabled.
+Automatic collection and feedback routing remain later runtime work.
 
 ## Ownership
 

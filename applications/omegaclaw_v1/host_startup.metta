@@ -19,15 +19,36 @@
 )
 
 
+;; Disabled startup imports no reasoner modules or audit spaces.
+;; Example: reasoner=disabled (the default); reasoner=nars or reasoner=pln opts in.
+(= (initializeHostReasoner)
+   (case (collapse (argk "reasoner")) (
+      (() True)
+      ((disabled) True)
+      (($adapter)
+         (progn
+            (import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner))
+            (eval (startHostReasoner $adapter))))
+      ($_ (ReasonerStartupRejected InvalidSelection))
+   ))
+)
+
+;; Install the normal host hooks only after optional reasoner selection succeeds.
+;; Example: (initializeHostStartup) -> True for a valid or disabled selection.
 (= (initializeHostStartup)
    (progn
       (py-call (host_dispatch_config.configure_startup))
-      (if (== (eval (configureCoreLoopIngest ingestHostMessage True)) True)
-          True 
-          (py-call (host_operations.incompatible_core)))
-      (if (== (eval (configureCoreLoopContext metaMoContext)) True)
-          True (py-call (host_operations.incompatible_core)))
-      (if (== (eval (configureCoreLoopPrepare prepareHostStartup)) True)
-          True (py-call (host_operations.incompatible_core)))
+      (case (initializeHostReasoner) (
+         (True
+            (progn
+               (if (== (eval (configureCoreLoopIngest ingestHostMessage True)) True)
+                   True (py-call (host_operations.incompatible_core)))
+               (if (== (eval (configureCoreLoopContext metaMoContext)) True)
+                   True (py-call (host_operations.incompatible_core)))
+               (if (== (eval (configureCoreLoopPrepare prepareHostStartup)) True)
+                   True (py-call (host_operations.incompatible_core)))
+            ))
+         ($rejection $rejection)
+      ))
    )
 )
