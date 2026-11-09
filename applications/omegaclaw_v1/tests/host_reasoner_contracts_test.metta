@@ -309,3 +309,18 @@
 !(test (mrcProposal (contractProposalClaim (contractNest 17))) False)
 
 !(test (mrcProposal (contractProposalClaim (contractRepeat 256 (quote (a b c d))))) False)
+
+;; Startup retains valid configuration and preserves it after invalid input.
+!(import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner))
+!(test (hostReasonerRegistration) ())
+
+!(test (prepareHostReasoner (reasonerContractFixture registration))
+    (ReasonerContractValid ReasonerAdapterRegistration 1))
+
+!(test (hostReasonerRegistration) (reasonerContractFixture registration))
+
+!(test (prepareHostReasoner
+    (reasonerContractSet (quote (configuration-version)) "" (reasonerContractFixture registration)))
+    (ReasonerContractRejected InvalidRegistration))
+
+!(test (hostReasonerRegistration) (reasonerContractFixture registration))

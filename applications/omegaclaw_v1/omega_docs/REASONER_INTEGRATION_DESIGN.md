@@ -166,6 +166,12 @@ python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/h
 python3 MetaMo/applications/omegaclaw_v1/tests/reasoner_boundary_test.py
 ```
 
+`host_reasoner.metta` provides the optional trusted `prepareHostReasoner` entry
+point. It validates and retains a registration, including its configuration
+version, and leaves the previous value unchanged on rejection.
+`hostReasonerRegistration` reads that value, initially `()`. This preparation
+loads no adapter; default startup and runtime intake are not connected yet.
+
 ## Ownership
 
 | Component | Owns | Consumes from its neighbors |
