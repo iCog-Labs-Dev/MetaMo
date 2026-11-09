@@ -30,6 +30,25 @@ class ReasonerBoundaryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(report.read_text())
 
+    def test_adapter_contracts_load_without_reasoner_state_or_engines(self):
+        with tempfile.TemporaryDirectory(prefix="reasoner-contracts-") as directory:
+            entry = Path(directory) / "contracts.metta"
+            entry.write_text(
+                "!(import! &self (library lib_import))\n"
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner_contracts))\n"
+            )
+            edges = self.audit(entry, Path(directory) / "imports.json")
+            resolved = {edge["resolved"] for edge in edges}
+            self.assertIn(str(APP / "host_reasoner_contracts.metta"), resolved)
+            forbidden = ((REASONER_MODULES - {str(APP / "reasoner_proposal_helpers.metta")})
+                         | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES)
+            self.assertFalse(resolved & forbidden)
+            self.assertFalse(any(edge["resolved"].endswith(".pl")
+                                 and "host_reasoner_contracts" in edge["resolved"]
+                                 for edge in edges))
+            self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
+            self.assertNotIn(str(APP / "composition.metta"), resolved)
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):

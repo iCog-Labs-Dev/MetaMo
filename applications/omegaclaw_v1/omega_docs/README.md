@@ -132,6 +132,9 @@ Live proposal intake is not connected yet. The default `composition.metta` and
 Native candidates, scoring, policy and dispatch operate independently. Existing
 reasoner code/tests are retained as an explicit optional extension.
 
+The proposed runtime architecture, adapter contracts and staged rollout are in
+[REASONER_INTEGRATION_DESIGN.md](REASONER_INTEGRATION_DESIGN.md).
+
 `reasoner_integration.metta` loads PeTTa's local `lib_nars` and `lib_pln`
 through `reasoner_engines.pl`. The loader prefixes all library-defined function
 names because PeTTa compiles functions globally even across imported spaces.
