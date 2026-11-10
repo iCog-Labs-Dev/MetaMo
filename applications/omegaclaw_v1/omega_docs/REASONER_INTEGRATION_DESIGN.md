@@ -146,11 +146,52 @@ require an empty list; none creates a negative prediction grade. Results allow
 at most 128 proposals and 16 diagnostics. Each proposal must have the existing
 exact ten-field `ReasonerMotivationalProposal` shape with bounded inert contents
 (depth 16, 1024 nodes, 256 children per list and 1200 characters per scalar).
-This checks transport representation only: existing proposal value validation
-and admission still run separately. Diagnostics use the exact constructor above,
+This checks transport representation and the existing proposal value contract;
+host evidence resolution and policy admission remain separate. Diagnostics use the exact constructor above,
 a string of at most 1200 characters, and one of `NoSupportedConclusion`,
 `AdapterUnavailable`, `DeadlineExceeded`, `MalformedOutput`, `LimitExceeded` or
 `AdapterError`. Diagnostics may be empty and never execute their contents.
+
+### Proposal values and adjacent provenance
+
+Intake results now reuse `reasonerProposalValid` for the original ten-field
+`ReasonerMotivationalProposal`, including target, candidate, claim, support,
+confidence, evidence and prediction. The pure validators live in
+`reasoner_proposal_helpers.metta`; importing contracts still allocates no audit
+state and loads no engines.
+
+Trusted callers can use
+`bindReasonerProposalInvocation REGISTRATION INVOCATION ENGINE-VERSION PROPOSAL`
+to construct this local record:
+
+```text
+(ReasonerInvokedProposal
+  (registration REGISTRATION)
+  (invocation INVOCATION)
+  (engine-version "engine-build-1")
+  (proposal PROPOSAL))
+```
+
+`validateReasonerInvokedProposal` returns
+`ReasonerContractValid ReasonerInvokedProposal 1` or
+`ReasonerContractRejected InvalidInvokedProposal`. The builder returns the exact
+record on success or that rejection. The original proposal is unchanged;
+invocation identity, session/cycle/frame, publication, commitment, phase and
+configuration version remain beside it. Engine version is a required bounded,
+nonblank string supplied by the adapter. Registration and invocation must agree
+on adapter, contract/configuration versions, capabilities and limits; proposal
+source must match registration. This initial binding requires identical capability
+and limit declarations rather than accepting negotiated subsets.
+
+Use `llm` as the proposal and registration source, and
+`"llm-motivational-proposal"` as the LLM adapter identity. That reserved adapter
+identity rejects any other source. It does not add a source enum or install an
+LLM loader/provider.
+
+These pure checks preserve metadata as inert data. They do not establish engine
+version authenticity, resolve evidence, enforce capabilities, check a deadline or
+admit a proposal against current host ownership and policy. Automatic intake
+and retaining these records in the runtime remain separate coordinator work.
 
 Matching invocation/adapter/configuration identities against retained host state,
 restricting invocation capabilities/limits to the registration, enforcing time

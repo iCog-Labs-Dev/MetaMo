@@ -17,11 +17,6 @@
 
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposal_helpers))
 
-(: ReasonerMotivationalProposalType Type)
-(: ReasonerMotivationalProposal
-   (-> Expression Symbol Symbol Expression Symbol Expression Expression
-       Number Expression Expression ReasonerMotivationalProposalType))
-
 ;; Eight tagged fields: outcome-id, proposal-event, execution-status,
 ;; execution-evidence, frame-evidence-status, frame-state-evidence, outcome, grade.
 ;; Each argument is an expression, including (grade Ungraded) or (grade NUMBER).
@@ -51,74 +46,6 @@
 !(bind! &reasoner-evidence-validator (new-state ()))
 !(bind! &reasoner-outcome-identity-provider (new-state ()))
 !(bind! &reasoner-prediction-observer (new-state ()))
-
-(= (reasonerProposalSources) (nars pln llm rule-engine human-adapter))
-(= (reasonerInferenceSources) (nars pln))
-(= (reasonerOptionalProposalSources) (llm))
-(= (reasonerProposalKinds)
-   (propose-candidate request-frame-switch request-mode-change request-attention))
-
-(= (reasonerProposalSourceValid $value)
-   (case $value ((nars True)
-      (pln True)
-      (llm True)
-      (rule-engine True)
-      (human-adapter True)
-      ($_ False))))
-
-(= (reasonerProposalKindValid $value)
-   (case $value ((propose-candidate True)
-      (request-frame-switch True)
-      (request-mode-change True)
-      (request-attention True)
-      ($_ False))))
-
-;; Confidence must be a finite number in [0,1], without coercion or clamping.
-;; Example: (reasonerProposalConfidenceValid "0.9") -> False.
-(= (reasonerProposalConfidenceValid $confidence)
-    (fsNumberIn $confidence 0 1)
-)
-
-;; Candidate names are registry-owned. This prevents a reasoner from smuggling
-;; an arbitrary executable operation through the proposal boundary.
-(= (reasonerProposalCandidateValid $value)
-   (case $value ((respond True)
-      (retrieve-memory True)
-      (search-knowledge True)
-      (execute-skill True)
-      (learn True)
-      (self-improve True)
-      (background-work True)
-      (recall-goals True)
-      (invent-goal True)
-      (plan-goal True)
-      (repair-failure True)
-      (defer True)
-      (verify-frame-state True)
-      (ask-clarification True)
-      ($_ False))))
-
-;; A proposal may ask the scheduler to consider a frame/mode transition. The
-;; target is deliberately data-shaped and is never passed to a ContextFrames
-;; mutation function by MetaMo.
-;; Example: (reasonerProposalTargetValid propose-candidate (quote (FrameTarget Frame-A))) -> True.
-(= (reasonerProposalTargetValid $kind $target)
-    (if (is-ground ($kind $target))
-        (case ($kind $target)
-            (
-                ((propose-candidate current-frame) True)
-                ((request-attention current-frame) True)
-                ((propose-candidate (FrameTarget $frame)) (reasonerProposalIdValid $frame))
-                ((request-attention (FrameTarget $frame)) (reasonerProposalIdValid $frame))
-                ((request-frame-switch (FrameTarget $frame)) (reasonerProposalIdValid $frame))
-                ((request-mode-change (ModeTarget Fast)) True)
-                ((request-mode-change (ModeTarget Slow)) True)
-                ($_ False)
-            )
-        )
-        False
-    )
-)
 
 ;; ---------------------------------------------------------------------------
 ;; Inference adapters
@@ -195,29 +122,6 @@
       $id pln request-mode-change (ModeTarget Slow) defer
       request-slow-mode (ModeChangeSupport Slow)
       $confidence (reasonerProposalEvidenceRecord $evidence) $prediction))
-
-;; Validate representation only. References need separate trusted host resolution.
-;; Example: an unknown but well-formed evidence stamp can pass this pure check.
-(= (reasonerProposalValid $proposal)
-    (if (reasonerProposalShapeValid $proposal)
-        (let (ReasonerMotivationalProposal $id $source $kind $target $candidate
-                $claim $support $confidence $evidence $prediction) $proposal
-            (tpAllTrue (
-                (reasonerProposalIdValid $id)
-                (reasonerProposalSourceValid $source)
-                (reasonerProposalKindValid $kind)
-                (reasonerProposalTargetValid $kind $target)
-                (reasonerProposalCandidateValid $candidate)
-                (reasonerProposalConfidenceValid $confidence)
-                (reasonerProposalPayloadValid $claim)
-                (reasonerProposalPayloadValid $support)
-                (reasonerProposalEvidenceValid $source $evidence)
-                (reasonerProposalPayloadValid $prediction)
-            ))
-        )
-        False
-    )
-)
 
 (= (legacyReasonerProposalGate $bundle $proposal)
    ;; Legacy inference smoke tests can appraise current-frame suggestions only.

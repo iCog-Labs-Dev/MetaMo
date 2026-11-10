@@ -24,6 +24,10 @@
 (: ReasonerProviderCostLimit
     (-> Expression Expression ReasonerProviderCostLimitType))
 
+(: ReasonerInvokedProposalType Type)
+(: ReasonerInvokedProposal
+    (-> Expression Expression Expression Expression ReasonerInvokedProposalType))
+
 (: ReasonerInvocationType Type)
 (: ReasonerInvocation
     (-> Expression Expression Expression Expression Expression Expression
@@ -61,6 +65,10 @@
 ;; Example: (mrcFields ReasonerProviderCostLimit) -> ((unit text) (amount amount)).
 (= (mrcFields $tag)
     (case $tag (
+        (ReasonerInvokedProposal (quote (
+            (registration (ReasonerRecordDomain ReasonerAdapterRegistration))
+            (invocation (ReasonerRecordDomain ReasonerInvocation))
+            (engine-version text) (proposal proposal))))
         (ReasonerAdapterRegistration (quote (
             (adapter text) (contract-version version) (configuration-version text)
             (source source) (capabilities (ReasonerRecordDomain ReasonerCapabilities))
@@ -216,10 +224,10 @@
     ))
 )
 
-;; Inspect transport shape/bounds only; existing proposal admission checks values.
+;; Reuse the full proposal value contract before accepting transport contents.
 ;; Example: (mrcProposal (quote (ReasonerMotivationalProposal broken))) -> False.
 (= (mrcProposal $value)
-    (if (reasonerProposalShapeValid $value)
+    (if (reasonerProposalValid $value)
         (>= (reasonerProposalDataRemaining (quote $value) 16 1024) 0)
         False
     )
@@ -264,10 +272,13 @@
 )
 
 ;; Only after exact shape validation, inspect invocation/result consistency.
-;; Example: (mrcInvariants ReasonerAdapterRegistration ()) -> True.
+;; Example: a reserved LLM adapter identity requires source llm.
 (= (mrcInvariants $tag $value)
     (case $tag (
-        (ReasonerAdapterRegistration True)
+        (ReasonerInvokedProposal (mrcInvokedProposalConsistent $value))
+        (ReasonerAdapterRegistration
+            (if (== (mrcValue $value 1) "llm-motivational-proposal")
+                (== (mrcValue $value 4) llm) True))
         (ReasonerInvocation
             (mrcEvidenceSession (index-atom (index-atom $value 5) 1)
                 (index-atom (index-atom $value 13) 1)))
@@ -313,4 +324,52 @@
 ;; Example: (validateReasonerIntakeResult ()) -> (ReasonerContractRejected InvalidIntakeResult).
 (= (validateReasonerIntakeResult $value)
     (mrcValidate ReasonerIntakeResult InvalidIntakeResult $value)
+)
+
+;; Read a field only after its enclosing ordered record has been validated.
+;; Example: (mrcValue (quote (Record (id "a"))) 1) -> "a".
+(= (mrcValue $record $index)
+    (index-atom (index-atom $record $index) 1)
+)
+
+;; Keep source/configuration and correlation metadata outside the original proposal.
+;; This checks consistency, not host ownership, freshness or evidence authority.
+;; Example: a wrapper with a different adapter in its invocation is rejected.
+(= (mrcInvokedProposalConsistent $value)
+    (let*
+        (
+            ($registration (mrcValue $value 1))
+            ($invocation (mrcValue $value 2))
+            ($proposal (mrcValue $value 4))
+        )
+        (tpAllTrue (
+            (mrcInvariants ReasonerAdapterRegistration $registration)
+            (mrcInvariants ReasonerInvocation $invocation)
+            (== (mrcValue $registration 1) (mrcValue $invocation 2))
+            (== (mrcValue $registration 2) (mrcValue $invocation 3))
+            (== (mrcValue $registration 3) (mrcValue $invocation 4))
+            (== (mrcValue $registration 4) (getProposalSource $proposal))
+            (== (mrcValue $registration 5) (mrcValue $invocation 11))
+            (== (mrcValue $registration 6) (mrcValue $invocation 12))
+        ))
+    )
+)
+
+;; Validate an inert proposal and its adjacent invocation provenance without audit writes.
+;; Example: (validateReasonerInvokedProposal ()) -> InvalidInvokedProposal rejection.
+(= (validateReasonerInvokedProposal $value)
+    (mrcValidate ReasonerInvokedProposal InvalidInvokedProposal $value)
+)
+
+;; Build only validated envelopes, preserving the proposal and invocation exactly.
+;; Example: invalid proposal data returns a typed rejection rather than an envelope.
+(= (bindReasonerProposalInvocation $registration $invocation $engineVersion $proposal)
+    (let $record (quote (ReasonerInvokedProposal
+        (registration $registration) (invocation $invocation)
+        (engine-version $engineVersion) (proposal $proposal)))
+        (case (validateReasonerInvokedProposal $record) (
+            ((ReasonerContractValid ReasonerInvokedProposal 1) (quote $record))
+            ($rejection $rejection)
+        ))
+    )
 )

@@ -282,7 +282,7 @@
 !(test (mrcProposal
     (quote (ReasonerMotivationalProposal p nars propose-candidate current-frame respond
         claim support (change-state! &contract-test-sentinel changed)
-        (EvidenceReferences (e1)) prediction))) True)
+        (EvidenceReferences (e1)) prediction))) False)
 
 !(test (get-state &contract-test-sentinel) preserved)
 
@@ -408,3 +408,144 @@
     (quote contractLoadAdapter)) True)
 
 !(test (get-state &contract-loader-calls) 1)
+
+;; The envelope retains the original data and the full invocation correlation.
+;; Example: (contractInvokedProposal) -> a validated NARS envelope.
+(= (contractInvokedProposal)
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-build-1" (reasonerContractFixture proposal))
+)
+
+!(test (validateReasonerInvokedProposal (contractInvokedProposal))
+    (ReasonerContractValid ReasonerInvokedProposal 1))
+
+!(test (mrcValue (contractInvokedProposal) 4) (reasonerContractFixture proposal))
+
+!(test (mrcValue (contractInvokedProposal) 2) (reasonerContractFixture invocation))
+
+!(test (validateReasonerInvokedProposal (quote (ReasonerInvokedProposal broken)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal (quote $unbound))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (engine-version)) (quote "") (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (invocation adapter)) (quote "other") (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (invocation configuration-version)) (quote "config-2") (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (invocation evidence)) (quote ((SessionObservationRef "other" 0))) (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (invocation limits max-facts)) (quote 1) (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (invocation capabilities feedback)) (quote ()) (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (validateReasonerInvokedProposal
+    (reasonerContractSet (quote (registration source)) (quote pln) (contractInvokedProposal)))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 4) (quote (ModeTarget Fast)) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 5) (quote unknown) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 6) (quote ()) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 7) (quote ()) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 8) (quote "0.9") (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 9) (quote (EvidenceReferences ())) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 10) (quote ()) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+!(test (let $proposal (map-atom (quote (0 1 2 3 4 5 6 7 8 9 10)) $index
+        (if (== $index 2) (quote llm-motivational-proposal) (index-atom (reasonerContractFixture proposal) $index)))
+    (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal))
+    (ReasonerContractRejected InvalidInvokedProposal))
+
+;; LLM is the source; its adapter identity is distinct and never extends the source enum.
+!(test (let* (
+    ($registration (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "llm-motivational-proposal"
+            (reasonerContractFixture registration))))
+    ($invocation (reasonerContractSet (quote (adapter)) "llm-motivational-proposal"
+        (reasonerContractFixture invocation)))
+    ($proposal (quote (ReasonerMotivationalProposal llm-1 llm propose-candidate
+        current-frame respond claim support 0.8 (EvidenceReferences ()) prediction)))
+    )
+    (validateReasonerInvokedProposal
+        (bindReasonerProposalInvocation $registration $invocation "model-1" $proposal)))
+    (ReasonerContractValid ReasonerInvokedProposal 1))
+
+!(test (validateReasonerAdapterRegistration
+    (reasonerContractSet (quote (adapter)) "llm-motivational-proposal"
+        (reasonerContractFixture registration)))
+    (ReasonerContractRejected InvalidRegistration))
+
+!(test (get-state &contract-test-sentinel) preserved)
+
+;; Valid executable-looking payloads stay inert through binding and validation.
+!(test (let $proposal
+    (contractProposalClaim (quote (change-state! &contract-test-sentinel changed)))
+    (mrcValue (bindReasonerProposalInvocation (reasonerContractFixture registration)
+        (reasonerContractFixture invocation) "engine-1" $proposal) 4))
+    (contractProposalClaim (quote (change-state! &contract-test-sentinel changed))))
+
+!(test (get-state &contract-test-sentinel) preserved)
+
+;; Exact envelope order/arity is required, including no duplicate metadata fields.
+!(test (let* (
+    (($tag $fields) (decons-atom (contractInvokedProposal)))
+    (($first $tail) (decons-atom $fields))
+    (($second $rest) (decons-atom $tail))
+    ($badRecords (
+        (cons-atom WrongTag $fields)
+        (cons-atom $tag $tail)
+        (cons-atom $tag (cons-atom $first $fields))
+        (cons-atom $tag (cons-atom $second (cons-atom $first $rest)))))
+    )
+    (== (filter-atom $badRecords $record
+        (!= (validateReasonerInvokedProposal $record)
+            (ReasonerContractRejected InvalidInvokedProposal))) ())) True)
