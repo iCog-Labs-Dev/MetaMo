@@ -3,7 +3,7 @@
 ;; Example: retainReasonerProposalSelection runs before the selected command;
 ;; observeReasonerProposalExecution captures its actual Core result afterward.
 !(import_prolog_functions_from_file
-    (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence.pl)
+    (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_host_evidence.pl)
     (retainReasonerProposalSelection observeReasonerProposalExecution
         validateReasonerExecutionEvidence resolveReasonerOutcomeIdentity
         readReasonerPredictionObservation))

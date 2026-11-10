@@ -503,9 +503,9 @@
 !(test (py-call (host_config_fixture.cleanup)) 1)
 
 ;; Optional proposal attribution uses real host selection, Core tickets and reads.
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_host_evidence))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_proposals))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_host_evidence))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
 !(commitmentFixtureReset)
 !(initContextFrame)
 !(initOmegaClawMotivation)

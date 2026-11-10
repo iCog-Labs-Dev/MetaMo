@@ -1,5 +1,5 @@
 ;; Optional trusted registration and startup selection; not model skills.
-!(import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner_contracts))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_contracts))
 !(bind! &host-reasoner-registration (new-state ()))
 
 ;; Retain the validated registration, including its configuration version.
@@ -113,7 +113,7 @@
 ;; Example: (loadHostReasonerInference) -> True after local engines load.
 (= (loadHostReasonerInference)
     (progn
-        (import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
+        (import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_integration))
         True
     )
 )

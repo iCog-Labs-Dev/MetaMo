@@ -63,7 +63,7 @@ producers still load after the context accessors they use. Focused module import
 must preserve this dependency order; moving the context facade ahead of modes while moving the complete signal
 module would compile policy dependencies as unresolved data.
 
-Reasoner integration is deferred. `reasoner_integration.metta` is an opt-in
+Reasoner integration is deferred. `reasoners/reasoner_integration.metta` is an opt-in
 extension loaded after composition; it owns `reasoner_proposals` and engine
 loading. Tests needing proposal admission without inference import only
 `reasoner_proposals` after composition. The dependency points from the optional

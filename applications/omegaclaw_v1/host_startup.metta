@@ -27,7 +27,7 @@
       ((disabled) True)
       (($adapter)
          (progn
-            (import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner))
+            (import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))
             (eval (startHostReasoner $adapter))))
       ($_ (ReasonerStartupRejected InvalidSelection))
    ))

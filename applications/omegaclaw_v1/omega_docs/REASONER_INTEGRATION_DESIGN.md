@@ -19,11 +19,11 @@ The following are implemented and should be reused:
 | Existing module | Responsibility to retain |
 | --- | --- |
 | `composition.metta` | Native application composition, independent of optional reasoners. |
-| `reasoner_proposals.metta` and `reasoner_proposal_helpers.metta` | Proposal representation checks, admission/conversion, audit, read-only reliability influence and ungraded execution receipts. |
-| `reasoner_integration.metta` | Bounded NARS/PLN queries and conversion of supported conclusions into proposals. |
-| `reasoner_engines.pl` | Loading the original PeTTa libraries with separate function namespaces. |
-| `reasoner_host_evidence.metta` and `.pl` | Trusted attribution of a retained proposal to an actual selection, dispatch ticket and observation. |
-| `reasoner_outcome_assessment.metta` | External prediction comparison, grade validation, assessment audit and application-level source weighting. |
+| `reasoners/reasoner_proposals.metta` and `reasoners/reasoner_proposal_helpers.metta` | Proposal representation checks, admission/conversion, audit, read-only reliability influence and ungraded execution receipts. |
+| `reasoners/reasoner_integration.metta` | Bounded NARS/PLN queries and conversion of supported conclusions into proposals. |
+| `reasoners/reasoner_engines.pl` | Loading the original PeTTa libraries with separate function namespaces. |
+| `reasoners/reasoner_host_evidence.metta` and `.pl` | Trusted attribution of a retained proposal to an actual selection, dispatch ticket and observation. |
+| `reasoners/reasoner_outcome_assessment.metta` | External prediction comparison, grade validation, assessment audit and application-level source weighting. |
 | `bridge.metta` and `operation_selection.metta` | Published cycle snapshot, candidate admission, selection and retention of the exact host operation. |
 
 The normal runtime does not yet collect proposals or connect these evidence and
@@ -37,7 +37,7 @@ described in [README.md](README.md#nars--pln-proposal-integration).
 
 ## Implemented local adapter records
 
-`host_reasoner_contracts.metta` now defines pure MeTTa, opt-in representation
+`reasoners/host_reasoner_contracts.metta` now defines pure MeTTa, opt-in representation
 contracts using the existing factual, typed-policy and proposal-data helpers. They allocate no state, load no engine, register
 no adapter and install no runtime hook. The coordinator and automatic runtime
 sequence below remain proposed. Import `lib_import` before the contract module
@@ -157,7 +157,7 @@ a string of at most 1200 characters, and one of `NoSupportedConclusion`,
 Intake results now reuse `reasonerProposalValid` for the original ten-field
 `ReasonerMotivationalProposal`, including target, candidate, claim, support,
 confidence, evidence and prediction. The pure validators live in
-`reasoner_proposal_helpers.metta`; importing contracts still allocates no audit
+`reasoners/reasoner_proposal_helpers.metta`; importing contracts still allocates no audit
 state and loads no engines.
 
 Trusted callers can use
@@ -207,7 +207,7 @@ python3 MetaMo/scripts/run-omegaclaw.py MetaMo/applications/omegaclaw_v1/tests/h
 python3 MetaMo/applications/omegaclaw_v1/tests/reasoner_boundary_test.py
 ```
 
-`host_reasoner.metta` provides the optional trusted `prepareHostReasoner` entry
+`reasoners/host_reasoner.metta` provides the optional trusted `prepareHostReasoner` entry
 point. It validates and retains a registration, including its configuration
 version, and leaves the previous value unchanged on rejection.
 `hostReasonerRegistration` reads that value, initially `()`.
@@ -311,6 +311,57 @@ engine. Preserve NARS truth components and evidence stamps, PLN truth values,
 negative evidence, and the distinction between missing and false observations.
 The coordinator must not reinterpret confidence as proof or assert a queried
 recommendation as a premise.
+
+The optional pure `reasoners/reasoner_fact_translation.metta` module implements
+`translateReasonerAdmittedView ENGINE VIEW OBSERVATION-CONFIDENCE` for `nars`
+and `pln`. The inference extension imports it; default composition does not.
+Standalone callers load `lib_import`, `host_reasoner_contracts`, the factual
+signal registry declarations they need, then `reasoner_fact_translation` once.
+The public contract facade retains its existing API and dependency imports;
+`reasoners/host_reasoner_contract_data.metta` holds the definitions for consumers whose
+prerequisites are already loaded. This avoids duplicate compilation of shared
+helpers under native PeTTa.
+The caller supplies the exact admitted invocation and data:
+
+```text
+(ReasonerAdmittedView
+  (invocation INVOCATION)
+  (signals (FACTUAL-SIGNAL ...))
+  (native-facts ((ReasonerNativeFact nars SENTENCE) ...)))
+```
+
+Success returns `(ReasonerTranslatedFacts (invocation INVOCATION)
+(engine ENGINE) (facts SENTENCES))`; failure returns
+`(ReasonerTranslationRejected REASON)` without partial facts. The invocation is
+preserved exactly. Pass the returned sentence list to the existing reasoner
+query/proposal APIs. This function does not invoke an engine or collect proposals.
+
+Boolean observations become `(SignalHolds FRAME KIND)` with truth frequency 1
+for explicit True and 0 for explicit False. Missing observations produce no
+premise; callers omit them rather than supplying `NoObservation` as a fact.
+Ratio and quantity observations become `(SignalValue FRAME KIND TYPED-VALUE)`
+with frequency 1, preserving the value and unit. A classifier score is never
+converted into truth strength. Observation confidence is an explicit finite
+adapter encoding parameter in `[0,1]`, supplied by trusted adapter configuration;
+it expresses support assigned to the observation encoding, not outcome
+probability. No default or calibrated certainty is invented.
+
+Native sentences preserve engine-specific terms, both `stv` components, negative
+support and the original evidence list unchanged. NARS implication remains `==>`;
+PLN implication remains `Implication`. Mixed-engine native records reject.
+Typed signal validation reuses the existing registry. Duplicate signal kinds,
+malformed facts and missing/duplicate/undeclared evidence references reject the
+whole view. References must be included in the invocation's admitted evidence
+set. Fact count and payload node limits come from that invocation, with depth
+and scalar bounds enforced by the existing data walker.
+
+Translation never reads raw host/frame state, the observation store, current
+signal spaces or provider output. The caller remains responsible for admitting
+and authenticating the view, including the engine rules it contains; reference
+membership alone is not evidence authority. Deadlines, current ownership,
+automatic cycle intake, proposal selection and feedback remain coordinator work.
+Offline integration tests exercise both real engines on these translated facts,
+including negative evidence and missing premises.
 
 Retain the existing separate NARS/PLN namespaces and query budgets. Their shared
 proposal boundary does not imply shared implication syntax or truth revision.

@@ -3,8 +3,8 @@
 !(import! &self "../../../../repos/OmegaClaw-Core/src/helper.py")
 !(import! &self ../../../../repos/OmegaClaw-Core/src/context)
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/minimal_loop))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_integration))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
 !(initMinimalLoopFixture)
 
 (= (narsRepairFacts)
@@ -671,3 +671,194 @@
 !(test (reasonerProposalOutcomes) (get-state &reasoner-validation-outcomes))
 !(test (reasonerProposalAssessments) ())
 !(test (reasonerSourceReliability nars) (get-state &reasoner-validation-reliability))
+
+;; Translation fixtures supply an admitted publication explicitly; no host getters.
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_contracts))
+
+;; Stable references cover both observation and engine rule evidence.
+;; Example: (translationInvocation) -> the unchanged fixture invocation with two refs.
+(= (translationInvocation)
+    (reasonerContractSet (quote (evidence))
+        (quote ((SessionObservationRef "session-1" 0) (SessionObservationRef "session-1" 1)))
+        (reasonerContractFixture invocation))
+)
+
+;; Assemble a supplied view without consulting global signal or frame state.
+;; Example: (translationView () ()) represents no supplied observations or rules.
+(= (translationView $signals $native)
+    (let $invocation (translationInvocation)
+        (quote (ReasonerAdmittedView (invocation $invocation) (signals $signals) (native-facts $native))))
+)
+
+;; Preserve explicit boolean polarity and its original observation reference.
+;; Example: (translationFailure False) supplies negative failure evidence.
+(= (translationFailure $value)
+    (quote (FactualSignal (kind failure) (value (BooleanFact $value))
+        (provenance ((SessionObservationRef "session-1" 0)))))
+)
+
+;; The engine owns implication syntax; translation preserves its truth and stamps.
+;; Example: (translationRule nars) uses ==>; PLN uses Implication.
+(= (translationRule $engine)
+    (let $implication (if (== $engine nars) ==> Implication)
+        (quote (ReasonerNativeFact $engine
+            (Sentence (($implication (SignalHolds Frame-A failure) (Recommend Frame-A repair-failure))
+                (stv 1.0 0.83)) ((SessionObservationRef "session-1" 1))))))
+)
+
+;; Extract successful translated facts only for the following offline engine probes.
+;; Example: (translationFacts nars False) retains a frequency-zero failure premise.
+(= (translationFacts $engine $value)
+    (let $result (translateReasonerAdmittedView $engine
+        (translationView ((translationFailure $value)) ((translationRule $engine))) 0.72)
+        (index-atom (index-atom $result 3) 1))
+)
+
+!(test (map-atom (nars pln) $engine
+    (translateReasonerAdmittedView $engine (translationView () ()) 0.72))
+    ((ReasonerTranslatedFacts (invocation (translationInvocation)) (engine nars) (facts ()))
+     (ReasonerTranslatedFacts (invocation (translationInvocation)) (engine pln) (facts ()))))
+
+!(test (car-atom (translationFacts nars False))
+    (quote (Sentence ((SignalHolds Frame-A failure) (stv 0 0.72))
+        ((SessionObservationRef "session-1" 0)))))
+
+!(test (car-atom (translationFacts pln True))
+    (quote (Sentence ((SignalHolds Frame-A failure) (stv 1 0.72))
+        ((SessionObservationRef "session-1" 0)))))
+
+!(test (map-atom (nars pln) $engine
+    (index-atom (translationFacts $engine True) 1))
+    ((index-atom (translationRule nars) 2) (index-atom (translationRule pln) 2)))
+
+;; Actual engines derive recommendations with evidence from the translated view.
+!(test (map-atom (nars pln) $engine
+    (getProposalEvidence (reasonerInferProposal $engine translated Frame-A
+        (translationFacts $engine True) repair-failure prediction (reasonerInferenceLimits))))
+    (quote ((EvidenceReferences ((SessionObservationRef "session-1" 0) (SessionObservationRef "session-1" 1)))
+            (EvidenceReferences ((SessionObservationRef "session-1" 0) (SessionObservationRef "session-1" 1))))))
+
+;; Negative evidence remains visible in actual queries without becoming positive advice.
+!(test (map-atom (nars pln) $engine
+    (reasonerQuery $engine (translationFacts $engine False)
+        (SignalHolds Frame-A failure) (reasonerInferenceLimits)))
+    (quote (((stv 0 0.72) ((SessionObservationRef "session-1" 0)))
+            ((stv 0 0.72) ((SessionObservationRef "session-1" 0))))))
+
+!(test (map-atom (nars pln) $engine
+    (reasonerInferProposal $engine negative-translated Frame-A
+        (translationFacts $engine False) repair-failure prediction (reasonerInferenceLimits))) (() ()))
+
+!(test (map-atom (nars pln) $engine
+    (reasonerInferProposal $engine absent-translated Frame-A
+        ((index-atom (translationRule $engine) 2)) repair-failure prediction (reasonerInferenceLimits))) (() ()))
+
+;; Native truth values and negative evidence are retained exactly, including both components.
+!(test (map-atom (nars pln) $engine
+    (let $native (quote (ReasonerNativeFact $engine
+        (Sentence (negative-claim (stv 0.12 0.67)) ((SessionObservationRef "session-1" 1)))))
+        (let $result (translateReasonerAdmittedView $engine (translationView () ($native)) 0.72)
+            (index-atom (index-atom $result 3) 1))))
+    (quote (((Sentence (negative-claim (stv 0.12 0.67)) ((SessionObservationRef "session-1" 1))))
+            ((Sentence (negative-claim (stv 0.12 0.67)) ((SessionObservationRef "session-1" 1)))))))
+
+;; A classifier score is a reported value, not the probability that its proposition holds.
+!(test (let $result (translateReasonerAdmittedView nars
+    (translationView (quote ((FactualSignal (kind danger) (value (RatioFact 0.23 classifier-score))
+        (provenance ((SessionObservationRef "session-1" 0)))))) ()) 0.72)
+    (index-atom (index-atom $result 3) 1))
+    (quote ((Sentence ((SignalValue Frame-A danger (RatioFact 0.23 classifier-score)) (stv 1 0.72))
+        ((SessionObservationRef "session-1" 0))))))
+
+!(test (let $result (translateReasonerAdmittedView pln
+    (translationView (quote ((FactualSignal (kind failure-streak) (value (QuantityFact 2 count))
+        (provenance ((SessionObservationRef "session-1" 0)))))) ()) 0.72)
+    (index-atom (index-atom $result 3) 1))
+    (quote ((Sentence ((SignalValue Frame-A failure-streak (QuantityFact 2 count)) (stv 1 0.72))
+        ((SessionObservationRef "session-1" 0))))))
+
+!(test (translateReasonerAdmittedView llm (translationView () ()) 0.72)
+    (ReasonerTranslationRejected InvalidAdapter))
+
+!(test (translateReasonerAdmittedView nars (translationView () ()) "0.72")
+    (ReasonerTranslationRejected InvalidAdapter))
+
+!(test (translateReasonerAdmittedView nars (quote $unbound) 0.72)
+    (ReasonerTranslationRejected InvalidView))
+
+!(test (translateReasonerAdmittedView nars
+    (quote (ReasonerAdmittedView (invocation ()) (signals ()) (native-facts ()))) 0.72)
+    (ReasonerTranslationRejected InvalidInvocation))
+
+!(test (translateReasonerAdmittedView nars
+    (quote (ReasonerAdmittedView (invocation ()) (signals ()) (native-facts ()) (extra value))) 0.72)
+    (ReasonerTranslationRejected InvalidView))
+
+!(test (translateReasonerAdmittedView nars
+    (translationView ((translationFailure True) (translationFailure False)) ()) 0.72)
+    (ReasonerTranslationRejected DuplicateSignalKind))
+
+!(test (translateReasonerAdmittedView nars
+    (translationView (quote (NoObservation)) ()) 0.72)
+    (ReasonerTranslationRejected InvalidFact))
+
+!(test (translateReasonerAdmittedView nars
+    (translationView (quote ((FactualSignal (kind failure) (value (BooleanFact False))
+        (provenance ((SessionObservationRef "session-1" 99)))))) ()) 0.72)
+    (ReasonerTranslationRejected InvalidFact))
+
+!(test (translateReasonerAdmittedView nars
+    (translationView () ((translationRule pln))) 0.72)
+    (ReasonerTranslationRejected InvalidFact))
+
+;; Bad native structures, truth values and evidence reject the entire view atomically.
+!(test (map-atom (quote (
+    (ReasonerNativeFact nars (Sentence (claim (stv 0.2 "0.9")) ((SessionObservationRef "session-1" 1))))
+    (ReasonerNativeFact nars (Sentence (claim (stv 1.1 0.9)) ((SessionObservationRef "session-1" 1))))
+    (ReasonerNativeFact nars (Sentence (claim (stv 1 0.9)) ()))
+    (ReasonerNativeFact nars (Sentence (claim (stv 1 0.9)) ((SessionObservationRef "other" 1))))
+    (ReasonerNativeFact nars (Sentence (claim (stv 1 0.9)) ((SessionObservationRef "session-1" 1) (SessionObservationRef "session-1" 1))))
+    (ReasonerNativeFact nars (Sentence (claim (stv 1 0.9)) ((SessionObservationRef "session-1" 1))) extra)
+    )) $native
+    (translateReasonerAdmittedView nars (translationView ((translationFailure True)) ($native)) 0.72))
+    ((ReasonerTranslationRejected InvalidFact) (ReasonerTranslationRejected InvalidFact)
+     (ReasonerTranslationRejected InvalidFact) (ReasonerTranslationRejected InvalidFact)
+     (ReasonerTranslationRejected InvalidFact) (ReasonerTranslationRejected InvalidFact)))
+
+;; Actual invocation ceilings apply before any engine is called.
+!(test (translateReasonerAdmittedView nars
+    (reasonerContractSet (quote (invocation limits max-facts)) 1
+        (translationView ((translationFailure True)) ((translationRule nars)))) 0.72)
+    (ReasonerTranslationRejected PayloadLimit))
+
+!(test (translateReasonerAdmittedView nars
+    (reasonerContractSet (quote (invocation limits max-payload-nodes)) 1
+        (translationView ((translationFailure True)) ())) 0.72)
+    (ReasonerTranslationRejected PayloadLimit))
+
+!(test (translateReasonerAdmittedView nars (translationView malformed ()) 0.72)
+    (ReasonerTranslationRejected PayloadLimit))
+
+;; Snapshot translation is unchanged when mutable host/signal state changes afterwards.
+!(bind! &translation-retained-view (new-state
+    (translationView ((translationFailure False)) ((translationRule nars)))))
+!(bind! &translation-retained-result (new-state
+    (translateReasonerAdmittedView nars (get-state &translation-retained-view) 0.72)))
+!(bind! &translation-original-bundle (new-state (activeFrameBundle)))
+!(setActiveFrameBundle (quote (not-the-published-view)))
+!(clearSignals)
+!(test (translateReasonerAdmittedView nars (get-state &translation-retained-view) 0.72)
+    (get-state &translation-retained-result))
+!(setActiveFrameBundle (get-state &translation-original-bundle))
+
+;; Even executable-looking native terms are inert while translating.
+!(bind! &translation-sentinel (new-state preserved))
+!(test (let $native (quote (ReasonerNativeFact nars
+    (Sentence ((change-state! &translation-sentinel changed) (stv 0.2 0.6))
+        ((SessionObservationRef "session-1" 1)))))
+    (let $result (translateReasonerAdmittedView nars (translationView () ($native)) 0.72)
+        (index-atom (index-atom $result 3) 1)))
+    (quote ((Sentence ((change-state! &translation-sentinel changed) (stv 0.2 0.6))
+        ((SessionObservationRef "session-1" 1))))))
+
+!(test (get-state &translation-sentinel) preserved)

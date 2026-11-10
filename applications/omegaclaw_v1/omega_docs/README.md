@@ -6,6 +6,9 @@ that state, regulates its operating posture, filters candidates, and recommends
 what deserves attention. The host checks the actual command again before it runs.
 
 This folder explains how that connection works and how to run and test it.
+Reasoner adapters, contracts, translation, evidence and assessment modules live
+in `../reasoners/`. Their tests remain in `../tests/` and shared fixtures in
+`../tests/fixtures/`.
 Source paths are relative to `MetaMo/applications/omegaclaw_v1` unless a guide
 says otherwise.
 
@@ -138,22 +141,22 @@ does not yet collect proposals or deliver feedback automatically.
 The proposed runtime architecture, adapter contracts and staged rollout are in
 [REASONER_INTEGRATION_DESIGN.md](REASONER_INTEGRATION_DESIGN.md).
 
-`reasoner_integration.metta` loads PeTTa's local `lib_nars` and `lib_pln`
-through `reasoner_engines.pl`. The loader prefixes all library-defined function
+`reasoners/reasoner_integration.metta` loads PeTTa's local `lib_nars` and `lib_pln`
+through `reasoners/reasoner_engines.pl`. The loader prefixes all library-defined function
 names because PeTTa compiles functions globally even across imported spaces.
 It uses the local PeTTa parser/compiler and rejects runnable library forms.
 The original libraries are not modified or copied. These are distinct from
 OmegaClaw-Core's `lib_nal` and `lib_pln` rule libraries.
 
 For offline extension development, load the application composition once, then
-its inference extension. `reasoner_integration.metta` owns the proposal adapter
+its inference extension. `reasoners/reasoner_integration.metta` owns the proposal adapter
 and engine imports. Do not import `reasoner_proposals` separately when loading
 that extension under native PeTTa. If the host has already
 loaded the composition, add only the second import:
 
 ```metta
 !(import! &self (library MetaMo applications/omegaclaw_v1/composition))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_integration))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_integration))
 ```
 
 The caller supplies bounded `Sentence` facts and stable evidence stamps from an
@@ -229,7 +232,7 @@ trusted host adapter. Without one it returns
 `(ReasonerOutcomeRejected MissingHostEvidence)` and changes neither outcomes nor
 source reliability. Status labels or arbitrary evidence text cannot create a grade.
 
-The optional `reasoner_host_evidence.metta` adapter uses Core's existing ticket
+The optional `reasoners/reasoner_host_evidence.metta` adapter uses Core's existing ticket
 and immutable result ledger. Load it once after composition, proposal support,
 and Core/v1 dispatch. It does not load inference engines or start a service.
 
@@ -274,14 +277,14 @@ separate assessment exists. It never calls a comparator or a learner.
 
 ### External prediction assessment
 
-Load `reasoner_outcome_assessment.metta` once after proposal support. The host
+Load `reasoners/reasoner_outcome_assessment.metta` once after proposal support. The host
 evidence adapter installs the trusted observation reader; neither module starts
 inference engines, providers, channels or execution. Default composition and
 the optional inference extension do not load assessment or learning implicitly.
 
 ```metta
 ;; After composition, proposal support, Core/v1 dispatch, and host evidence:
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_outcome_assessment))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
 ;; Host calls this only after its existing selection and observation capture:
 ;; (assessReasonerProposalOutcome EVENT (ReasonerExecutionEvidence TICKET))
 ```

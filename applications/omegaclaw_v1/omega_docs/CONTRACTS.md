@@ -762,7 +762,7 @@ Current producers/consumers that must migrate together:
 | Bundle | `contexts/context_projection.metta`, accessors/slices | Envelope, root/current revisions, explicit absent current frame, typed index/relations and policy references |
 | Policy | `contexts/context_directives.metta`, `task_lifecycle.metta`, `bridge.metta` | Envelope, reason, proposal reference; identical startup/runtime shape |
 | Attention | `contexts/context_directives.metta`, proposal conversion | Envelope, decision reference; startup currently lacks `reason` |
-| Proposal | `reasoner_proposals.metta`, helpers, inference adapter | Named fields, ID in envelope, explicit targets and evidence references |
+| Proposal | `reasoners/reasoner_proposals.metta`, helpers, inference adapter | Named fields, ID in envelope, explicit targets and evidence references |
 | Outcome | `recordReasonerProposalOutcome` arguments | Host-qualified dispatch/execution references and validated causal chain before deriving a grade |
 | Verification | `contexts/context_relations.metta` | Relation identity/revision, observation references, timestamp, optional execution identity |
 

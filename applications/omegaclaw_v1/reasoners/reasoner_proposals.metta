@@ -15,7 +15,7 @@
 ;; other fields are explanatory/provenance data or scheduler intents; they
 ;; never become commands inside MetaMo.
 
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposal_helpers))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_proposal_helpers))
 
 ;; Eight tagged fields: outcome-id, proposal-event, execution-status,
 ;; execution-evidence, frame-evidence-status, frame-state-evidence, outcome, grade.

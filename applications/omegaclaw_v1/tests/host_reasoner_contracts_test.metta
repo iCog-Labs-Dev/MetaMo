@@ -1,6 +1,6 @@
 ;; Standalone contract import must not require composition, engines or services.
 !(import! &self (library lib_import))
-!(import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner_contracts))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_contracts))
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_contracts))
 
 !(test (validateReasonerAdapterRegistration (reasonerContractFixture registration))
@@ -311,7 +311,7 @@
 !(test (mrcProposal (contractProposalClaim (contractRepeat 256 (quote (a b c d))))) False)
 
 ;; Startup retains valid configuration and preserves it after invalid input.
-!(import! &self (library MetaMo applications/omegaclaw_v1/host_reasoner))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))
 !(test (hostReasonerRegistration) ())
 
 !(test (prepareHostReasoner (reasonerContractFixture registration))

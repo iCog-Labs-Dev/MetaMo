@@ -1,9 +1,5 @@
-;; Pure, optional host adapter contracts. Importing this file starts no engine,
-;; allocates no state and installs no callbacks. Quote literal records as data.
-!(import! &self (library MetaMo applications/omegaclaw_v1/factual_signals))
-!(import! &self (library MetaMo applications/omegaclaw_v1/contexts/typed_policy))
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposal_helpers))
-
+;; Pure contract definitions. Load factual_signals, typed_policy and
+;; reasoner_proposal_helpers first; the public contract facade supplies them.
 ;; Exact ordered tagged fields are checked by the validators, not these broad
 ;; constructor signatures. Example records and bounds are in the reasoner guide.
 (: ReasonerAdapterRegistrationType Type)

@@ -5,10 +5,13 @@
 ;; This extension owns proposal adapter and engine loading. Core composition
 ;; never imports either. Native PeTTa callers must load this extension once and
 ;; must not separately reload reasoner_proposals (which owns mutable audit state).
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_proposals))
+;; Composition and proposal helpers already supply the contract prerequisites.
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_contract_data))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_fact_translation))
 
 !(import_prolog_functions_from_file
-   (library MetaMo applications/omegaclaw_v1/reasoner_engines.pl)
+   (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_engines.pl)
    (loadReasonerEngines))
 !(loadReasonerEngines)
 

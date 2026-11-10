@@ -2,7 +2,7 @@
 ;; These tests use real gates and the real numeric scorer, without services.
 !(import! &self (library MetaMo applications/omegaclaw_v1/composition))
 ;; This test explicitly exercises optional proposal admission; no inference.
-!(import! &self (library MetaMo applications/omegaclaw_v1/reasoner_proposals))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_proposals))
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/typed_policy))
 
 (= (monotonicBundle $status $mode $budget)
