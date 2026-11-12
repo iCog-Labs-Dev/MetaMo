@@ -1,5 +1,6 @@
 ;; Optional trusted registration and startup selection; not model skills.
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_contracts))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_coordinator))
 !(bind! &host-reasoner-registration (new-state ()))
 
 ;; Retain the validated registration, including its configuration version.
@@ -130,7 +131,7 @@
                     (candidates (respond retrieve-memory search-knowledge execute-skill learn
                         self-improve background-work recall-goals invent-goal plan-goal
                         repair-failure defer verify-frame-state ask-clarification))
-                    (prediction-schemas ("ExpectedOperationResult"))
+                    (prediction-schemas ("ExpectedOperationResult" "ExpectedCandidateOutcome"))
                     (feedback ()))))
             ($providerCost
                 (quote (ReasonerProviderCostLimit (unit "calls") (amount 0))))
@@ -161,7 +162,9 @@
 (= (startHostReasoner $name)
     (if (tpContains (nars pln) $name)
         (case (registerHostReasoner (builtinHostReasoner $name) (quote loadHostReasonerInference)) (
-            (True (selectHostReasoner (repr $name)))
+            (True (case (selectHostReasoner (repr $name)) (
+                (True (ensureBuiltinHostReasonerRuntime (repr $name)))
+                ($rejection $rejection))))
             ($rejection $rejection)
         ))
         (selectHostReasoner (repr $name))

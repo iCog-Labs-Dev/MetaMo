@@ -285,8 +285,10 @@
                  (if (== $decision $previousDecision)
                      (if (== $outcome (get-state &last-operation-outcome))
                          OutcomeDuplicate (OutcomeRejected ConflictingReplay))
-                     (progn (change-state! &last-operation-outcome $outcome) OutcomeAccepted)))
-                ($_ (progn (change-state! &last-operation-outcome $outcome) OutcomeAccepted))))))))
+                     (progn (change-state! &last-operation-outcome $outcome)
+                         (eval (optionalHostReasoner Observation (quote $outcome))) OutcomeAccepted)))
+                ($_ (progn (change-state! &last-operation-outcome $outcome)
+                         (eval (optionalHostReasoner Observation (quote $outcome))) OutcomeAccepted))))))))
 
 ;; Recovery is persistent host bookkeeping, distinct from one-shot feedback.
 ;; This bounded single-frame path resolves recovery on a validated success in

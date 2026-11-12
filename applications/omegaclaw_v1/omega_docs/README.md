@@ -130,16 +130,22 @@ fixed score; the real bundle feasibility gate is still exercised and asserted.
 
 ## NARS / PLN proposal integration
 
-Live proposal intake is not connected yet. The default `composition.metta` and
-`run.metta` do not import the MetaMo proposal adapter or inference extension.
-Native candidates, scoring, policy and dispatch operate independently. Startup
-can select a local adapter with `reasoner=nars` or `reasoner=pln` appended to the
-common launcher command; `reasoner=disabled` is the default and loads no engines
-or reasoner audit state. Selection loads the existing inference extension but
-does not yet collect proposals or deliver feedback automatically.
+Reasoners are explicitly optional. `reasoner=disabled` is the default: no reasoner
+modules, audit state or callbacks are loaded. Startup with `reasoner=nars` or
+`reasoner=pln` enables bounded shadow collection during the normal cycle.
+The coordinator supplies the published factual signals and stable references,
+collects validated proposals, retains the native decision, and routes observed
+outcomes to adapters that declare the corresponding feedback capabilities.
+Native selection, policy, tickets and dispatch remain unchanged. No grading or
+learning is enabled by collection.
 
-The proposed runtime architecture, adapter contracts and staged rollout are in
-[REASONER_INTEGRATION_DESIGN.md](REASONER_INTEGRATION_DESIGN.md).
+Built-ins preserve engine truth values and evidence; they declare no native
+feedback support. Without explicitly configured native rules, an inference
+request may return `NoConclusion`. The coordinator never invents a recommendation
+or asserts a queried conclusion. Trusted hosts can configure another adapter's
+collection and notification callbacks through the existing registry.
+See [runtime coordinator](REASONER_INTEGRATION_DESIGN.md#connected-shadow-coordinator)
+for the interface, limits and current scope.
 
 `reasoners/reasoner_integration.metta` loads PeTTa's local `lib_nars` and `lib_pln`
 through `reasoners/reasoner_engines.pl`. The loader prefixes all library-defined function
@@ -180,8 +186,9 @@ seed rule. `reasonerInferDirective` additionally takes a frame bundle and MetaMo
 state and calls the existing validation, feasibility, scoring, and audit path.
 It returns an advisory scheduler directive; it does not execute anything.
 
-Automatic frame-to-fact extraction, proposal collection in the live bridge,
-and scheduler outcome callbacks remain deferred host integration work. Shared
+Enabled runtime collection and capability-based notifications are connected in
+shadow mode. Proposal influence, causal selection attribution, assessment and
+learning remain separate integration work. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 
 Legacy proposal accessors require a ground `ReasonerMotivationalProposal` with

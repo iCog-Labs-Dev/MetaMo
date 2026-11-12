@@ -88,9 +88,121 @@ class ReasonerBoundaryTests(unittest.TestCase):
             "(translateReasonerAdmittedView nars "
             "(quote (ReasonerAdmittedView (invocation $invocation) (signals ()) (native-facts ()))) 0.9)) "
             "(ReasonerTranslatedFacts (invocation (reasonerContractFixture invocation)) (engine nars) (facts ())))\n"
+            "!(test (case (catch (get-state &host-reasoner-cycles)) (((Error $_ $_) True) ($_ False))) True)\n"
             "!(test (case (catch (get-state &reasoner-proposal-events)) "
             "(((Error $_ $_) True) ($_ False))) True)\n"
         )
+
+    def test_enabled_coordinator_collects_and_routes_real_loop_feedback_once(self):
+        source = (
+            "!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))\n"
+            + r"""!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "probe-1" probeCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle reasoner) 1)
+!(test (get-state &probe-count) 1)
+!(test (size-atom (hostReasonerCycles)) 1)
+!(test (size-atom (get-state &probe-notifications)) 1)
+!(test (fullLoopDispatch reasoner (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (size-atom (get-state &probe-notifications)) 2)
+
+!(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) Proposals)
+!(test (index-atom (car-atom (hostReasonerCycles)) 5) (get-state &selected-operation-decision))
+!(test (index-atom (car-atom (hostReasonerCycles)) 6) (get-state &last-operation-outcome))
+!(test (ingestOperationOutcome (get-state &last-operation-outcome)) OutcomeDuplicate)
+!(test (size-atom (get-state &probe-notifications)) 2)
+!(test (hostReasonerRuntime Decision (get-state &selected-operation-decision)) True)
+!(test (size-atom (get-state &probe-notifications)) 2)
+!(test (size-atom (mrcValue (index-atom (car-atom (hostReasonerCycles)) 2) 13)) 1)
+!(test (signalValueIn (mrcValue (get-state &probe-view) 2) failure) (BooleanFact False))
+!(test (signalValueIn (mrcValue (get-state &probe-view) 2) user-waiting) (BooleanFact True))
+!(test (size-atom (reasonerProposalEvents)) 0)
+!(test (size-atom (reasonerProposalOutcomes)) 0)
+"""
+        )
+        self.run_entry(source, "reasoner=probe")
+
+    def test_builtin_adapters_collect_through_normal_cycle_with_real_inference(self):
+        source = r"""!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/boundary_loop))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))
+!(test (startHostReasoner (argk "reasoner")) True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(bind! &builtin-frame (new-state (get-state &cfv2-current-frame-id)))
+!(bind! &builtin-source (new-state (argk "reasoner")))
+!(bind! &builtin-implication (new-state (if (== (argk "reasoner") nars) ==> Implication)))
+!(test (let* (
+    ($frame (get-state &builtin-frame)) ($source (get-state &builtin-source))
+    ($implication (get-state &builtin-implication)))
+    (configureHostReasonerRuntime (repr $source)
+        (quote (HostReasonerRuntime "native-test-1" collectBuiltinHostReasoner noHostReasonerFeedback
+            ((ReasonerNativeFact $source (Sentence
+                (($implication (SignalHolds $frame user-waiting) (Recommend $frame respond)) (stv 1 0.9))
+                ((ObservationRef "trusted-rule-config" "respond-1"))))) 0.8)))) True)
+!(test (boundaryCycle builtin) 1)
+!(test (size-atom (hostReasonerCycles)) 1)
+!(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) Proposals)
+!(test (getProposalSource (mrcValue (car-atom (index-atom (car-atom (hostReasonerCycles)) 4)) 4))
+    (argk "reasoner"))
+"""
+        for engine in ("nars", "pln"):
+            with self.subTest(engine=engine):
+                self.run_entry(source, f"reasoner={engine}")
+
+    def test_coordinator_timeout_keeps_native_selection_and_ungraded_empty_advice(self):
+        source = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(import_prolog_function sleep)
+(= (timeoutCollect $invocation $view $actions) (progn (sleep 0.1) (probeCollect $invocation $view $actions)))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (limits timeout-ms)) 10
+        (reasonerContractSet (quote (source)) llm
+            (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration))))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "timeout-test" timeoutCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle timeout) 1)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (size-atom (hostReasonerCycles)) 1)
+!(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) Timeout)
+!(test (index-atom (car-atom (hostReasonerCycles)) 4) ())
+!(test (get-state &probe-count) 0)
+!(test (size-atom (reasonerProposalOutcomes)) 0)
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_invalid_intake_is_empty_and_does_not_change_native_selection(self):
+        source = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+(= (invalidCollect $invocation $view $actions)
+    (reasonerContractSet (quote (invocation-id)) "another-invocation"
+        (probeCollect $invocation $view $actions)))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "invalid-test" invalidCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle invalid) 1)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) InvalidOutput)
+!(test (index-atom (car-atom (hostReasonerCycles)) 4) ())
+!(test (size-atom (reasonerProposalOutcomes)) 0)
+"""
+        self.run_entry(source, "reasoner=probe")
 
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
@@ -107,6 +219,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
     def test_disabled_normal_startup_allocates_no_reasoner_audit_or_engines(self):
         source = (
             "!(import! &self (library MetaMo applications/omegaclaw_v1/tests/host_startup_test))\n"
+            "!(test (case (catch (get-state &host-reasoner-cycles)) (((Error $_ $_) True) ($_ False))) True)\n"
             "!(test (case (catch (get-state &reasoner-proposal-events)) "
             "(((Error $_ $_) True) ($_ False))) True)\n"
             "!(test (case (catch (collapse (translatePredicate (metamo_engine_loaded $engine)))) "

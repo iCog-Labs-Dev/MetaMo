@@ -1,6 +1,6 @@
 # Loosely coupled reasoner integration
 
-Status: proposed runtime design
+Status: optional shadow collection connected; admission influence and assessment remain proposed
 
 The integration should connect the existing reasoner adapters to the normal
 OmegaClaw runtime through an optional host coordinator. MetaMo should receive
@@ -26,9 +26,10 @@ The following are implemented and should be reused:
 | `reasoners/reasoner_outcome_assessment.metta` | External prediction comparison, grade validation, assessment audit and application-level source weighting. |
 | `bridge.metta` and `operation_selection.metta` | Published cycle snapshot, candidate admission, selection and retention of the exact host operation. |
 
-The normal runtime does not yet collect proposals or connect these evidence and
-assessment calls automatically. An optional extension working in a test does not
-establish that connection.
+Explicitly enabled startup now connects shadow proposal collection, retained
+native decisions and capability-based outcome notifications through the normal
+bridge and dispatch callbacks. Automatic causal attribution, assessment, learning
+and proposal influence remain separate work.
 
 Existing relationships are documented in [COMPOSITION.md](COMPOSITION.md),
 [CONTRACTS.md](CONTRACTS.md), [SCHEDULING.md](SCHEDULING.md) and
@@ -39,8 +40,8 @@ described in [README.md](README.md#nars--pln-proposal-integration).
 
 `reasoners/host_reasoner_contracts.metta` now defines pure MeTTa, opt-in representation
 contracts using the existing factual, typed-policy and proposal-data helpers. They allocate no state, load no engine, register
-no adapter and install no runtime hook. The coordinator and automatic runtime
-sequence below remain proposed. Import `lib_import` before the contract module
+no adapter and install no runtime hook. The connected shadow coordinator is described below; remaining runtime stages
+are still proposed. Import `lib_import` before the contract module
 when using it outside the application composition.
 
 | Validator | Success | Rejection |
@@ -190,8 +191,7 @@ LLM loader/provider.
 
 These pure checks preserve metadata as inert data. They do not establish engine
 version authenticity, resolve evidence, enforce capabilities, check a deadline or
-admit a proposal against current host ownership and policy. Automatic intake
-and retaining these records in the runtime remain separate coordinator work.
+admit a proposal against current host ownership and policy. The optional coordinator now retains these envelopes during shadow intake.
 
 Matching invocation/adapter/configuration identities against retained host state,
 restricting invocation capabilities/limits to the registration, enforcing time
@@ -232,7 +232,8 @@ The built-in registrations declare candidate proposals, the existing candidates,
 `ExpectedOperationResult` predictions and no feedback capability. Other adapters
 may declare only their supported stages. NARS/PLN reuse the existing inference
 extension, which loads both local engines in separate namespaces; selection
-retains one adapter. No provider, automatic intake, grading or learning is enabled.
+retains one adapter. No provider, grading or learning is enabled; explicitly selected adapters now
+participate in bounded shadow intake.
 Automatic collection and feedback routing remain later runtime work.
 
 ## Ownership
@@ -359,7 +360,7 @@ Translation never reads raw host/frame state, the observation store, current
 signal spaces or provider output. The caller remains responsible for admitting
 and authenticating the view, including the engine rules it contains; reference
 membership alone is not evidence authority. Deadlines, current ownership,
-automatic cycle intake, proposal selection and feedback remain coordinator work.
+selection influence, causal attribution and assessment remain coordinator work.
 Offline integration tests exercise both real engines on these translated facts,
 including negative evidence and missing premises.
 
@@ -376,6 +377,73 @@ Prediction syntax stays adapter-specific. An adapter must declare which
 comparator can evaluate its predictions and which observations that comparator
 requires. It must produce the prediction before the observation. A candidate
 label alone cannot supply a prediction, derivation or expected result.
+
+## Connected shadow coordinator
+
+`reasoners/host_reasoner_coordinator.metta` extends the existing host registration
+and selection boundary. Its state and callback helper load only for explicit
+reasoner startup. The default-disabled bridge performs no reasoner invocation.
+Collection runs after concrete operation admission and before final scheduling;
+this connection does not add proposals to native candidates or alter scores.
+
+Trusted code configures runtime behavior alongside a registered adapter:
+
+```metta
+(configureHostReasonerRuntime "adapter-id"
+  (quote (HostReasonerRuntime "engine-version" collectAdapter notifyAdapter
+    () 0.9)))
+```
+
+The last two fields are admitted engine-native facts and an explicit observation
+encoding confidence. Rules and their stable evidence stamps come from trusted
+configuration; the empty default invents no rules. The configuration is frozen
+once that adapter has a retained cycle. It grants no execution permission.
+
+The collector receives `(INVOCATION ADMITTED-VIEW ADMITTED-ACTIONS)` as quoted
+data and returns the existing `ReasonerIntakeResult`. The notifier receives
+`(STAGE INVOCATION PAYLOAD)`, where STAGE is `Decision` or `Observation`, only
+when the registration declares that feedback capability. Each adapter owns its
+feedback interpretation; the built-in stateless NARS/PLN query adapters declare
+no feedback and perform no native learning. A custom adapter may support either
+notification independently.
+
+The host supplies typed signals from the same published snapshot. Signal
+references are checked against its retained source owner and deduplicated without
+changing their identities. Configured native facts retain their truth values,
+negative evidence and stable rule references. Invocation records retain session,
+cycle, frame, commitment revision, publication, engine/configuration provenance
+and a deadline. The built-in version label is `local-libraries`; a trusted host
+should configure an exact engine version when reproducibility requires it.
+
+Counts and payload bounds come from registration/invocation limits. Callback
+execution has a wall-clock timeout and runs outside the dispatch mutex. Built-in
+queries divide their declared engine-step budget among the bounded candidate
+queries. Custom callbacks are trusted host implementations responsible for
+honoring their own declared engine/provider limits; this is not an execution
+sandbox or general provider-usage meter.
+
+`hostReasonerCycles` exposes bounded `HostReasonerCycle` records containing the
+operation context, invocation, checked intake result, original proposal envelopes,
+retained native decision and observed outcome. Repeated collection for one
+context does not invoke again. Intake rejects wrong identities, undeclared sources,
+kinds/candidates, duplicate proposal IDs, unknown evidence and oversized output.
+Timeout/invalid output retains empty advice. Audit capacity exhaustion skips
+collection and preserves native operation; no durable recovery or eviction is
+introduced. Missing runtime callbacks likewise leave native operation available.
+
+Decision notification follows retention of the exact native operation/ticket.
+It reports what the native scheduler chose, not acceptance or causal attribution
+of a shadow proposal. Observation notification runs only after the existing host
+outcome validator accepts an immutable callback, before its slot is replaced.
+Wrong-owner and conflicting callbacks do not reach the coordinator; identical
+redelivery produces no additional notification. No success/failure label becomes
+a numerical prediction grade or reliability update.
+
+Offline boundary tests run the normal bridge/Core dispatch with a test adapter,
+check one-time decision/outcome delivery and timeout/invalid-output fallback,
+and exercise real NARS/PLN inference over the automatically supplied facts.
+Disabled startup and native import/engine separation remain covered. No live
+provider or external channel run is implied by these tests.
 
 ## Runtime sequence
 

@@ -1,3 +1,14 @@
+;; Optional runtime calls are active only for an explicit startup selection.
+;; Example: no reasoner argument or reasoner=disabled performs no adapter call.
+(= (optionalHostReasoner $stage $payload)
+   (case (collapse (argk "reasoner")) (
+      (() True)
+      ((disabled) True)
+      (($_adapter) (catch (eval (hostReasonerRuntime $stage (quote $payload)))))
+      ($_ True)
+   ))
+)
+
 
 ;; Construct the MetaMo bimonad from the OmegaClaw appraisal and decision
 ;; implementations plus the shared stability controls.
@@ -59,6 +70,7 @@
          (admitCapturedOperations $bundle $baseActions $operationRows))
       ($_ (recordCandidateRejections $operationRejections))
       ($_ (change-state! &operation-admitted-actions $admittedActions))
+      ($_ (optionalHostReasoner Collect (quote ($bundle $admittedActions))))
       ;; Scheduling precedence is separate from admission, numeric score,
       ;; constitutional posture, and ContextFrames Fast/Slow execution mode.
       ($scheduledActions (scheduleAdmittedActions (getSignals) $admittedActions))
@@ -81,6 +93,7 @@
       ((decision $selectedCandidate $_mode $_directive $_score)
          $decisionResult)
       ($_ (retainSelectedOperation $selectedCandidate $operationRows))
+      ($_ (optionalHostReasoner Decision (get-state &selected-operation-decision)))
       ;; Expose only the bounded policy contract to the scheduler/reasoner.
       ($policyOutput
          (metaMoPolicyOutput $bundle $selectedCandidate $score))

@@ -99,3 +99,41 @@
          (frameBundleCurrentId $bundle) $facts $candidate $prediction $limits)
       (if (== $proposal ()) ()
           (reasonerProposalToSchedulerDirective $bundle $state $proposal))))
+
+(: ExpectedCandidateOutcomeType Type)
+(: ExpectedCandidateOutcome (-> Symbol ExpectedCandidateOutcomeType))
+
+;; Local adapter collection preserves translated Sentence truth and evidence unchanged.
+;; Native rules must be explicitly configured; absence of rules invents no recommendation.
+;; Example: an enabled adapter with no supported conclusion returns NoConclusion.
+(= (collectBuiltinHostReasoner $invocation $view $actions)
+    (let* (
+        ($runtime (eval (hostReasonerRuntimeBinding (mrcValue $invocation 2))))
+        ((HostReasonerRuntime $_ $_ $_ $_ $confidence) $runtime)
+        ($engine (eval (mrcValue (hostReasonerRegistration) 4)))
+        ($limits (mrcValue $invocation 12))
+        ($translated (translateReasonerAdmittedView $engine $view $confidence))
+    )
+        (case $translated (
+            ((ReasonerTranslatedFacts $_ $_ (facts $facts))
+                (let* (
+                    ($count (min (mrcValue $limits 3) (mrcValue $limits 5)))
+                    ($candidates (frameStateTake $count (map-atom $actions $action (actionId $action))))
+                    ($steps (if (== $candidates ()) 0 (floor-math (/ (mrcValue $limits 5) (size-atom $candidates)))))
+                    ($queue (mrcValue $limits 6))
+                    ($proposals (if (or (== $steps 0) (== $queue 0)) ()
+                        (filter-atom (map-atom $candidates $candidate
+                            (eval (reasonerInferProposal $engine (repr ($candidate (mrcValue $invocation 1)))
+                                (mrcValue $invocation 7) $facts $candidate
+                                (quote (ExpectedCandidateOutcome $candidate))
+                                (InferenceLimits $steps $queue $queue)))) $proposal (!= $proposal ()))))
+                    ($id (mrcValue $invocation 1))
+                    ($adapter (mrcValue $invocation 2))
+                    ($status (if (== $proposals ()) NoConclusion Proposals))
+                )
+                    (quote (ReasonerIntakeResult (invocation-id $id) (adapter $adapter)
+                        (status $status) (proposals $proposals) (diagnostics ())))))
+            ($_ (eval (hostReasonerEmptyIntake $invocation InvalidOutput)))
+        ))
+    )
+)
