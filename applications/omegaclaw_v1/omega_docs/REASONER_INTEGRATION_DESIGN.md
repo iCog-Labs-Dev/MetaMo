@@ -383,7 +383,7 @@ label alone cannot supply a prediction, derivation or expected result.
 `reasoners/host_reasoner_coordinator.metta` extends the existing host registration
 and selection boundary. Its state and callback helper load only for explicit
 reasoner startup. The default-disabled bridge performs no reasoner invocation.
-Collection runs after concrete operation admission and before final scheduling;
+Candidate collection runs after concrete operation admission and before final scheduling;
 this connection does not add proposals to native candidates or alter scores.
 
 Trusted code configures runtime behavior alongside a registered adapter:
@@ -393,6 +393,39 @@ Trusted code configures runtime behavior alongside a registered adapter:
   (quote (HostReasonerRuntime "engine-version" collectAdapter notifyAdapter
     () 0.9)))
 ```
+
+Adapters that support mode advice or transition predictions can additionally opt
+in before any invocation is retained:
+
+```metta
+(configureHostReasonerModeIntake "adapter-id")
+```
+
+This enables `ModeCollect` after factual signal refresh and before mode evaluation.
+The same collector receives phase `ModeIntake` and an empty action list. Candidate
+collection receives phase `CandidateIntake`, after concrete operations are captured
+and admitted, before scheduling or selection. Both invocations retain the same
+published snapshot, facts and evidence identities; invocation IDs differ. No
+snapshot is recaptured between them. Both phases retain the existing current-frame
+invocation requirement; frameless idle cycles continue native mode evaluation
+without advice. Candidate-only adapters receive one call;
+adapters declaring only mode changes skip candidate collection. Disabled startup
+still loads no coordinator or reasoner state.
+
+Mode intake accepts declared `request-mode-change` advice through the existing
+Fast/Slow target contract, or `request-attention` proposals carrying transition
+predictions for the current frame. It does not extend that target vocabulary to
+constitutional modes or change the actual mode. Candidate-stage mode-change
+requests reject. The adapter owns the prediction schema and interpretation.
+
+`ModeObserved` retains the actual `ModeObservation` against an already-retained
+pre-mode invocation and reports it through declared `Decision` feedback. It cannot
+create a missing prediction or attach a candidate-stage prediction to a transition.
+First-time mode collection after that context's transition has been observed
+returns `LateModeIntake`; duplicate delivery preserves the original invocation.
+The same audit capacity is shared by both phases. Neither path grades predictions,
+changes native selection, or relaxes admission. Timeout or invalid advice leaves
+native mode evaluation and scheduling available.
 
 The last two fields are admitted engine-native facts and an explicit observation
 encoding confidence. Rules and their stable evidence stamps come from trusted
@@ -423,8 +456,8 @@ honoring their own declared engine/provider limits; this is not an execution
 sandbox or general provider-usage meter.
 
 `hostReasonerCycles` exposes bounded `HostReasonerCycle` records containing the
-operation context, invocation, checked intake result, original proposal envelopes,
-retained native decision and observed outcome. Repeated collection for one
+operation context, phased invocation, checked intake result, original proposal
+envelopes, retained native decision (or mode observation) and observed outcome. Repeated collection for one
 context does not invoke again. Intake rejects wrong identities, undeclared sources,
 kinds/candidates, duplicate proposal IDs, unknown evidence and oversized output.
 Timeout/invalid output retains empty advice. Audit capacity exhaustion skips

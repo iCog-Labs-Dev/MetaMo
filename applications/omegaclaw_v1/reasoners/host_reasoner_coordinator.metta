@@ -16,6 +16,7 @@
 (: ReasonerRuntimeIdentity (-> String Number ReasonerRuntimeIdentityType))
 !(bind! &host-reasoner-runtimes (new-state ()))
 !(bind! &host-reasoner-cycles (new-state ()))
+!(bind! &host-reasoner-mode-intake (new-state ()))
 
 ;; Read a trusted callback binding; missing runtime support means no advice.
 ;; Example: (hostReasonerRuntimeBinding "unconfigured") -> ().
@@ -67,8 +68,7 @@
 ;; Correlate to the exact operation context, never just a candidate label.
 ;; Example: another session's cycle number cannot match this row.
 (= (hostReasonerCycleFor $context)
-    (let $rows (filter-atom (hostReasonerCycles) $row (== (index-atom $row 1) $context))
-        (if (== (size-atom $rows) 1) (car-atom $rows) ()))
+    (hostReasonerCycleForPhase $context CandidateIntake)
 )
 
 ;; Update an existing identity without allocating a replacement invocation.
@@ -76,7 +76,8 @@
 (= (retainHostReasonerCycle $row)
     (change-state! &host-reasoner-cycles
         (cons-atom (quote $row) (filter-atom (hostReasonerCycles) $old
-            (!= (index-atom $old 1) (index-atom $row 1)))))
+            (not (and (== (index-atom $old 1) (index-atom $row 1))
+                (== (mrcValue (index-atom $old 2) 10) (mrcValue (index-atom $row 2) 10)))))))
 )
 
 ;; Reuse stable observation stamps; no numeric truth conversion happens here.
@@ -109,6 +110,12 @@
 ;; Invocation identity is allocated once, after validating the published snapshot.
 ;; Example: candidates and mode appraisal share this already published bundle.
 (= (hostReasonerInvocation $registration $bundle $signals $native)
+    (hostReasonerInvocationForPhase $registration $bundle $signals $native CandidateIntake)
+)
+
+;; Both phases retain the original publication and get distinct invocation identities.
+;; Example: ModeIntake is constructed before any transition evaluation.
+(= (hostReasonerInvocationForPhase $registration $bundle $signals $native $phase)
     (let* (
         ((OperationContext $session $cycle $frame) (get-state &operation-context))
         ((SignalObservationView $snapshot $_ $_) (frameRuntimeSignalObservations $bundle))
@@ -124,7 +131,7 @@
         (quote (ReasonerInvocation (invocation-id $id) (adapter $adapter) (contract-version 1)
             (configuration-version $version) (session $session) (cycle $cycle) (frame $frame)
             (publication (ReasonerPublicationRef $publication)) (commitment $commitment)
-            (phase CandidateIntake) (capabilities $caps) (limits $limits)
+            (phase $phase) (capabilities $caps) (limits $limits)
             (evidence $refs) (deadline-ms $deadline)))
     )
 )
@@ -143,8 +150,7 @@
                 (tpContains (mrcValue $caps 1) (getProposalKind $proposal))
                 (tpContains (mrcValue $caps 2) (getProposalCandidate $proposal))
                 (== (filter-atom $refs $ref (not (tpContains (mrcValue $invocation 13) $ref))) ())
-                (or (== (getProposalTarget $proposal) current-frame)
-                    (== (getProposalTarget $proposal) (FrameTarget (mrcValue $invocation 7))))
+                (hostReasonerPhaseTargetValid $invocation $proposal)
             ))) False)
 )
 
@@ -185,20 +191,29 @@
 ;; Call outside dispatch locking, retain once, and preserve exact proposal envelopes.
 ;; Example: identical cycle redelivery neither invokes the adapter nor duplicates its audit.
 (= (collectHostReasonerCycle $bundle $actions)
+    (let $kinds (mrcValue (mrcValue (hostReasonerRegistration) 5) 1)
+        (if (!= (filter-atom $kinds $kind (!= $kind request-mode-change)) ())
+            (collectHostReasonerPhase CandidateIntake $bundle $actions)
+            True))
+)
+
+;; Share collection and validation while retaining each phase independently.
+;; Example: pre-mode collection supplies no post-mode admitted actions.
+(= (collectHostReasonerPhase $phase $bundle $actions)
     (let* (
         ($context (get-state &operation-context))
         ($registration (hostReasonerRegistration))
         ($runtime (hostReasonerRuntimeBinding (hostReasonerSelection)))
         ($signals (getSignals))
     )
-        (case ($context $runtime (hostReasonerCycleFor $context)) (
+        (case ($context $runtime (hostReasonerCycleForPhase $context $phase)) (
             (((OperationContext $session $cycle $frame)
                 (HostReasonerRuntime $version $collect $_ $native $_) ())
                 (if (and (hostReasonerPublishedSignalsValid $bundle $signals)
                          (and (== $frame (frameBundleCurrentId $bundle))
                          (< (size-atom (hostReasonerCycles)) (mrcValue (mrcValue $registration 6) 4))))
                     (let* (
-                        ($invocation (hostReasonerInvocation $registration $bundle $signals $native))
+                        ($invocation (hostReasonerInvocationForPhase $registration $bundle $signals $native $phase))
                         ($view (quote (ReasonerAdmittedView (invocation $invocation)
                             (signals $signals) (native-facts $native))))
                     )
@@ -262,6 +277,8 @@
 (= (hostReasonerRuntime $stage $payload)
     (if (== (hostReasonerSelection) disabled) True
         (case ($stage $payload) (
+            ((ModeCollect $bundle) (collectHostReasonerMode $bundle))
+            ((ModeObserved $observation) (retainHostReasonerModeObservation $observation))
             ((Collect ($bundle $actions)) (collectHostReasonerCycle $bundle $actions))
             ((Decision $decision) (retainHostReasonerDecision $decision))
             ((Observation $outcome) (observeHostReasonerOutcome $outcome))
@@ -317,4 +334,82 @@
             (hostReasonerSnapshotSignalsValid $bundle $snapshot $signals))
         ($_ False)
     ))
+)
+
+;; Enable pre-mode advice only through trusted configuration before collection begins.
+;; Example: candidate-only adapters leave this unconfigured and receive no extra call.
+(= (configureHostReasonerModeIntake $id)
+    (if (and (mrcText $id) (!= (hostReasonerRuntimeBinding $id) ()))
+        (if (== (filter-atom (hostReasonerCycles) $row
+                (== (mrcValue (index-atom $row 2) 2) $id)) ())
+            (progn
+                (change-state! &host-reasoner-mode-intake
+                    (hostReasonerDistinctReferences (cons-atom $id (get-state &host-reasoner-mode-intake))))
+                True)
+            (ReasonerRuntimeError AlreadyInvoked))
+        (ReasonerRuntimeError InvalidConfiguration))
+)
+
+;; Phase is part of correlation; a candidate invocation cannot replace a mode prediction.
+;; Example: the same context may have one ModeIntake and one CandidateIntake row.
+(= (hostReasonerCycleForPhase $context $phase)
+    (let $rows (filter-atom (hostReasonerCycles) $row
+        (and (== (index-atom $row 1) $context)
+            (== (mrcValue (index-atom $row 2) 10) $phase)))
+        (if (== (size-atom $rows) 1) (car-atom $rows) ()))
+)
+
+;; Mode advice uses the existing Fast/Slow target contract; transition predictions
+;; may use attention advice. Candidate-stage advice cannot become mode advice later.
+;; Example: a request-mode-change arriving at CandidateIntake is rejected.
+(= (hostReasonerPhaseTargetValid $invocation $proposal)
+    (let* (
+        ($phase (mrcValue $invocation 10))
+        ($kind (getProposalKind $proposal))
+        ($target (getProposalTarget $proposal))
+        ($frameTarget (or (== $target current-frame)
+            (== $target (FrameTarget (mrcValue $invocation 7)))))
+    )
+        (case $phase (
+            (ModeIntake (or (== $kind request-mode-change)
+                (and (== $kind request-attention) $frameTarget)))
+            (CandidateIntake (and (!= $kind request-mode-change) $frameTarget))
+            ($_ False)
+        ))
+    )
+)
+
+;; Prevent first-time mode intake after this context's transition was observed.
+;; Example: reusing the snapshot after mode evaluation cannot create an earlier prediction.
+(= (hostReasonerModeAlreadyObserved $context)
+    (case (lastModeObservation) (
+        ((ModeObservation $actual $_ $_ $_ $_ $_) (== $actual $context))
+        ($_ False)))
+)
+
+;; Run the same collector before evaluation only when explicitly enabled for mode work.
+;; Example: default NARS/PLN registration still performs candidate collection only.
+(= (collectHostReasonerMode $bundle)
+    (if (tpContains (get-state &host-reasoner-mode-intake) (hostReasonerSelection))
+        (if (!= (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) ()) True
+            (if (hostReasonerModeAlreadyObserved (get-state &operation-context))
+                (ReasonerRuntimeError LateModeIntake)
+                (collectHostReasonerPhase ModeIntake $bundle ())))
+        True
+    )
+)
+
+;; Attach the actual transition only to a previously retained pre-mode invocation.
+;; No grade, mode mutation or proposal influence is introduced by this notification.
+;; Example: ModeObserved without an earlier ModeIntake cannot allocate a prediction.
+(= (retainHostReasonerModeObservation $observation)
+    (case (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) (
+        ((HostReasonerCycle $context $invocation $intake $proposals () $outcome)
+            (if (and (== $observation (lastModeObservation)) (hostReasonerModeAlreadyObserved $context))
+                (progn
+                    (retainHostReasonerCycle (quote (HostReasonerCycle $context $invocation
+                        $intake $proposals $observation $outcome)))
+                    (notifyHostReasoner Decision $invocation $observation))
+                (ReasonerRuntimeError MismatchedModeObservation)))
+        ($_ True)))
 )

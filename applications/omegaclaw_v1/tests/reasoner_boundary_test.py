@@ -180,6 +180,15 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(test (size-atom (reasonerProposalOutcomes)) 0)
 """
         self.run_entry(source, "reasoner=probe")
+        mode_timeout = source.replace('!(test (selectHostReasoner "probe") True)',
+            '!(test (configureHostReasonerModeIntake "probe") True)\n!(test (selectHostReasoner "probe") True)')
+        mode_timeout = mode_timeout.replace('(size-atom (hostReasonerCycles)) 1',
+                                            '(size-atom (hostReasonerCycles)) 2')
+        mode_timeout += r"""
+!(test (constitutionalMode) Engaged)
+!(test (mrcValue (index-atom (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) 3) 3) Timeout)
+"""
+        self.run_entry(mode_timeout, "reasoner=probe")
 
     def test_invalid_intake_is_empty_and_does_not_change_native_selection(self):
         source = r"""
@@ -201,6 +210,102 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) InvalidOutput)
 !(test (index-atom (car-atom (hostReasonerCycles)) 4) ())
 !(test (size-atom (reasonerProposalOutcomes)) 0)
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_mode_and_candidate_intake_share_publication_at_distinct_decision_boundaries(self):
+        source = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (capabilities))
+        (quote (ReasonerCapabilities
+            (proposal-kinds (propose-candidate request-mode-change)) (candidates (respond defer))
+            (prediction-schemas ("ExpectedOperationResult" "ExpectedModeTransition"))
+            (feedback (Decision Observation))))
+        (reasonerContractSet (quote (source)) llm
+            (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration))))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "phase-test" phaseProbeCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerModeIntake "probe") True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle phases) 1)
+!(test (size-atom (get-state &probe-phase-inputs)) 2)
+!(bind! &candidate-input (new-state (index-atom (get-state &probe-phase-inputs) 0)))
+!(bind! &mode-input (new-state (index-atom (get-state &probe-phase-inputs) 1)))
+!(bind! &candidate-invocation (new-state (index-atom (get-state &candidate-input) 0)))
+!(bind! &mode-invocation (new-state (index-atom (get-state &mode-input) 0)))
+!(test (mrcValue (get-state &candidate-invocation) 10) CandidateIntake)
+!(test (mrcValue (get-state &mode-invocation) 10) ModeIntake)
+!(test (!= (mrcValue (get-state &candidate-invocation) 1) (mrcValue (get-state &mode-invocation) 1)) True)
+!(test (mrcValue (get-state &candidate-invocation) 8) (mrcValue (get-state &mode-invocation) 8))
+!(test (mrcValue (get-state &candidate-invocation) 13) (mrcValue (get-state &mode-invocation) 13))
+!(test (mrcValue (index-atom (get-state &candidate-input) 1) 2)
+    (mrcValue (index-atom (get-state &mode-input) 1) 2))
+!(test (index-atom (get-state &mode-input) 2) ())
+!(test (index-atom (get-state &candidate-input) 2) (get-state &operation-admitted-actions))
+!(test (map-atom (index-atom (get-state &candidate-input) 2) $action (actionId $action)) (respond))
+!(test (index-atom (get-state &candidate-input) 4) ())
+!(test (hostReasonerModeAlreadyObserved (get-state &operation-context)) True)
+!(test (case (index-atom (get-state &mode-input) 3)
+    (((ModeObservation $context $_ $_ $_ $_ $_) (!= $context (get-state &operation-context))) ($_ True))) True)
+!(test (index-atom (get-state &candidate-input) 3) (lastModeObservation))
+!(test (size-atom (hostReasonerCycles)) 2)
+!(test (index-atom (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) 5) (lastModeObservation))
+!(test (index-atom (hostReasonerCycleFor (get-state &operation-context)) 5) (get-state &selected-operation-decision))
+!(test (mrcValue (index-atom (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) 3) 3) Proposals)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (constitutionalMode) Engaged)
+!(test (size-atom (get-state &probe-notifications)) 2)
+!(test (hostReasonerRuntime ModeCollect (activeFrameBundle)) True)
+!(test (hostReasonerRuntime Collect ((activeFrameBundle) (get-state &operation-admitted-actions))) True)
+!(test (hostReasonerRuntime ModeObserved (lastModeObservation)) True)
+!(test (size-atom (get-state &probe-phase-inputs)) 2)
+!(test (size-atom (get-state &probe-notifications)) 2)
+!(test (configureHostReasonerModeIntake "probe") (ReasonerRuntimeError AlreadyInvoked))
+!(test (fullLoopDispatch phases (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (size-atom (get-state &probe-notifications)) 3)
+!(test (index-atom (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) 6) ())
+!(test (index-atom (hostReasonerCycleFor (get-state &operation-context)) 6) (get-state &last-operation-outcome))
+"""
+        self.run_entry(source, "reasoner=probe")
+        # An adapter declaring only mode changes does not receive a candidate query.
+        mode_only = source[:source.index('!(test (size-atom (get-state &probe-phase-inputs)) 2)')]
+        mode_only = mode_only.replace('(proposal-kinds (propose-candidate request-mode-change))',
+                                      '(proposal-kinds (request-mode-change))')
+        mode_only += r"""
+!(test (size-atom (get-state &probe-phase-inputs)) 1)
+!(test (size-atom (hostReasonerCycles)) 1)
+!(test (hostReasonerCycleFor (get-state &operation-context)) ())
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+"""
+        self.run_entry(mode_only, "reasoner=probe")
+
+    def test_late_mode_intake_cannot_attach_prediction_to_observed_transition(self):
+        source = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "late-test" probeCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle candidate-only) 1)
+!(test (get-state &probe-count) 1)
+!(test (size-atom (hostReasonerCycles)) 1)
+;; Simulate late delivery at the trusted boundary despite startup configuration fencing.
+!(change-state! &host-reasoner-mode-intake ("probe"))
+!(test (hostReasonerRuntime ModeCollect (activeFrameBundle)) (ReasonerRuntimeError LateModeIntake))
+!(test (hostReasonerRuntime ModeObserved (lastModeObservation)) True)
+!(test (get-state &probe-count) 1)
+!(test (size-atom (hostReasonerCycles)) 1)
+!(test (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) ())
 """
         self.run_entry(source, "reasoner=probe")
 

@@ -134,8 +134,10 @@ Reasoners are explicitly optional. `reasoner=disabled` is the default: no reason
 modules, audit state or callbacks are loaded. Startup with `reasoner=nars` or
 `reasoner=pln` enables bounded shadow collection during the normal cycle.
 The coordinator supplies the published factual signals and stable references,
-collects validated proposals, retains the native decision, and routes observed
+collects validated candidate proposals before scheduling, retains the native decision, and routes observed
 outcomes to adapters that declare the corresponding feedback capabilities.
+Trusted adapters can separately enable pre-mode advice with
+`configureHostReasonerModeIntake`; candidate-only adapters incur no extra query.
 Native selection, policy, tickets and dispatch remain unchanged. No grading or
 learning is enabled by collection.
 

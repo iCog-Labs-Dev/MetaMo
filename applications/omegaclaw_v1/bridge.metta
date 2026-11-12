@@ -45,6 +45,7 @@
    (let* (
       ($_ (eval (refreshSignals $bundle)))
       ($modeBefore (modeTransitionStateForCurrent (constitutionalMode)))
+      ($_ (optionalHostReasoner ModeCollect $bundle))
       ($modeEvidence (modeEvaluationForContext $modeBefore (getSignals)
          (!= (frameBundleCurrentId $bundle) ())))
       ($_ (eval (refreshConstitutionalMode $bundle)))
@@ -52,6 +53,7 @@
          (ModeObservation (get-state &operation-context)
             (frameBundleCurrentId $bundle) (getSignals)
             $modeBefore (modeTransitionState) $modeEvidence)))
+      ($_ (optionalHostReasoner ModeObserved (lastModeObservation)))
       ($_ (change-state! &selected-host-operation ()))
       ($operationRows (captureCandidateOperations $bundle))
       ($_ (eval (clearSpace &appraisal-space)))

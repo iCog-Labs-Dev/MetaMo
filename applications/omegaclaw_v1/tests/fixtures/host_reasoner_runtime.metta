@@ -21,3 +21,28 @@
 (= (probeNotify $stage $invocation $payload)
     (progn (change-state! &probe-notifications
         (cons-atom (quote ($stage $payload)) (get-state &probe-notifications))) True))
+
+(: ExpectedModeTransitionType Type)
+(: ExpectedModeTransition (-> Symbol Symbol ExpectedModeTransitionType))
+!(bind! &probe-phase-inputs (new-state ()))
+
+;; Capture phase ordering from the actual bridge without changing host state.
+;; Example: ModeIntake sees no current transition; CandidateIntake sees admitted actions.
+(= (phaseProbeCollect $invocation $view $actions)
+    (let* (
+        ($_ (change-state! &probe-phase-inputs
+            (cons-atom ($invocation $view $actions (lastModeObservation)
+                (get-state &selected-operation-decision) (get-state &operation-admitted-actions))
+                (get-state &probe-phase-inputs))))
+        ($id (mrcValue $invocation 1))
+        ($adapter (mrcValue $invocation 2))
+        ($refs (mrcValue $invocation 13))
+    )
+        (if (== (mrcValue $invocation 10) ModeIntake)
+            (quote (ReasonerIntakeResult (invocation-id $id) (adapter $adapter)
+                (status Proposals) (proposals ((ReasonerMotivationalProposal mode-1 llm
+                    request-mode-change (ModeTarget Slow) defer claim support 0.8
+                    (EvidenceReferences $refs) (ExpectedModeTransition Engaged Engaged))))
+                (diagnostics ())))
+            (probeCollect $invocation $view $actions)))
+)
