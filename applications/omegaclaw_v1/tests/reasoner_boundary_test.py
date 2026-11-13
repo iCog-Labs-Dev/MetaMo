@@ -306,6 +306,12 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(test (get-state &probe-count) 1)
 !(test (size-atom (hostReasonerCycles)) 1)
 !(test (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) ())
+;; First candidate intake is also closed after selection; no replacement invocation.
+!(change-state! &host-reasoner-cycles ())
+!(test (hostReasonerRuntime Collect ((activeFrameBundle) (get-state &operation-admitted-actions)))
+    (ReasonerRuntimeError LateCandidateIntake))
+!(test (get-state &probe-count) 1)
+!(test (hostReasonerCycles) ())
 """
         self.run_entry(source, "reasoner=probe")
 
@@ -396,6 +402,13 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
 !(bind! &admission-rows (new-state ()))
 !(bind! &admission-provider (new-state ()))
+!(bind! &selection-at-notification (new-state ()))
+;; Inspect the audit at feedback delivery, before the ordinary dispatcher runs.
+(= (admissionNotify $stage $i $payload)
+    (progn
+        (if (== $stage Decision)
+            (change-state! &selection-at-notification (hostReasonerSelections)) True)
+        (probeNotify $stage $i $payload)))
 ;; Keep the exact rows returned during normal capture; no second ticket allocation.
 (= (captureAdmissionRows $bundle)
     (let* (($provider (get-state &admission-provider))
@@ -406,7 +419,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
         (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
-    (quote (HostReasonerRuntime "admission-test" probeCollect probeNotify () 0.8))) True)
+    (quote (HostReasonerRuntime "admission-test" probeCollect admissionNotify () 0.8))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -432,6 +445,37 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (get-state &admission-state) (get-state &operation-admitted-actions)))
     (ReasonerAdmittedActions (get-state &operation-admitted-actions)))
 !(test (size-atom (hostReasonerAdmissions)) 1)
+!(test (size-atom (hostReasonerSelections)) 1)
+!(test (get-state &selection-at-notification) (hostReasonerSelections))
+!(bind! &selection-audit (new-state (car-atom (hostReasonerSelections))))
+!(bind! &primary-audit (new-state (index-atom (get-state &selection-audit) 4)))
+!(test (index-atom (get-state &selection-audit) 1) (get-state &operation-context))
+!(test (index-atom (get-state &selection-audit) 3) (get-state &selected-operation-decision))
+!(test (index-atom (get-state &primary-audit) 0) HostReasonerPrimary)
+!(test (index-atom (get-state &primary-audit) 3) ShadowAgreement)
+!(test (index-atom (get-state &primary-audit) 1)
+    (index-atom (car-atom (get-state &admission-items)) 1))
+!(test (index-atom (get-state &primary-audit) 2) (get-state &selected-host-operation))
+!(bind! &selection-invocation (new-state (index-atom (hostReasonerCycleFor (get-state &operation-context)) 2)))
+!(test (reasonerRuntimeSelectionCurrent (get-state &selection-invocation)
+    (get-state &selected-host-operation) (get-state &selected-operation-decision)) True)
+!(test (let (HostOperation $candidate $command $p $g $f $_) (get-state &selected-host-operation)
+    (reasonerRuntimeSelectionCurrent (get-state &selection-invocation)
+        (quote (HostOperation $candidate $command $p $g $f (DispatchTicket "other-ticket")))
+        (get-state &selected-operation-decision))) False)
+!(test (let (HostOperation $candidate $_ $p $g $f $ticket) (get-state &selected-host-operation)
+    (reasonerRuntimeSelectionCurrent (get-state &selection-invocation)
+        (quote (HostOperation $candidate (show-current-frame) $p $g $f $ticket))
+        (get-state &selected-operation-decision))) False)
+!(test (hostReasonerRuntime Decision (get-state &selected-operation-decision)) True)
+!(test (size-atom (hostReasonerSelections)) 1)
+!(test (fullLoopDispatch admission (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (reasonerRuntimeSelectionCurrent (get-state &selection-invocation)
+    (get-state &selected-host-operation) (get-state &selected-operation-decision)) False)
+!(test (hostReasonerPrimary (get-state &selection-invocation)
+    (get-state &selected-operation-decision) (get-state &admission-items)) ())
+!(test (hostReasonerSelections) (get-state &selection-at-notification))
 """
         self.run_entry(source, "reasoner=probe")
         denied = source[:source.index('!(test (getStatus (get-state &proposal-admission)) Accepted)')]
@@ -444,6 +488,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(test (getScore (get-state &proposal-admission)) 0.0)
 !(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) none)
 !(test (get-state &last-operation-outcome) ())
+!(test (index-atom (car-atom (hostReasonerSelections)) 4) ())
 """
         for variant in ("permission-denied", "budget-denied", "empty", "ambiguous"):
             scenario = denied.replace('(boundaryProvision "allowed")',

@@ -142,7 +142,10 @@ Trusted adapters can separately enable pre-mode advice with
 Admitted candidates are de-duplicated against the native pool without an extra
 confidence/reliability bonus. Native tie order, policy, tickets and final dispatch
 checks are preserved. `hostReasonerAdmissions` retains proposal references,
-admission/rejection reasons and native scores. No grading or
+admission/rejection reasons, native scores and exact admitted operation bindings.
+`hostReasonerSelections` retains at most one primary proposal before dispatch,
+matched to the exact command and ticket in retained intake order. This is labelled
+`ShadowAgreement`; native agreement does not establish reasoner causation. No grading or
 learning is enabled by collection.
 
 Built-ins preserve engine truth values and evidence; they declare no native
@@ -193,8 +196,8 @@ state and calls the existing validation, feasibility, scoring, and audit path.
 It returns an advisory scheduler directive; it does not execute anything.
 
 Enabled runtime collection and capability-based notifications are connected in
-shadow mode with proposal admission recorded. Additional advisory influence,
-causal selection attribution, assessment and
+shadow mode with proposal admission and exact selection agreement recorded.
+Additional advisory influence, causal selection credit, assessment and
 learning remain separate integration work. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 

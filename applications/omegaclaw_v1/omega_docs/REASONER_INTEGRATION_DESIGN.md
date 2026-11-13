@@ -398,7 +398,9 @@ to the native cycle; confidence and source reliability do not multiply that scor
 `hostReasonerAdmissions` exposes bounded batches:
 `(HostReasonerAdmissions CONTEXT INVOCATION-ID DECISIONS)`, with each decision
 stored as `(HostReasonerProposalAdmission ORIGINAL-ENVELOPE
-ReasonerMotivationalDecision)`. The envelope preserves the exact proposal and
+ReasonerMotivationalDecision OPERATION)`. `OPERATION` is the exact captured
+`HostOperation`, including command and ticket, for accepted proposals, or `()`
+for rejection. The envelope preserves the exact proposal and
 provenance. `Accepted` means admitted to consideration, not selected or executed.
 Existing native actions and tie order are preserved, and duplicate candidate
 advice adds no extra action or score. Repeat admission of an invocation does not
@@ -408,8 +410,26 @@ Mode-stage advice is also assessed before evaluation, but no concrete mode or
 cross-frame handler is supplied by the supported runtime catalog. Such requests
 therefore retain an explicit rejection rather than gaining execution authority.
 Final dispatch still runs Core's current-state, exact-command, ticket and budget
-checks. Exact causal attribution, bounded advisory weighting and grading remain
-separate integration work; native agreement alone is not reasoner causation.
+checks. Bounded advisory weighting and grading remain separate integration work.
+
+Proposals and predictions are retained before native selection or mode evaluation.
+First-time intake after the corresponding decision is refused; existing intake
+redelivery cannot allocate another prediction. Admission/rejection, actual native
+decisions, mode observations and execution outcomes remain separate records.
+
+`hostReasonerSelections` exposes bounded, immutable selection audit rows:
+`(HostReasonerSelection CONTEXT INVOCATION-ID OperationDecision PRIMARY)`.
+Before adapter notification and dispatch, the first accepted `propose-candidate`
+entry in retained intake order whose exact captured operation matches the native
+selection becomes `(HostReasonerPrimary ORIGINAL-ENVELOPE OPERATION ShadowAgreement)`.
+Confidence does not break ties. The host rechecks current ownership, deadline,
+command, ticket, dispatch epoch and snapshot, and requires no existing execution
+receipt. No match gives an empty primary. Failed attribution preserves native
+selection and never creates a replacement ticket. Replays cannot replace the
+primary or assign the same ticket to another invocation, and observed execution
+cannot acquire attribution retrospectively.
+`ShadowAgreement` is an evaluation association, not evidence that the reasoner
+caused selection; it grants no causal learning credit or execution authority.
 
 Trusted code configures runtime behavior alongside a registered adapter:
 

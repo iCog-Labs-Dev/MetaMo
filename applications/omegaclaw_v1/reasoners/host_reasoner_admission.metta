@@ -1,7 +1,7 @@
 ;; Admission reuses native availability, concrete dispatch policy and scoring.
-;; No command, ticket, attribution, source weighting or learning is created here.
+;; Captured commands/tickets remain host-owned; agreement grants no causal credit.
 (: HostReasonerProposalAdmissionType Type)
-(: HostReasonerProposalAdmission (-> Expression Expression HostReasonerProposalAdmissionType))
+(: HostReasonerProposalAdmission (-> Expression Expression Expression HostReasonerProposalAdmissionType))
 (: HostReasonerAdmissionsType Type)
 (: HostReasonerAdmissions (-> Expression String Expression HostReasonerAdmissionsType))
 (: ReasonerAdmittedActionsType Type)
@@ -48,7 +48,9 @@
             ((GateDecision Rejected $reason)
                 (ReasonerMotivationalDecision Rejected $reason $proposal $candidate 0.0))
         )))
-    ) (quote (HostReasonerProposalAdmission $envelope $decision)))
+        ($operation (if (== (getStatus $decision) Accepted)
+            (car-atom (hostRowsForCandidate $candidate $rows)) ()))
+    ) (quote (HostReasonerProposalAdmission $envelope $decision $operation)))
 )
 
 ;; Keep native actions and ties intact; repeated advice contributes one candidate.
@@ -57,12 +59,60 @@
     (if (== $decisions ()) $native
         (let* (
             (($head $tail) (decons-atom $decisions))
-            ((HostReasonerProposalAdmission $_ $decision) $head)
+            ((HostReasonerProposalAdmission $_ $decision $_) $head)
             ($candidate (getCandidate $decision))
             ($present (!= (filter-atom $native $action (== (actionId $action) $candidate)) ()))
             ($next (if (and (== (getStatus $decision) Accepted) (not $present))
                 (append $native ((candidateToAction $candidate))) $native))
         ) (hostReasonerMergeActions $next $tail)))
+)
+
+(: HostReasonerSelectionType Type)
+(: HostReasonerSelection (-> Expression String Expression Expression HostReasonerSelectionType))
+(: HostReasonerPrimaryType Type)
+(: HostReasonerPrimary (-> Expression Expression Symbol HostReasonerPrimaryType))
+!(bind! &host-reasoner-selections (new-state ()))
+
+;; Separate exact-selection audit from admission, native decisions and outcomes.
+;; Example: an empty primary means no eligible proposal matched the native choice.
+(= (hostReasonerSelections) (get-state &host-reasoner-selections))
+
+;; First retained matching admission wins; confidence does not break ties.
+;; Example: identical candidates with another command or ticket cannot match.
+(= (hostReasonerPrimary $invocation $decision $admissions)
+    (let $matches (filter-atom $admissions $entry
+        (let (HostReasonerProposalAdmission $envelope $admission $operation) $entry
+            (and (== (getStatus $admission) Accepted)
+                (and (== (getProposalKind (mrcValue $envelope 4)) propose-candidate)
+                    (reasonerRuntimeSelectionCurrent $invocation $operation $decision)))))
+        (case $matches (
+            (() ())
+            ($_ (let (HostReasonerProposalAdmission $envelope $_ $operation) (car-atom $matches)
+                (quote (HostReasonerPrimary $envelope $operation ShadowAgreement)))))))
+)
+
+;; Retain once before notification/dispatch, including an explicit absent primary.
+;; Example: replay cannot replace the first primary or allocate another ticket.
+(= (retainHostReasonerSelectionAudit $invocation $decision)
+    (let* (
+        ($id (mrcValue $invocation 1))
+        ($batches (filter-atom (hostReasonerAdmissions) $batch (== (index-atom $batch 2) $id)))
+        ($prior (filter-atom (hostReasonerSelections) $row
+            (or (== (index-atom $row 2) $id)
+                (== (index-atom (index-atom $row 3) 4) (index-atom $decision 4)))))
+        ($limits (mrcValue $invocation 12))
+    )
+        (if (or (!= $prior ()) (== $batches ())) True
+            (let* (
+                ($context (get-state &operation-context))
+                ($primary (hostReasonerPrimary $invocation $decision (index-atom (car-atom $batches) 3)))
+                ($row (quote (HostReasonerSelection $context $id $decision $primary)))
+            )
+                (if (and (< (size-atom (hostReasonerSelections)) (mrcValue $limits 4))
+                    (>= (reasonerProposalDataRemaining (quote $row) 32 (* 2 (mrcValue $limits 2))) 0))
+                    (progn (change-state! &host-reasoner-selections
+                        (cons-atom $row (hostReasonerSelections))) True)
+                    (ReasonerRuntimeError AuditLimit)))))
 )
 
 ;; One bounded admission batch per invocation; duplicate delivery does not rescore.

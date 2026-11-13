@@ -90,3 +90,24 @@ reasonerRuntimeCurrent(I,Result) :-
     last(I,['deadline-ms',Deadline]), get_time(Now),
     (Now*1000=<Deadline, with_mutex(omegaclaw_dispatch,reasoner_runtime_owner(I,_))
         -> Result=true ; Result=false).
+
+% Match the admitted binding to the current exact host decision before execution.
+% Example: another ticket for the same candidate gives false, never a new ticket.
+reasonerRuntimeSelectionCurrent(I,Operation,Decision,Result) :-
+    with_mutex(omegaclaw_dispatch,
+        (reasoner_runtime_selection(I,Operation,Decision) -> Result=true ; Result=false)).
+
+% Native selection remains valid independently when stale advice cannot be linked.
+% Example: an already observed receipt cannot acquire retrospective attribution.
+reasoner_runtime_selection(I,Operation,Decision) :-
+    last(I,['deadline-ms',Deadline]), get_time(Now), Now*1000=<Deadline,
+    reasoner_runtime_owner(I,[Owner,_]),
+    nb_current('&selected-signal-owner',Owner),
+    Operation=['HostOperation',Candidate,Command,_,_,_,Ticket], Command\==[],
+    nb_current('&selected-host-operation',Selected), Selected==Operation,
+    nb_current('&operation-context',Context),
+    Decision=['OperationDecision',Context,Candidate,Command,Ticket],
+    nb_current('&selected-operation-decision',Actual), Actual==Decision,
+    oc_dispatch_ticket(Ticket,_,Epoch,Snapshot), oc_dispatch_epoch(Epoch),
+    mm_dispatch_snapshot(Current), Current==Snapshot,
+    \+ oc_dispatch_result(Ticket,_,_).

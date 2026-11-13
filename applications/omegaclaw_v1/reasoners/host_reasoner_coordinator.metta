@@ -3,7 +3,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_fact_translation))
 !(import_prolog_functions_from_file
     (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_runtime.pl)
-    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent))
+    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent reasonerRuntimeSelectionCurrent))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_admission))
 (: HostReasonerRuntimeType Type)
 (: HostReasonerRuntime (-> String Symbol Symbol Expression Number HostReasonerRuntimeType))
@@ -196,8 +196,19 @@
 (= (collectHostReasonerCycle $bundle $actions)
     (let $kinds (mrcValue (mrcValue (hostReasonerRegistration) 5) 1)
         (if (!= (filter-atom $kinds $kind (!= $kind request-mode-change)) ())
-            (collectHostReasonerPhase CandidateIntake $bundle $actions)
+            (if (and (== (hostReasonerCycleFor (get-state &operation-context)) ())
+                    (hostReasonerCandidateAlreadySelected))
+                (ReasonerRuntimeError LateCandidateIntake)
+                (collectHostReasonerPhase CandidateIntake $bundle $actions))
             True))
+)
+
+;; Selection in this context closes first-time candidate intake.
+;; Example: late advice cannot be relabelled as a prediction of the native decision.
+(= (hostReasonerCandidateAlreadySelected)
+    (case (get-state &selected-operation-decision) (
+        ((OperationDecision $context $_ $_ $_) (== $context (get-state &operation-context)))
+        ($_ False)))
 )
 
 ;; Share collection and validation while retaining each phase independently.
@@ -255,13 +266,17 @@
 )
 
 ;; Retained native decisions are reported as observations of selection, not causal attribution.
-;; Example: shadow agreement never becomes an accepted/executed proposal event.
+;; Example: attribution is retained before adapter notification can run.
 (= (retainHostReasonerDecision $decision)
     (case (hostReasonerCycleFor (get-state &operation-context)) (
         ((HostReasonerCycle $context $invocation $intake $proposals () $outcome)
-            (retainAndNotifyHostReasoner
-                (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))
-                Decision $decision))
+            (if (== $decision (get-state &selected-operation-decision))
+                (case (retainHostReasonerCycle
+                    (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))) (
+                    ((ReasonerRuntimeError $reason) (ReasonerRuntimeError $reason))
+                    ($_ (progn (retainHostReasonerSelectionAudit $invocation $decision)
+                        (notifyHostReasoner Decision $invocation $decision)))
+                )) (ReasonerRuntimeError MismatchedDecision)))
         ($_ True)))
 )
 
