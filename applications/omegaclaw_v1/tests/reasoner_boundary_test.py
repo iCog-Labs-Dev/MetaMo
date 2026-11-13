@@ -522,6 +522,158 @@ class ReasonerBoundaryTests(unittest.TestCase):
 """
         self.run_entry(duplicate, "reasoner=probe")
 
+    def attribution_setup(self, collector="probeCollect"):
+        """Pause a real host publication after intake/admission and before selection."""
+        return r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(import_prolog_functions_from_file
+    (library MetaMo applications/omegaclaw_v1/tests/fixtures/commitments.pl)
+    (commitmentFixtureTickets commitmentFixtureEpoch))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "attribution-test" COLLECTOR probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(bind! &test-bundle (new-state (prepareTaskStateForMetaMo)))
+!(refreshSignals (get-state &test-bundle))
+!(bind! &test-rows (new-state (captureCandidateOperations (get-state &test-bundle))))
+!(bind! &test-state (new-state (motivosToMetamoState)))
+!(generateCandidates (get-state &test-bundle))
+!(bind! &test-native (new-state
+    (let (CandidatePruning (admitted $base) (rejected $_))
+        (pruneActionsForBundle (get-state &test-bundle) (candidatesToActions))
+        (let (CandidatePruning (admitted $native) (rejected $_))
+            (admitCapturedOperations (get-state &test-bundle) $base (get-state &test-rows)) $native))))
+!(test (map-atom (get-state &test-native) $a (actionId $a)) (respond))
+!(change-state! &operation-admitted-actions (get-state &test-native))
+!(hostReasonerRuntime Collect ((get-state &test-bundle) (get-state &test-native)))
+!(bind! &test-intake (new-state (hostReasonerCycleFor (get-state &operation-context))))
+!(bind! &test-invocation (new-state (index-atom (get-state &test-intake) 2)))
+!(bind! &test-pool (new-state
+    (let (ReasonerAdmittedActions $pool)
+        (hostReasonerRuntime Admit ((get-state &test-bundle) (get-state &test-rows)
+            (get-state &test-state) (get-state &test-native))) $pool)))
+!(test (get-state &test-pool) (get-state &test-native))
+!(test (get-state &selected-operation-decision) ())
+!(bind! &test-tickets (new-state (commitmentFixtureTickets)))
+!(bind! &test-epoch (new-state (commitmentFixtureEpoch)))
+!(bind! &test-ticket (new-state (index-atom (car-atom (get-state &test-rows)) 6)))
+!(test (size-atom (get-state &test-tickets)) 1)
+""".replace("COLLECTOR", collector)
+
+    def attribution_select(self, expected_primary="()", result='(DispatchResult Executed Feasible "observed local file content")'):
+        """Use native scheduling/scoring and dispatch the original captured ticket."""
+        return r"""
+!(bind! &test-choice (new-state
+    (let (decisionResult $action $_)
+        (omegaclawDecideAdmittedForBundle (get-state &test-bundle)
+            (get-state &test-state) (get-state &test-pool)) $action)))
+!(test (actionId (get-state &test-choice)) respond)
+!(retainSelectedOperation (actionId (get-state &test-choice)) (get-state &test-rows))
+!(test (selectedHostTicket) (get-state &test-ticket))
+!(bind! &test-decision (new-state (get-state &selected-operation-decision)))
+!(test (hostReasonerRuntime Decision (get-state &test-decision)) True)
+!(test (get-state &selected-operation-decision) (get-state &test-decision))
+!(test (selectedHostTicket) (get-state &test-ticket))
+!(test (commitmentFixtureTickets) (get-state &test-tickets))
+!(test (index-atom (car-atom (hostReasonerSelections)) 4) PRIMARY)
+!(test (index-atom (hostReasonerCycleFor (get-state &operation-context)) 5) (get-state &test-decision))
+!(test (dispatchSelectedHostCommand (get-state &test-ticket) (selectedHostCommand)) RESULT)
+!(test (selectedHostTicket) (get-state &test-ticket))
+!(test (commitmentFixtureTickets) (get-state &test-tickets))
+""".replace("PRIMARY", expected_primary).replace("RESULT", result)
+
+    def test_failed_attribution_preserves_native_ticket_and_execution(self):
+        setup = self.attribution_setup()
+        # Break the retained advice binding, leaving the real native rows untouched.
+        for field, replacement in (("ticket", '(DispatchTicket "unrelated")'),
+                                   ("command", '(show-current-frame)')):
+            mutation = r"""
+!(test (getStatus (index-atom (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3)) 2)) Accepted)
+!(let* (
+    ((HostReasonerAdmissions $context $id ((HostReasonerProposalAdmission $e $d
+        (HostOperation $candidate $command $p $g $f $ticket)))) (car-atom (hostReasonerAdmissions)))
+    ($changed (quote (HostOperation $candidate COMMAND $p $g $f TICKET)))
+    ($batch (quote (HostReasonerAdmissions $context $id ((HostReasonerProposalAdmission $e $d $changed)))))
+) (change-state! &host-reasoner-admissions ($batch)))
+""".replace("COMMAND", replacement if field == "command" else "$command").replace(
+                "TICKET", replacement if field == "ticket" else "$ticket")
+            with self.subTest(binding=field):
+                self.run_entry(setup + mutation + self.attribution_select(), "reasoner=probe")
+
+    def test_conflicting_proposal_identity_is_rejected_without_changing_native_choice(self):
+        callback = r"""
+;; One invocation cannot assign the same proposal ID to two different predictions.
+(= (conflictingCollect $i $v $a)
+    (let* (($raw (probeCollect $i $v $a))
+           ($first (car-atom (mrcValue $raw 4)))
+           ((ReasonerMotivationalProposal $id $source $kind $target $candidate $claim $support $confidence $refs $_) $first)
+           ($other (quote (ReasonerMotivationalProposal $id $source $kind $target $candidate
+               $claim $support $confidence $refs conflicting-prediction))))
+        (reasonerContractSet (quote (proposals)) ($first $other) $raw)))
+"""
+        setup = self.attribution_setup("conflictingCollect")
+        first_line = setup.index('\n', setup.index('!(import!')) + 1
+        setup = setup[:first_line] + callback + setup[first_line:]
+        checks = r"""
+!(test (mrcValue (index-atom (get-state &test-intake) 3) 3) InvalidOutput)
+!(test (index-atom (get-state &test-intake) 4) ())
+!(test (index-atom (car-atom (hostReasonerAdmissions)) 3) ())
+!(test (commitmentFixtureEpoch) (get-state &test-epoch))
+"""
+        self.run_entry(setup + checks + self.attribution_select(), "reasoner=probe")
+
+    def test_changed_commitment_between_intake_and_selection_cannot_rescue_stale_ticket(self):
+        source = self.attribution_setup() + r"""
+!(test (getStatus (index-atom (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3)) 2)) Accepted)
+!(test (commitmentFixtureApply
+    (quote (CommitmentEvent "replace-after-intake" "boundary-task" 0
+        (Superseded "successor" "New task" "User replaced task"))))
+    (CommitmentApplied "replace-after-intake" "boundary-task" Superseded 1))
+!(test (reasonerRuntimeCurrent (get-state &test-invocation)) False)
+!(test (> (commitmentFixtureEpoch) (get-state &test-epoch)) True)
+"""
+        self.run_entry(source + self.attribution_select(result="(DispatchResult Blocked StaleSnapshot none)"),
+                       "reasoner=probe")
+
+    def test_competing_invocation_cannot_reattribute_the_same_native_ticket(self):
+        source = self.attribution_setup() + r"""
+!(bind! &test-primary (new-state
+    (let (HostReasonerProposalAdmission $e $_ $op)
+        (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3))
+        (quote (HostReasonerPrimary $e $op ShadowAgreement)))))
+"""
+        selection, dispatch = self.attribution_select("(get-state &test-primary)").split(
+            '!(test (dispatchSelectedHostCommand', 1)
+        source += selection + r"""
+!(bind! &original-selection-audit (new-state (hostReasonerSelections)))
+!(bind! &competing-invocation (new-state
+    (reasonerContractSet (quote (invocation-id)) "competing-invocation" (get-state &test-invocation))))
+!(test (validateReasonerInvocation (get-state &competing-invocation))
+    (ReasonerContractValid ReasonerInvocation 1))
+;; Reusing a proposal's local ID in another invocation cannot share its ticket.
+!(let* (
+    ((HostReasonerAdmissions $context $_ ((HostReasonerProposalAdmission $e $d $op)))
+        (car-atom (hostReasonerAdmissions)))
+    ($other (bindReasonerProposalInvocation (mrcValue $e 1) (get-state &competing-invocation)
+        (mrcValue $e 3) (mrcValue $e 4)))
+    ($batch (quote (HostReasonerAdmissions $context "competing-invocation"
+        ((HostReasonerProposalAdmission $other $d $op)))))
+) (change-state! &host-reasoner-admissions (cons-atom $batch (hostReasonerAdmissions))))
+!(test (let (HostReasonerProposalAdmission $e $_ $_)
+    (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3))
+    (validateReasonerInvokedProposal $e)) (ReasonerContractValid ReasonerInvokedProposal 1))
+!(test (retainHostReasonerSelectionAudit (get-state &competing-invocation) (get-state &test-decision)) True)
+!(test (hostReasonerRuntime Decision (get-state &test-decision)) True)
+!(test (hostReasonerSelections) (get-state &original-selection-audit))
+!(test (commitmentFixtureTickets) (get-state &test-tickets))
+""" + '!(test (dispatchSelectedHostCommand' + dispatch
+        self.run_entry(source, "reasoner=probe")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):

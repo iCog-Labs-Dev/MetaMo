@@ -431,6 +431,14 @@ cannot acquire attribution retrospectively.
 `ShadowAgreement` is an evaluation association, not evidence that the reasoner
 caused selection; it grants no causal learning credit or execution authority.
 
+Boundary regressions pause after intake/admission and before native selection.
+They cover mismatched advice commands/tickets, duplicate proposal IDs with
+conflicting predictions, competing invocation claims on an attributed ticket,
+and commitment replacement. Failed attribution preserves independently valid
+native dispatch; a ticket invalidated by an ownership change remains blocked by
+Core. The tests compare the ticket ledger before selection and after dispatch
+to ensure neither attribution failure nor replay allocates a replacement.
+
 Trusted code configures runtime behavior alongside a registered adapter:
 
 ```metta

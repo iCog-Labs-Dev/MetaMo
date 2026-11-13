@@ -15,6 +15,10 @@ commitmentFixtureOutcomes(Records) :-
             mm_commitment_outcome(Outcome,Id,Revision,Status),Records).
 % Example: pure rejection/replay must preserve the dispatch epoch.
 commitmentFixtureEpoch(Epoch) :- oc_dispatch_epoch(Epoch).
+% Inspect ticket identity without allocating or refreshing dispatch authority.
+% Example: attribution failure leaves commitmentFixtureTickets(Tickets) unchanged.
+commitmentFixtureTickets(Tickets) :-
+    findall(Ticket,oc_dispatch_ticket(Ticket,_,_,_),Tickets).
 % Example: inspect the retained predecessor after a replacement opens its successor.
 commitmentFixtureRecord(Id,Record) :-
     mm_commitment(Id,Frame,Summary,Status,Revision),
