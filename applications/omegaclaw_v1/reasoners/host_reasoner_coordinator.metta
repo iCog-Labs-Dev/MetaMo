@@ -3,7 +3,8 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_fact_translation))
 !(import_prolog_functions_from_file
     (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_runtime.pl)
-    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider))
+    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_admission))
 (: HostReasonerRuntimeType Type)
 (: HostReasonerRuntime (-> String Symbol Symbol Expression Number HostReasonerRuntimeType))
 (: HostReasonerRuntimeBindingType Type)
@@ -283,9 +284,15 @@
 (= (hostReasonerRuntime $stage $payload)
     (if (== (hostReasonerSelection) disabled) True
         (case ($stage $payload) (
-            ((ModeCollect $bundle) (collectHostReasonerMode $bundle))
+            ((ModeCollect $bundle) (case (collectHostReasonerMode $bundle) (
+                ((ReasonerRuntimeError $reason) (ReasonerRuntimeError $reason))
+                ($_ (progn
+                    (admitHostReasonerPhase ModeIntake $bundle () (motivosToMetamoState) ()) True))
+            )))
             ((ModeObserved $observation) (retainHostReasonerModeObservation $observation))
             ((Collect ($bundle $actions)) (collectHostReasonerCycle $bundle $actions))
+            ((Admit ($bundle $rows $state $native))
+                (ReasonerAdmittedActions (admitHostReasonerPhase CandidateIntake $bundle $rows $state $native)))
             ((Decision $decision) (retainHostReasonerDecision $decision))
             ((Observation $outcome) (observeHostReasonerOutcome $outcome))
             ($_ (ReasonerRuntimeError UnknownStage)))))

@@ -134,11 +134,15 @@ Reasoners are explicitly optional. `reasoner=disabled` is the default: no reason
 modules, audit state or callbacks are loaded. Startup with `reasoner=nars` or
 `reasoner=pln` enables bounded shadow collection during the normal cycle.
 The coordinator supplies the published factual signals and stable references,
-collects validated candidate proposals before scheduling, retains the native decision, and routes observed
+collects candidate proposals, applies native admission and scoring before scheduling,
+retains the native decision, and routes observed
 outcomes to adapters that declare the corresponding feedback capabilities.
 Trusted adapters can separately enable pre-mode advice with
 `configureHostReasonerModeIntake`; candidate-only adapters incur no extra query.
-Native selection, policy, tickets and dispatch remain unchanged. No grading or
+Admitted candidates are de-duplicated against the native pool without an extra
+confidence/reliability bonus. Native tie order, policy, tickets and final dispatch
+checks are preserved. `hostReasonerAdmissions` retains proposal references,
+admission/rejection reasons and native scores. No grading or
 learning is enabled by collection.
 
 Built-ins preserve engine truth values and evidence; they declare no native
@@ -189,7 +193,8 @@ state and calls the existing validation, feasibility, scoring, and audit path.
 It returns an advisory scheduler directive; it does not execute anything.
 
 Enabled runtime collection and capability-based notifications are connected in
-shadow mode. Proposal influence, causal selection attribution, assessment and
+shadow mode with proposal admission recorded. Additional advisory influence,
+causal selection attribution, assessment and
 learning remain separate integration work. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 

@@ -73,9 +73,13 @@
       ($_ (recordCandidateRejections $operationRejections))
       ($_ (change-state! &operation-admitted-actions $admittedActions))
       ($_ (optionalHostReasoner Collect (quote ($bundle $admittedActions))))
+      ($candidatePool (case (optionalHostReasoner Admit
+            (quote ($bundle $operationRows $currentMetaMoState $admittedActions))) (
+          ((ReasonerAdmittedActions $pool) $pool)
+          ($_ $admittedActions))))
       ;; Scheduling precedence is separate from admission, numeric score,
       ;; constitutional posture, and ContextFrames Fast/Slow execution mode.
-      ($scheduledActions (scheduleAdmittedActions (getSignals) $admittedActions))
+      ($scheduledActions (scheduleAdmittedActions (getSignals) $candidatePool))
       ($sysStates
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
       ($cycleResult

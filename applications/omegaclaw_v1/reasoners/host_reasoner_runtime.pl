@@ -84,3 +84,9 @@ reasonerRuntimeProvider(Callback,Arguments,Unit,Cost,Result) :-
         ['ReasonerProviderCostLimit',[unit,Unit],[amount,Left]]],Tail),
     nth0(12,Current,_,Rest), nth0(12,Updated,[limits,Next],Rest),nb_setval(omega_reasoner_allowance,Updated),
     maplist(reasoner_runtime_quote,Arguments,Quoted), eval([Callback|Quoted],Result).
+
+% Example: recheck ownership/deadline before advice enters candidate admission.
+reasonerRuntimeCurrent(I,Result) :-
+    last(I,['deadline-ms',Deadline]), get_time(Now),
+    (Now*1000=<Deadline, with_mutex(omegaclaw_dispatch,reasoner_runtime_owner(I,_))
+        -> Result=true ; Result=false).

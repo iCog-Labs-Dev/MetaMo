@@ -1,6 +1,6 @@
 # Loosely coupled reasoner integration
 
-Status: optional shadow collection connected; admission influence and assessment remain proposed
+Status: optional collection and proposal admission connected; attribution, bounded influence and assessment remain proposed
 
 The integration should connect the existing reasoner adapters to the normal
 OmegaClaw runtime through an optional host coordinator. MetaMo should receive
@@ -384,7 +384,32 @@ label alone cannot supply a prediction, derivation or expected result.
 and selection boundary. Its state and callback helper load only for explicit
 reasoner startup. The default-disabled bridge performs no reasoner invocation.
 Candidate collection runs after concrete operation admission and before final scheduling;
-this connection does not add proposals to native candidates or alter scores.
+Collected candidate proposals now pass the existing native feasibility, concrete
+dispatch-policy, availability and scoring checks before scheduling. Admitted
+candidate classes join the pool without duplicates or extra weighting.
+
+`reasoners/host_reasoner_admission.metta` consumes the exact operation rows captured
+for native admission; it never captures another command or ticket. Unsupported
+and ambiguous bindings reject with the native reasons. Rejected proposals are
+not scored. Feasible but unavailable work rejects as `CandidateUnavailable`.
+Only admitted proposals use `omegaclawScoreForBundle`, with the same state supplied
+to the native cycle; confidence and source reliability do not multiply that score.
+
+`hostReasonerAdmissions` exposes bounded batches:
+`(HostReasonerAdmissions CONTEXT INVOCATION-ID DECISIONS)`, with each decision
+stored as `(HostReasonerProposalAdmission ORIGINAL-ENVELOPE
+ReasonerMotivationalDecision)`. The envelope preserves the exact proposal and
+provenance. `Accepted` means admitted to consideration, not selected or executed.
+Existing native actions and tie order are preserved, and duplicate candidate
+advice adds no extra action or score. Repeat admission of an invocation does not
+rescore or reissue an earlier permission; it preserves the current native pool.
+
+Mode-stage advice is also assessed before evaluation, but no concrete mode or
+cross-frame handler is supplied by the supported runtime catalog. Such requests
+therefore retain an explicit rejection rather than gaining execution authority.
+Final dispatch still runs Core's current-state, exact-command, ticket and budget
+checks. Exact causal attribution, bounded advisory weighting and grading remain
+separate integration work; native agreement alone is not reasoner causation.
 
 Trusted code configures runtime behavior alongside a registered adapter:
 

@@ -391,6 +391,92 @@ class ReasonerBoundaryTests(unittest.TestCase):
         source += '!(test (size-atom (hostReasonerCycles)) 1)\n'
         self.run_entry(source, "reasoner=probe")
 
+    def test_proposal_admission_uses_native_bindings_policy_and_score(self):
+        source = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(bind! &admission-rows (new-state ()))
+!(bind! &admission-provider (new-state ()))
+;; Keep the exact rows returned during normal capture; no second ticket allocation.
+(= (captureAdmissionRows $bundle)
+    (let* (($provider (get-state &admission-provider))
+           ($rows (eval ($provider (quote $bundle)))))
+        (progn (change-state! &admission-rows $rows) $rows)))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "admission-test" probeCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(change-state! &admission-provider (get-state &operation-provider))
+!(change-state! &operation-provider captureAdmissionRows)
+!(bind! &admission-state (new-state (motivosToMetamoState)))
+!(test (boundaryCycle admission) 1)
+!(test (size-atom (hostReasonerAdmissions)) 1)
+!(bind! &admission-items (new-state (index-atom (car-atom (hostReasonerAdmissions)) 3)))
+!(test (size-atom (get-state &admission-items)) 1)
+!(bind! &proposal-admission (new-state (index-atom (car-atom (get-state &admission-items)) 2)))
+!(test (getStatus (get-state &proposal-admission)) Accepted)
+!(test (getReason (get-state &proposal-admission)) Feasible)
+!(test (getScore (get-state &proposal-admission))
+    (omegaclawScoreForBundle (activeFrameBundle) (get-state &admission-state) (candidateToAction respond)))
+!(test (index-atom (car-atom (hostReasonerAdmissions)) 2)
+    (mrcValue (index-atom (hostReasonerCycleFor (get-state &operation-context)) 2) 1))
+!(test (mrcValue (index-atom (car-atom (get-state &admission-items)) 1) 4)
+    (index-atom (get-state &proposal-admission) 3))
+!(test (get-state &last-operation-outcome) ())
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (hostReasonerRuntime Admit ((activeFrameBundle) (get-state &admission-rows)
+    (get-state &admission-state) (get-state &operation-admitted-actions)))
+    (ReasonerAdmittedActions (get-state &operation-admitted-actions)))
+!(test (size-atom (hostReasonerAdmissions)) 1)
+"""
+        self.run_entry(source, "reasoner=probe")
+        denied = source[:source.index('!(test (getStatus (get-state &proposal-admission)) Accepted)')]
+        denied += r"""
+!(test (getStatus (get-state &proposal-admission)) Rejected)
+!(test (let (GateDecision Rejected $reason)
+    (hostOperationGate (activeFrameBundle) respond (get-state &admission-rows))
+    (getReason (get-state &proposal-admission)))
+    (getReason (get-state &proposal-admission)))
+!(test (getScore (get-state &proposal-admission)) 0.0)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) none)
+!(test (get-state &last-operation-outcome) ())
+"""
+        for variant in ("permission-denied", "budget-denied", "empty", "ambiguous"):
+            scenario = denied.replace('(boundaryProvision "allowed")',
+                f'(boundaryProvision "{variant if variant != "ambiguous" else "allowed"}")')
+            if variant == "ambiguous":
+                scenario = scenario.replace('($rows (eval ($provider (quote $bundle))))',
+                    '($rows (let $single (eval ($provider (quote $bundle))) (append $single $single)))')
+            with self.subTest(variant=variant):
+                self.run_entry(scenario, "reasoner=probe")
+        duplicate = source.replace('"admission-test" probeCollect', '"admission-test" duplicateCollect')
+        fixture_end = duplicate.index('\n', duplicate.index('!(import!')) + 1
+        duplicate = duplicate[:fixture_end] + r"""
+;; Distinct proposals for one candidate retain two decisions but only one pool entry.
+(= (duplicateCollect $i $v $a)
+    (let* (($id (mrcValue $i 1)) ($adapter (mrcValue $i 2)) ($refs (mrcValue $i 13)))
+        (quote (ReasonerIntakeResult (invocation-id $id) (adapter $adapter)
+            (status Proposals)
+            (proposals (
+                (ReasonerMotivationalProposal first-id llm propose-candidate current-frame respond
+                    claim support 0.8 (EvidenceReferences $refs) prediction)
+                (ReasonerMotivationalProposal second-id llm propose-candidate current-frame respond
+                    claim support 1.0 (EvidenceReferences $refs) prediction)))
+            (diagnostics ())))))
+""" + duplicate[fixture_end:]
+        duplicate = duplicate.replace('(size-atom (get-state &admission-items)) 1',
+                                      '(size-atom (get-state &admission-items)) 2')
+        duplicate += r"""
+!(test (map-atom (get-state &admission-items) $entry (getStatus (index-atom $entry 2))) (Accepted Accepted))
+!(test (getScore (index-atom (index-atom (get-state &admission-items) 0) 2))
+    (getScore (index-atom (index-atom (get-state &admission-items) 1) 2)))
+"""
+        self.run_entry(duplicate, "reasoner=probe")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):
