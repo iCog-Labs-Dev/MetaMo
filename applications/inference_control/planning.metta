@@ -9,27 +9,32 @@
      ((revision 0.0)
       ($_ (- 1.0 (* $relevance $novelty))))))
 
+(= (inferenceCandidateFromSignals
+      $id $rule $term $relevance $novelty $confidence $cost $risk)
+   (actionCandidate
+     $id
+     (inferenceControlSchema)
+     (0.0 0.0
+      $relevance $confidence $novelty (- 1.0 $cost)
+      $risk (inferenceLowInformationGain $rule $relevance $novelty))
+     (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+     ((risk $risk)
+      (estimated_cost $cost)
+      (rule $rule)
+      (predicted_term $term)
+      (source inference_control))))
+
 (= (inferenceCandidateFromAnnotation
       $id
       (inferenceAnnotatedProposal
         (plnProposal $rule $first $second) $term $context $features))
-   (let* (($relevance (featureMapGet $features query_relevance 0.0))
-          ($novelty (featureMapGet $features novelty 0.0))
-          ($confidence (featureMapGet $features premise_confidence 0.0))
-          ($cost (featureMapGet $features estimated_cost 1.0))
-          ($risk (featureMapGet $features estimated_risk 1.0)))
-         (actionCandidate
-           $id
-           (inferenceControlSchema)
-           (0.0 0.0
-            $relevance $confidence $novelty (- 1.0 $cost)
-            $risk (inferenceLowInformationGain $rule $relevance $novelty))
-           (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
-           ((risk $risk)
-            (estimated_cost $cost)
-            (rule $rule)
-            (predicted_term $term)
-            (source inference_control)))))
+   (inferenceCandidateFromSignals
+     $id $rule $term
+     (featureMapGet $features query_relevance 0.0)
+     (featureMapGet $features novelty 0.0)
+     (featureMapGet $features premise_confidence 0.0)
+     (featureMapGet $features estimated_cost 1.0)
+     (featureMapGet $features estimated_risk 1.0)))
 
 (= (inferenceBuildCandidateBatch $annotations $startIndex)
    (inferenceBuildCandidateBatchFrom $annotations $startIndex () ()))
@@ -47,12 +52,17 @@
                (append $candidates ($candidate))
                (append $bindings ($binding))))))
 
-(= (inferenceBatchCandidates (inferenceCandidateBatch $candidates $bindings $nextIndex))
-   $candidates)
-(= (inferenceBatchBindings (inferenceCandidateBatch $candidates $bindings $nextIndex))
-   $bindings)
-(= (inferenceBatchNextIndex (inferenceCandidateBatch $candidates $bindings $nextIndex))
-   $nextIndex)
+(= (inferenceBatchField
+      (inferenceCandidateBatch $candidates $bindings $nextIndex) $field)
+   (case $field
+     ((candidates $candidates)
+      (bindings $bindings)
+      (nextIndex $nextIndex)
+      ($_ (empty)))))
+
+(= (inferenceBatchCandidates $record) (inferenceBatchField $record candidates))
+(= (inferenceBatchBindings $record) (inferenceBatchField $record bindings))
+(= (inferenceBatchNextIndex $record) (inferenceBatchField $record nextIndex))
 
 (= (inferenceAnnotationForId $batch $id)
    (inferenceFindBinding $id (inferenceBatchBindings $batch)))

@@ -74,10 +74,11 @@
        (if (== $bridge ()) 0.0 0.75)))
 
 (= (inferenceTermPresent $term $beliefs)
-   (is-member True
-     (collapse
-       (let (Sentence ($existing $truth) $evidence) (superpose $beliefs)
-            (if (== $term $existing) True (empty))))))
+   (> (length
+        (collapse
+          (let (Sentence ($existing $truth) $evidence) (superpose $beliefs)
+               (if (== $term $existing) True (empty)))))
+      0))
 
 (= (inferenceNovelty $term $beliefs)
    (if (inferenceTermPresent $term $beliefs) 0.0 1.0))
@@ -118,11 +119,16 @@
      (let $proposal (superpose $proposals)
           (inferenceAnnotateProposal $proposal $query $beliefs))))
 
-(= (inferenceAnnotationProposal (inferenceAnnotatedProposal $proposal $term $context $features))
-   $proposal)
-(= (inferenceAnnotationTerm (inferenceAnnotatedProposal $proposal $term $context $features))
-   $term)
-(= (inferenceAnnotationContext (inferenceAnnotatedProposal $proposal $term $context $features))
-   $context)
-(= (inferenceAnnotationFeatures (inferenceAnnotatedProposal $proposal $term $context $features))
-   $features)
+(= (inferenceAnnotationField
+      (inferenceAnnotatedProposal $proposal $term $context $features) $field)
+   (case $field
+     ((proposal $proposal)
+      (term $term)
+      (context $context)
+      (features $features)
+      ($_ (empty)))))
+
+(= (inferenceAnnotationProposal $record) (inferenceAnnotationField $record proposal))
+(= (inferenceAnnotationTerm $record) (inferenceAnnotationField $record term))
+(= (inferenceAnnotationContext $record) (inferenceAnnotationField $record context))
+(= (inferenceAnnotationFeatures $record) (inferenceAnnotationField $record features))
