@@ -309,6 +309,88 @@ class ReasonerBoundaryTests(unittest.TestCase):
 """
         self.run_entry(source, "reasoner=probe")
 
+    def test_runtime_limits_and_changed_ownership_preserve_native_path(self):
+        setup = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "limit-test" checkedCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle limits) 1)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (size-atom (reasonerProposalOutcomes)) 0)
+"""
+        callbacks = {
+            "provider": r"""
+!(bind! &provider-count (new-state 0))
+(= (providerProbe) (progn (change-state! &provider-count 1) answer))
+(= (checkedCollect $i $v $a)
+    (progn (reasonerRuntimeProvider providerProbe () "USD" 0) (probeCollect $i $v $a)))
+""",
+            "steps": r"""
+!(import_prolog_function reasonerRuntimeEngine)
+(= (checkedCollect $i $v $a)
+    (progn (reasonerRuntimeEngine 100 1 1) (reasonerRuntimeEngine 1 1 1) (probeCollect $i $v $a)))
+""",
+            "commitment": r"""
+(= (checkedCollect $i $v $a)
+    (progn (commitmentFixtureApply
+        (quote (CommitmentEvent "replaced-during-inference" "boundary-task" 0
+            (Superseded "successor" "New task" "User replaced task"))))
+        (probeCollect $i $v $a)))
+""",
+        }
+        imports, rest = setup.split('!(test (registerHostReasoner', 1)
+        for kind, callback in callbacks.items():
+            source = imports + callback + '!(test (registerHostReasoner' + rest
+            if kind == "commitment":
+                source += '!(test (hostReasonerCycles) ())\n'
+            else:
+                source += r"""
+!(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) InvalidOutput)
+!(test (index-atom (car-atom (hostReasonerCycles)) 4) ())
+!(test (get-state &probe-count) 0)
+"""
+            if kind == "provider":
+                source += '!(test (get-state &provider-count) 0)\n'
+            with self.subTest(limit=kind):
+                self.run_entry(source, "reasoner=probe")
+
+    def test_expired_or_wrong_session_invocation_does_not_call_adapter(self):
+        source = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_reasoner_runtime))
+!(test (registerHostReasoner
+    (reasonerContractSet (quote (source)) llm
+        (reasonerContractSet (quote (adapter)) "probe" (reasonerContractFixture registration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerRuntime "probe"
+    (quote (HostReasonerRuntime "expiry-test" probeCollect probeNotify () 0.8))) True)
+!(test (selectHostReasoner "probe") True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle expiry) 1)
+!(bind! &expired-invocation (new-state (reasonerContractSet (quote (deadline-ms)) 0
+    (index-atom (car-atom (hostReasonerCycles)) 2))))
+!(test (reasonerRuntimeCollect (get-state &expired-invocation) probeCollect ())
+    (ReasonerRuntimeError Timeout))
+!(test (reasonerRuntimeCollect
+    (reasonerContractSet (quote (session)) "another-session" (get-state &expired-invocation)) probeCollect ())
+    (ReasonerRuntimeError StaleInvocation))
+!(test (get-state &probe-count) 1)
+!(collapse (translatePredicate (mutex_lock omegaclaw_dispatch)))
+!(test (reasonerRuntimeCollect (get-state &expired-invocation) probeCollect ())
+    (ReasonerRuntimeError DispatchLocked))
+!(collapse (translatePredicate (mutex_unlock omegaclaw_dispatch)))
+"""
+        source += r'!(test (let (HostReasonerCycle $context $i $r $p $d $o) (car-atom (hostReasonerCycles)) (retainHostReasonerCycle (quote (HostReasonerCycle $context $i $r $p $d "' + 'x' * 1201 + r'")))) (ReasonerRuntimeError AuditLimit))' + "\n"
+        source += '!(test (size-atom (hostReasonerCycles)) 1)\n'
+        self.run_entry(source, "reasoner=probe")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):

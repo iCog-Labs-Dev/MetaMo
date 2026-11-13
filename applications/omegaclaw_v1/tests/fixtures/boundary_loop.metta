@@ -11,7 +11,7 @@
       (initContextFrame)
       (fullLoopStartSession)
       (fullLoopIngest "Explain the project documentation")
-      (commitmentFixtureOpen "boundary-task" (repr (get-state &cfv2-current-frame-id))
+      (commitmentFixtureOpen "boundary-task" (get-state &cfv2-current-frame-id)
          "Explain the project documentation")
       (py-call (host_mode_fixture.setup))))
 

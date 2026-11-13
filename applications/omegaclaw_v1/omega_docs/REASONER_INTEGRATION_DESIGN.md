@@ -448,12 +448,39 @@ cycle, frame, commitment revision, publication, engine/configuration provenance
 and a deadline. The built-in version label is `local-libraries`; a trusted host
 should configure an exact engine version when reproducibility requires it.
 
-Counts and payload bounds come from registration/invocation limits. Callback
-execution has a wall-clock timeout and runs outside the dispatch mutex. Built-in
-queries divide their declared engine-step budget among the bounded candidate
-queries. Custom callbacks are trusted host implementations responsible for
-honoring their own declared engine/provider limits; this is not an execution
-sandbox or general provider-usage meter.
+Counts and payload bounds reuse the existing registration/invocation limits.
+Collection now uses `reasonerRuntimeCollect`: it verifies the exact session,
+cycle, native frame identity and open commitment revision, captures current
+host state under the dispatch mutex, then releases the mutex before calling
+the adapter. It refuses collection when the calling thread already holds that
+mutex. Before accepting the response it checks ownership/state again and checks
+the absolute invocation deadline, including preparation time. Expired and late
+responses cannot become proposals, even if a callback absorbs a timeout signal.
+Session evidence must resolve to the current publication owner; native rule
+`ObservationRef` values remain explicit trusted host configuration.
+
+Built-in queries retain their existing step allocation. Calls through
+`reasonerQuery` now additionally reserve their requested steps from one shared
+invocation allowance and enforce the declared queue ceiling, including repeated
+queries by a custom adapter. Offline queries outside collection are unchanged.
+Provider-backed adapters must use the metered gateway:
+
+```metta
+(reasonerRuntimeProvider providerCallback arguments "USD" declaredCost)
+```
+
+It reserves one provider call and the declared cost before invoking that callback;
+a zero allowance prevents the call. The cost unit must match the registration.
+These are conservative reservations, not measured billing. Gateways are the
+supported adapter contract; trusted host code that bypasses them is outside
+these guarantees. This is not an arbitrary-code or network sandbox.
+
+Retained cycle records are bounded to twice the declared payload-node allowance
+with depth 32 and existing scalar limits, in addition to the session record cap.
+Oversized audit updates leave retained data unchanged. Feedback payloads also
+respect the payload allowance. An unavailable or invalid adapter, exhausted
+allowance, expired invocation or rejected audit update never grants execution
+permission, changes native scores, or updates source reliability.
 
 `hostReasonerCycles` exposes bounded `HostReasonerCycle` records containing the
 operation context, phased invocation, checked intake result, original proposal

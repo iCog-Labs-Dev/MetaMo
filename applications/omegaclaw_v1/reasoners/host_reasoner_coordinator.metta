@@ -3,7 +3,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_fact_translation))
 !(import_prolog_functions_from_file
     (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_runtime.pl)
-    (reasonerRuntimeIdentity reasonerRuntimeCall))
+    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider))
 (: HostReasonerRuntimeType Type)
 (: HostReasonerRuntime (-> String Symbol Symbol Expression Number HostReasonerRuntimeType))
 (: HostReasonerRuntimeBindingType Type)
@@ -74,10 +74,12 @@
 ;; Update an existing identity without allocating a replacement invocation.
 ;; Example: notification failures still leave the retained decision available.
 (= (retainHostReasonerCycle $row)
-    (change-state! &host-reasoner-cycles
-        (cons-atom (quote $row) (filter-atom (hostReasonerCycles) $old
-            (not (and (== (index-atom $old 1) (index-atom $row 1))
-                (== (mrcValue (index-atom $old 2) 10) (mrcValue (index-atom $row 2) 10)))))))
+    (if (hostReasonerAuditFits $row)
+        (change-state! &host-reasoner-cycles
+            (cons-atom (quote $row) (filter-atom (hostReasonerCycles) $old
+                (not (and (== (index-atom $old 1) (index-atom $row 1))
+                    (== (mrcValue (index-atom $old 2) 10) (mrcValue (index-atom $row 2) 10)))))))
+        (ReasonerRuntimeError AuditLimit))
 )
 
 ;; Reuse stable observation stamps; no numeric truth conversion happens here.
@@ -218,15 +220,17 @@
                             (signals $signals) (native-facts $native))))
                     )
                         (if (and (== (validateReasonerInvocation $invocation) (ReasonerContractValid ReasonerInvocation 1))
-                                 (reasonerAdmittedPayloadBounded $invocation $signals $native))
+                                 (and (reasonerAdmittedPayloadBounded $invocation $signals $native)
+                                     (hostReasonerEvidenceCurrent (mrcValue $invocation 13))))
                             (let* (
-                                ($raw (reasonerRuntimeCall (mrcValue (mrcValue $invocation 12) 9)
-                                    $collect ($invocation $view $actions)))
+                                ($raw (reasonerRuntimeCollect $invocation $collect ($invocation $view $actions)))
                                 ($intake (hostReasonerCheckedIntake $registration $invocation $raw))
                                 ($envelopes (map-atom (mrcValue $intake 4) $proposal
                                     (bindReasonerProposalInvocation $registration $invocation $version $proposal)))
                             )
-                                (if (and (== $context (get-state &operation-context)) (== $bundle (activeFrameBundle)))
+                                (if (and (== $context (get-state &operation-context))
+                                         (and (== $bundle (activeFrameBundle))
+                                             (== (mrcValue $invocation 9) (hostReasonerCommitment))))
                                     (retainHostReasonerCycle (quote (HostReasonerCycle $context $invocation
                                         $intake $envelopes () ()))) (ReasonerRuntimeError StaleInvocation)))
                             (ReasonerRuntimeError InvalidView)))
@@ -239,7 +243,9 @@
 ;; Notify only declared adapter capabilities; callback failures do not affect native state.
 ;; Example: built-ins with empty feedback receive no Observation call.
 (= (notifyHostReasoner $stage $invocation $payload)
-    (if (tpContains (mrcValue (mrcValue $invocation 11) 4) $stage)
+    (if (and (tpContains (mrcValue (mrcValue $invocation 11) 4) $stage)
+             (>= (reasonerProposalDataRemaining (quote $payload) 32
+                 (mrcValue (mrcValue $invocation 12) 2)) 0))
         (case (hostReasonerRuntimeBinding (mrcValue $invocation 2)) (
             ((HostReasonerRuntime $_ $_ $notify $_ $_)
                 (reasonerRuntimeCall (mrcValue (mrcValue $invocation 12) 9)
@@ -252,9 +258,9 @@
 (= (retainHostReasonerDecision $decision)
     (case (hostReasonerCycleFor (get-state &operation-context)) (
         ((HostReasonerCycle $context $invocation $intake $proposals () $outcome)
-            (progn
-                (retainHostReasonerCycle (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome)))
-                (notifyHostReasoner Decision $invocation $decision)))
+            (retainAndNotifyHostReasoner
+                (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))
+                Decision $decision))
         ($_ True)))
 )
 
@@ -265,9 +271,9 @@
         ((OperationOutcome $decision $_ $_ $_)
             (case (hostReasonerCycleFor (get-state &operation-context)) (
                 ((HostReasonerCycle $context $invocation $intake $proposals $decision ())
-                    (progn
-                        (retainHostReasonerCycle (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome)))
-                        (notifyHostReasoner Observation $invocation $outcome)))
+                    (retainAndNotifyHostReasoner
+                        (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))
+                        Observation $outcome))
                 ($_ True))))
         ($_ True)))
 )
@@ -320,7 +326,11 @@
 ;; Example: a mismatched bundle returns False without resolving its source.
 (= (hostReasonerSnapshotSignalsValid $bundle $snapshot $signals)
     (if (signalObservationBundleValid $bundle $snapshot)
-        (hostReasonerSourceSignalsValid (resolveSignalObservation $snapshot) $signals)
+        (case (resolveSignalObservation $snapshot) (
+            ((SourceObservation $_ $owner $_ $_)
+                (and (== $owner (hostSignalOwner))
+                    (hostReasonerSourceSignalsValid (resolveSignalObservation $snapshot) $signals)))
+            ($_ False)))
         False
     )
 )
@@ -406,10 +416,35 @@
     (case (hostReasonerCycleForPhase (get-state &operation-context) ModeIntake) (
         ((HostReasonerCycle $context $invocation $intake $proposals () $outcome)
             (if (and (== $observation (lastModeObservation)) (hostReasonerModeAlreadyObserved $context))
-                (progn
-                    (retainHostReasonerCycle (quote (HostReasonerCycle $context $invocation
-                        $intake $proposals $observation $outcome)))
-                    (notifyHostReasoner Decision $invocation $observation))
+                (retainAndNotifyHostReasoner
+                    (quote (HostReasonerCycle $context $invocation $intake $proposals $observation $outcome))
+                    Decision $observation)
                 (ReasonerRuntimeError MismatchedModeObservation)))
         ($_ True)))
+)
+
+;; Bound retained envelopes and later callback payloads using the declared node allowance.
+;; Example: a large command result cannot expand the coordinator audit without limit.
+(= (hostReasonerAuditFits $row)
+    (>= (reasonerProposalDataRemaining (quote $row) 32
+        (* 2 (mrcValue (mrcValue (index-atom $row 2) 12) 2))) 0)
+)
+
+;; Configured rule references are trusted host inputs; session references must resolve.
+;; Example: adding an invented session reference to native facts grants no evidence authority.
+(= (hostReasonerEvidenceCurrent $refs)
+    (let $owner (hostSignalOwner)
+        (== (filter-atom $refs $ref
+            (case $ref (
+                ((SessionObservationRef $_ $_) (!= (hostSignalReferenceForOwner $ref $owner) $ref))
+                ($_ False)))) ()))
+)
+
+;; Deliver feedback only after its audit update succeeds.
+;; Example: an oversized observation cannot produce unretained adapter feedback.
+(= (retainAndNotifyHostReasoner $row $stage $payload)
+    (case (retainHostReasonerCycle $row) (
+        ((ReasonerRuntimeError $reason) (ReasonerRuntimeError $reason))
+        ($_ (notifyHostReasoner $stage (index-atom $row 2) $payload))
+    ))
 )

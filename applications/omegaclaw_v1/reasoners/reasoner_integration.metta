@@ -12,15 +12,17 @@
 
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_engines.pl)
-   (loadReasonerEngines))
+   (loadReasonerEngines reasonerEngineBudget))
 !(loadReasonerEngines)
 
 ;; Explicit small MVP inference budget; callers can supply tighter limits.
 (= (reasonerInferenceLimits) (InferenceLimits 8 10 40))
 (= (reasonerQuery nars $facts $query (InferenceLimits $steps $tasks $beliefs))
-   (MetaMoNARS.NARS.Query $facts $query $steps $tasks $beliefs))
+   (progn (reasonerEngineBudget $steps $tasks $beliefs)
+      (MetaMoNARS.NARS.Query $facts $query $steps $tasks $beliefs)))
 (= (reasonerQuery pln $facts $query (InferenceLimits $steps $tasks $beliefs))
-   (MetaMoPLN.PLN.Query $facts $query $steps $tasks $beliefs))
+   (progn (reasonerEngineBudget $steps $tasks $beliefs)
+      (MetaMoPLN.PLN.Query $facts $query $steps $tasks $beliefs)))
 
 ;; Query a registered candidate recommendation for this exact frame. Merely
 ;; asking the question does not supply the conclusion: inference must return

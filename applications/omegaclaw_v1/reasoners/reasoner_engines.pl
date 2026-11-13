@@ -45,3 +45,8 @@ metamo_engine_register(Term, parsed(function, Text, Term)) :-
     register_fun(F), length(Args, N), Arity is N + 1,
     assertz(arity(F, Arity)), swrite(Term, Text).
 metamo_engine_register(Term, parsed(expression, Text, Term)) :- swrite(Term, Text).
+
+% Offline queries remain unchanged; enabled runtime queries share one invocation allowance.
+reasonerEngineBudget(Steps,Tasks,Beliefs,Result) :-
+    (current_predicate(reasonerRuntimeEngine/4)
+        -> reasonerRuntimeEngine(Steps,Tasks,Beliefs,Result) ; Result=true).
