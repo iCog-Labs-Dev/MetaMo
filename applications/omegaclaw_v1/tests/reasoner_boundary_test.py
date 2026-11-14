@@ -674,6 +674,157 @@ class ReasonerBoundaryTests(unittest.TestCase):
 """ + '!(test (dispatchSelectedHostCommand' + dispatch
         self.run_entry(source, "reasoner=probe")
 
+    def test_callback_receipts_survive_slot_replacement_and_assessment_is_explicit(self):
+        callbacks = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
+!(bind! &receipts-at-notification (new-state ()))
+!(bind! &legacy-comparator-calls (new-state 0))
+;; Callback inspection must see the receipt already captured, with no assessment.
+(= (receiptNotify $stage $i $payload)
+    (progn (if (== $stage Observation)
+        (change-state! &receipts-at-notification (hostReasonerReceipts)) True)
+        (probeNotify $stage $i $payload)))
+;; A legacy global evaluator must not replace the trusted schema route.
+(= (legacyComparatorTrap $prediction $actual)
+    (progn (change-state! &legacy-comparator-calls 1) (ReasonerPredictionComparison Confirmed 0.4)))
+(= (receiptCollect $i $v $a)
+    (let* (($raw (probeCollect $i $v $a)) ($refs (mrcValue $i 13))
+        ($proposals (quote (
+            (ReasonerMotivationalProposal selected llm propose-candidate current-frame respond
+                claim support 0.8 (EvidenceReferences $refs) (ExpectedOperationResult EXPECTED))
+            (ReasonerMotivationalProposal rejected llm propose-candidate current-frame defer
+                claim support 0.8 (EvidenceReferences $refs) (ExpectedOperationResult "unobserved alternative")))))
+    ) (reasonerContractSet (quote (proposals)) $proposals $raw)))
+"""
+        setup = self.attribution_setup("receiptCollect").replace(
+            '"attribution-test" receiptCollect probeNotify', '"attribution-test" receiptCollect receiptNotify')
+        setup = setup.replace('(reasonerContractFixture registration)',
+            '(reasonerContractSet (quote (capabilities candidates)) (respond defer) (reasonerContractFixture registration))')
+        insert = setup.index('\n', setup.index('!(import!')) + 1
+        setup = setup[:insert] + callbacks + setup[insert:]
+        before = r"""
+!(bind! &selected-envelope (new-state
+    (index-atom (index-atom (index-atom (car-atom (hostReasonerAdmissions)) 3) 0) 1)))
+!(bind! &rejected-envelope (new-state
+    (index-atom (index-atom (index-atom (car-atom (hostReasonerAdmissions)) 3) 1) 1)))
+!(test (getStatus (index-atom (index-atom (index-atom (car-atom (hostReasonerAdmissions)) 3) 1) 2)) Rejected)
+!(bind! &test-primary (new-state
+    (let (HostReasonerProposalAdmission $e $_ $op)
+        (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3))
+        (quote (HostReasonerPrimary $e $op ShadowAgreement)))))
+!(bind! &receipt-id (new-state
+    (let (OperationContext $session $_ $_) (get-state &operation-context)
+        (let (DispatchTicket $id) (get-state &test-ticket) (ReasonerOutcomeRef $session $id)))))
+!(test (hostReasonerReceipts) ())
+!(test (assessHostReasonerProposalOutcome (get-state &selected-envelope) (get-state &receipt-id))
+    (ReasonerAssessmentRejected MissingReceipt))
+!(change-state! &reasoner-prediction-comparator legacyComparatorTrap)
+!(bind! &reliability-before (new-state (reasonerSourceReliability llm)))
+"""
+        after = r"""
+!(test (size-atom (hostReasonerReceipts)) 1)
+!(test (get-state &receipts-at-notification) (hostReasonerReceipts))
+!(test (hostReasonerAssessments) ())
+!(bind! &first-receipt (new-state (hostReasonerReceiptFor (get-state &receipt-id))))
+!(test (index-atom (get-state &first-receipt) 3) (get-state &last-operation-outcome))
+!(test (retainHostReasonerReceipt (get-state &test-invocation) (get-state &first-receipt)
+    (get-state &receipt-id)) True)
+!(test (let (HostReasonerReceipt $id $selection $_) (get-state &first-receipt)
+    (retainHostReasonerReceipt (get-state &test-invocation)
+        (quote (HostReasonerReceipt $id $selection ())) $id)) (ReasonerRuntimeError ConflictingReceipt))
+!(test (ingestOperationOutcome (get-state &last-operation-outcome)) OutcomeDuplicate)
+!(test (hostReasonerRuntime Observation (get-state &last-operation-outcome)) True)
+!(test (size-atom (hostReasonerReceipts)) 1)
+!(test (assessHostReasonerProposalOutcome (get-state &rejected-envelope) (get-state &receipt-id))
+    (ReasonerAssessmentDeferred NoObservedAlternative))
+!(test (hostReasonerAssessments) ())
+;; A real later callback replaces the host slot, but cannot replace the first receipt.
+!(test (boundaryCycle next-receipt) 1)
+!(test (fullLoopDispatch next-receipt (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (size-atom (hostReasonerReceipts)) 2)
+!(test (!= (get-state &last-operation-outcome) (index-atom (get-state &first-receipt) 3)) True)
+!(test (hostReasonerReceiptFor (get-state &receipt-id)) (get-state &first-receipt))
+!(test (hostReasonerAssessments) ())
+!(bind! &first-assessment (new-state
+    (assessHostReasonerProposalOutcome (get-state &selected-envelope) (get-state &receipt-id))))
+!(test (index-atom (get-state &first-assessment) 4) COMPARISON)
+!(test (assessHostReasonerProposalOutcome (get-state &selected-envelope) (get-state &receipt-id))
+    (get-state &first-assessment))
+!(test (size-atom (hostReasonerAssessments)) 1)
+!(test (reasonerSourceReliability llm) (get-state &reliability-before))
+!(test (get-state &legacy-comparator-calls) 0)
+!(test (hostReasonerReceiptFor (get-state &receipt-id)) (get-state &first-receipt))
+"""
+        selection, dispatch = self.attribution_select("(get-state &test-primary)").split(
+            '!(test (dispatchSelectedHostCommand', 1)
+        forged = r"""
+;; Matching decision labels alone cannot replace the actual accepted Core callback.
+!(test (let* (($d (get-state &selected-operation-decision)) ($c (selectedHostCommand))
+    ($fake (quote (OperationOutcome $d (attempted-command $c) Success
+        (DispatchResult Executed Feasible "invented result")))))
+    (hostReasonerRuntime Observation $fake)) (ReasonerRuntimeError InvalidReceipt))
+!(test (index-atom (hostReasonerCycleFor (get-state &operation-context)) 6) ())
+!(test (hostReasonerReceipts) ())
+!(test (size-atom (get-state &probe-notifications)) 1)
+"""
+        source = setup + before + selection + forged + '!(test (dispatchSelectedHostCommand' + dispatch + after
+        for expected, comparison in (
+            ('"observed local file content"', '(ReasonerPredictionComparison Confirmed 1.0)'),
+            ('"another result"', '(ReasonerPredictionComparison Refuted 0.0)'),
+        ):
+            with self.subTest(expected=expected):
+                self.run_entry(source.replace('EXPECTED', expected).replace('COMPARISON', comparison),
+                               "reasoner=probe")
+
+    def test_blocked_receipt_is_retained_without_grading(self):
+        source = self.attribution_setup() + r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
+!(bind! &blocked-envelope (new-state
+    (index-atom (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3)) 1)))
+!(commitmentFixtureApply (quote (CommitmentEvent "replace-before-dispatch" "boundary-task" 0
+    (Superseded "successor" "New task" "User replaced task"))))
+""" + self.attribution_select(result="(DispatchResult Blocked StaleSnapshot none)") + r"""
+!(test (size-atom (hostReasonerReceipts)) 1)
+!(test (index-atom (car-atom (hostReasonerReceipts)) 3) (get-state &last-operation-outcome))
+!(test (assessHostReasonerProposalOutcome (get-state &blocked-envelope)
+    (index-atom (car-atom (hostReasonerReceipts)) 1)) (ReasonerAssessmentDeferred InsufficientEvidence))
+!(test (hostReasonerAssessments) ())
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_unsupported_and_uncertain_predictions_remain_ungraded(self):
+        for uncertain in (False, True):
+            setup = self.attribution_setup()
+            imports = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
+!(import_prolog_functions_from_file
+    (library MetaMo applications/omegaclaw_v1/tests/fixtures/dispatch.pl) (hostReceiptFixtureUncertain))
+!(bind! &budget-test-effects (new-state 0))
+"""
+            insert = setup.index('\n', setup.index('!(import!')) + 1
+            setup = setup[:insert] + imports + setup[insert:]
+            source = setup + r"""
+!(bind! &test-primary (new-state
+    (let (HostReasonerProposalAdmission $e $_ $op)
+        (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3))
+        (quote (HostReasonerPrimary $e $op ShadowAgreement)))))
+""" + self.attribution_select("(get-state &test-primary)",
+                "(DispatchResult Unobserved ExecutionUncertain none)" if uncertain
+                else '(DispatchResult Executed Feasible "observed local file content")') + r"""
+!(test (size-atom (hostReasonerReceipts)) 1)
+!(test (assessHostReasonerProposalOutcome (index-atom (get-state &test-primary) 1)
+    (index-atom (car-atom (hostReasonerReceipts)) 1)) (ReasonerAssessmentDeferred REASON))
+!(test (hostReasonerAssessments) ())
+"""
+            with self.subTest(uncertain=uncertain):
+                if uncertain:
+                    source = source.replace('(dispatchSelectedHostCommand (get-state &test-ticket) (selectedHostCommand))',
+                        '(hostReceiptFixtureUncertain (get-state &test-ticket) (selectedHostCommand))')
+                    source += '!(test (get-state &budget-test-effects) 1)\n'
+                self.run_entry(source.replace('REASON', 'InsufficientEvidence' if uncertain
+                                              else 'UnsupportedPrediction'), "reasoner=probe")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):

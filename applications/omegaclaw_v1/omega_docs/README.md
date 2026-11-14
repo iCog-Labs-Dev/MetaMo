@@ -145,8 +145,12 @@ checks are preserved. `hostReasonerAdmissions` retains proposal references,
 admission/rejection reasons, native scores and exact admitted operation bindings.
 `hostReasonerSelections` retains at most one primary proposal before dispatch,
 matched to the exact command and ticket in retained intake order. This is labelled
-`ShadowAgreement`; native agreement does not establish reasoner causation. No grading or
-learning is enabled by collection.
+`ShadowAgreement`; native agreement does not establish reasoner causation.
+`hostReasonerReceipts` captures bounded, ungraded Core receipts during the accepted
+dispatch-outcome callback, before adapter notification or slot replacement.
+The optional external assessment service exposes `assessHostReasonerProposalOutcome`
+for explicit comparison of supported predictions. Collection and receipt capture
+enable neither grading nor learning; this assessment entry point performs no learning.
 
 Built-ins preserve engine truth values and evidence; they declare no native
 feedback support. Without explicitly configured native rules, an inference
@@ -197,7 +201,8 @@ It returns an advisory scheduler directive; it does not execute anything.
 
 Enabled runtime collection and capability-based notifications are connected in
 shadow mode with proposal admission and exact selection agreement recorded.
-Additional advisory influence, causal selection credit, assessment and
+Explicit assessment of captured operation-result predictions is available separately.
+Additional advisory influence, causal selection credit and configured
 learning remain separate integration work. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 

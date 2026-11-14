@@ -83,6 +83,18 @@ hostBudgetFixtureExecutor(Mode, true) :-
     oc_dispatch_mutate((retract(oc_dispatch_hooks(S,R,G,_)),
                        assertz(oc_dispatch_hooks(S,R,G,Execute)))).
 
+% Inject a lost result into an already selected invocation, preserving its ticket.
+% Example: hostReceiptFixtureUncertain(Ticket,Command,Result) runs the normal host callback.
+hostReceiptFixtureUncertain(Ticket,Command,Result) :-
+    setup_call_cleanup(
+        with_mutex(omegaclaw_dispatch,
+            (retract(oc_dispatch_hooks(S,R,G,E)),
+             assertz(oc_dispatch_hooks(S,R,G,hostBudgetFixturePartialExecute)))),
+        eval([dispatchSelectedHostCommand,[quote,Ticket],[quote,Command]],Result),
+        with_mutex(omegaclaw_dispatch,
+            (retract(oc_dispatch_hooks(S,R,G,hostBudgetFixturePartialExecute)),
+             assertz(oc_dispatch_hooks(S,R,G,E))))).
+
 % Example: mutate only native policy inputs under Core's lock/epoch contract.
 hostPolicyFixtureWrite(Key, Value, true) :-
     atom_string(Name,Key),

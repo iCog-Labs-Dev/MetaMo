@@ -3,7 +3,7 @@
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_fact_translation))
 !(import_prolog_functions_from_file
     (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_runtime.pl)
-    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent reasonerRuntimeSelectionCurrent))
+    (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent reasonerRuntimeSelectionCurrent reasonerRuntimeReceipt))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_admission))
 (: HostReasonerRuntimeType Type)
 (: HostReasonerRuntime (-> String Symbol Symbol Expression Number HostReasonerRuntimeType))
@@ -18,6 +18,52 @@
 !(bind! &host-reasoner-runtimes (new-state ()))
 !(bind! &host-reasoner-cycles (new-state ()))
 !(bind! &host-reasoner-mode-intake (new-state ()))
+(: HostReasonerReceiptType Type)
+(: HostReasonerReceipt (-> Expression Expression Expression HostReasonerReceiptType))
+(: ReasonerOutcomeRefType Type)
+(: ReasonerOutcomeRef (-> String String ReasonerOutcomeRefType))
+!(bind! &host-reasoner-receipts (new-state ()))
+
+;; Ungraded callback evidence is separate from assessments and engine learning.
+;; Example: (hostReasonerReceipts) remains unchanged on duplicate callback delivery.
+(= (hostReasonerReceipts) (get-state &host-reasoner-receipts))
+
+;; Resolve one immutable receipt by the existing session/ticket identity.
+;; Example: an unknown identity returns (), never the most recent outcome.
+(= (hostReasonerReceiptFor $id)
+    (let $rows (filter-atom (hostReasonerReceipts) $row (== (index-atom $row 1) $id))
+        (if (== (size-atom $rows) 1) (car-atom $rows) ()))
+)
+
+;; Capture inside the accepted-outcome callback, before notification or slot reuse.
+;; Example: audit limits leave native execution intact and cannot create a grade.
+(= (captureHostReasonerReceipt $invocation $outcome)
+    (let* (
+        ($decision (index-atom $outcome 1))
+        ($selections (filter-atom (hostReasonerSelections) $row
+            (and (== (index-atom $row 3) $decision) (== (index-atom $row 2) (mrcValue $invocation 1)))))
+    )
+        (case $selections (
+            (($selection) (let $receipt (reasonerRuntimeReceipt $selection $outcome)
+                (case $receipt (
+                    ((HostReasonerReceipt $id $_ $_) (retainHostReasonerReceipt $invocation $receipt $id))
+                    ($error $error)))))
+            ($_ (ReasonerRuntimeError MissingSelection)))))
+)
+
+;; One bounded immutable record per outcome; conflicting replay cannot replace evidence.
+;; Example: identical receipt redelivery returns True without appending another record.
+(= (retainHostReasonerReceipt $invocation $receipt $id)
+    (with_mutex omegaclaw_dispatch
+    (let* (($prior (hostReasonerReceiptFor $id)) ($limits (mrcValue $invocation 12)))
+        (case $prior (
+            (() (if (and (< (size-atom (hostReasonerReceipts)) (mrcValue $limits 4))
+                    (>= (reasonerProposalDataRemaining (quote $receipt) 32 (* 2 (mrcValue $limits 2))) 0))
+                (progn (change-state! &host-reasoner-receipts (cons-atom $receipt (hostReasonerReceipts))) True)
+                (ReasonerRuntimeError AuditLimit)))
+            ($_ (if (== $prior $receipt) True (ReasonerRuntimeError ConflictingReceipt)))
+        ))))
+)
 
 ;; Read a trusted callback binding; missing runtime support means no advice.
 ;; Example: (hostReasonerRuntimeBinding "unconfigured") -> ().
@@ -287,9 +333,11 @@
         ((OperationOutcome $decision $_ $_ $_)
             (case (hostReasonerCycleFor (get-state &operation-context)) (
                 ((HostReasonerCycle $context $invocation $intake $proposals $decision ())
-                    (retainAndNotifyHostReasoner
-                        (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))
-                        Observation $outcome))
+                    (case (captureHostReasonerReceipt $invocation $outcome) (
+                        (True (retainAndNotifyHostReasoner
+                            (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))
+                            Observation $outcome))
+                        ($error $error))))
                 ($_ True))))
         ($_ True)))
 )

@@ -111,3 +111,26 @@ reasoner_runtime_selection(I,Operation,Decision) :-
     oc_dispatch_ticket(Ticket,_,Epoch,Snapshot), oc_dispatch_epoch(Epoch),
     mm_dispatch_snapshot(Current), Current==Snapshot,
     \+ oc_dispatch_result(Ticket,_,_).
+
+% Capture only the accepted callback and Core's exact retained receipt as data.
+% Example: a fabricated callback cannot supply a HostReasonerReceipt.
+reasonerRuntimeReceipt(Selection,Outcome,Result) :-
+    with_mutex(omegaclaw_dispatch,
+        (once(reasoner_runtime_receipt(Selection,Outcome,Receipt)) -> Result=Receipt
+         ; Result=['ReasonerRuntimeError','InvalidReceipt'])).
+
+% Receipt identity survives later cycles; no current deadline or inference is needed.
+% Example: ReasonerOutcomeRef is the existing session/ticket identity, not a new UUID.
+reasoner_runtime_receipt(Selection,Outcome,
+        ['HostReasonerReceipt',['ReasonerOutcomeRef',Session,Id],Selection,Outcome]) :-
+    ground(Selection-Outcome),
+    Selection=['HostReasonerSelection',Context,_,Decision,_],
+    Context=['OperationContext',Session,_,_],
+    Decision=['OperationDecision',Context,_,Command,Ticket],
+    Ticket=['DispatchTicket',Id], string(Id),
+    eval([hostReasonerSelections],Selections), memberchk(Selection,Selections),
+    nb_current('&last-operation-outcome',Accepted), Accepted==Outcome,
+    eval([validateOperationOutcome,[quote,Outcome]],'OutcomeValid'),
+    Outcome=['OperationOutcome',Decision,['attempted-command',Command],_,Result],
+    oc_dispatch_ticket(Ticket,_,_,_), oc_dispatch_result(Ticket,Command,Recorded),
+    Recorded==Result.

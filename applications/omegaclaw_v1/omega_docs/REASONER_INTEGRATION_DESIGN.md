@@ -439,6 +439,28 @@ native dispatch; a ticket invalidated by an ownership change remains blocked by
 Core. The tests compare the ticket ledger before selection and after dispatch
 to ensure neither attribution failure nor replay allocates a replacement.
 
+`hostReasonerReceipts` retains `(HostReasonerReceipt OUTCOME-REF SELECTION OUTCOME)`
+during the accepted dispatch callback, before adapter notification. Capture checks
+the exact retained selection and accepted callback against Core's immutable
+command/ticket receipt. `OUTCOME-REF` reuses `(ReasonerOutcomeRef SESSION TICKET-ID)`.
+Identical delivery does not append evidence; conflicting delivery cannot replace
+it. Capture remains bounded by invocation audit limits. Failed capture cannot
+publish fabricated feedback or change native dispatch. Later slot replacement
+does not erase captured evidence. Receipts contain no grade.
+
+After explicitly loading `reasoner_outcome_assessment`, trusted host code can call
+`(assessHostReasonerProposalOutcome ORIGINAL-ENVELOPE OUTCOME-REF)` outside MetaMo.
+The initial fixed route uses `compareReasonerOperationResult` only for the retained
+adapter's declared `ExpectedOperationResult` schema. It ignores the legacy global
+comparator. `hostReasonerAssessments` holds bounded, idempotent
+`(HostReasonerAssessment OUTCOME-REF ENVELOPE COMPARATOR COMPARISON)` records;
+the envelope retains invocation and configuration provenance. This path performs
+no reliability update or engine learning, and callback capture never invokes it.
+Blocked, unobserved, unsupported and non-primary predictions stay deferred.
+Rejected alternatives need independent authoritative evidence; another operation's
+result is not grounds for grading them. No such observation adapter is installed
+by the operation-result route.
+
 Trusted code configures runtime behavior alongside a registered adapter:
 
 ```metta
@@ -652,20 +674,21 @@ blocked and unobserved cases remain ungraded. General frame claims and rejected
 alternatives require additional authoritative observation adapters before they
 can be assessed.
 
-Resolve comparator registration from retained adapter metadata and its declared
-prediction schema. The existing service has one global comparator setting;
-extend its entry point with a trusted resolved comparator, or add a routing
-adapter, while reusing its validation and commit logic. Do not swap the global
-setting around individual calls. Retain the comparator/configuration version in
+The coordinator's initial route checks the retained adapter's declared schema;
+additional routes should resolve trusted comparator registrations from retained
+adapter metadata. The legacy service still has one global comparator setting;
+the coordinator port does not use or swap it. Reuse comparison validation and
+retain the comparator/configuration version in
 assessment provenance. A changed configuration does not regrade a completed
 assessment; unsupported predictions can be retried because deferral reserves no
 assessment identity.
 
-The current `assessReasonerProposalOutcome` also updates application source
-reliability. Therefore shadow evaluation must not call it as a supposedly pure
-preview. Introduce a pure evaluation port reusing the comparison/validation
-helpers, and retain the existing atomic assessment-and-learning path for enabled
-updates. Validate finite grades and learner inputs before committing. Preserve
+The legacy `assessReasonerProposalOutcome` also updates application source
+reliability. Shadow evaluation instead uses `assessHostReasonerProposalOutcome`,
+which reuses comparison/validation helpers without learning. The existing atomic
+assessment-and-learning path remains available for explicit legacy use;
+independent coordinator learning controls and engine feedback remain separate.
+Validate finite grades and learner inputs before committing. Preserve
 one update per stable assessment and allow retry after a rejected attempt.
 
 Application source reliability is an advisory weight, separate from each

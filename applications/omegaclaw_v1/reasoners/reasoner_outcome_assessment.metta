@@ -1,5 +1,6 @@
 ;; Optional host assessment/learning service. Load reasoner_proposals once first.
 ;; Motivational admission and execution-receipt recording never invoke this module.
+;; Coordinator assessments are explicit comparisons without source/native learning.
 ;; Example: (assessReasonerProposalOutcome EVENT EXECUTION-EVIDENCE).
 (: ExpectedOperationResultType Type)
 (: ExpectedOperationResult (-> Expression ExpectedOperationResultType))
@@ -218,5 +219,79 @@
             )
         )
         (ReasonerAssessmentRejected MalformedEvidence)
+    )
+)
+
+(: HostReasonerAssessmentType Type)
+(: HostReasonerAssessment (-> Expression Expression Symbol Expression HostReasonerAssessmentType))
+!(bind! &host-reasoner-assessments (new-state ()))
+
+;; Query explicit coordinator assessments; receipt capture never calls a comparator.
+;; Example: (hostReasonerAssessments) is () after dispatch until assessment is requested.
+(= (hostReasonerAssessments) (get-state &host-reasoner-assessments))
+
+;; Resolve only a fixed trusted comparator for syntax declared by the retained adapter.
+;; Example: prediction text cannot select an evaluator or use the legacy global comparator.
+(= (hostReasonerPredictionComparator $envelope)
+    (let* (
+        ($invocation (mrcValue $envelope 2))
+        ($schemas (mrcValue (mrcValue $invocation 11) 3))
+    )
+        (case (getProposalPrediction (mrcValue $envelope 4)) (
+            ((ExpectedOperationResult $_)
+                (if (tpContains $schemas "ExpectedOperationResult") compareReasonerOperationResult ()))
+            ($_ ()))))
+)
+
+;; Assess only the exact pre-dispatch primary against its captured execution receipt.
+;; Example: rejected/unselected alternatives remain ungraded without independent evidence.
+(= (assessHostReasonerProposalOutcome $envelope $id)
+    (case (catch (hostReasonerReceiptFor $id)) (
+        ((HostReasonerReceipt $id
+            (HostReasonerSelection $_ $_ $decision (HostReasonerPrimary $primary $_ $_))
+            (OperationOutcome $decision $_ $status (DispatchResult Executed Feasible $actual)))
+            (if (!= $envelope $primary) (ReasonerAssessmentDeferred NoObservedAlternative)
+                (if (or (== $status Success) (== $status Failure))
+                    (assessHostReasonerObservation $id $envelope $actual)
+                    (ReasonerAssessmentDeferred InsufficientEvidence))))
+        ((HostReasonerReceipt $_ $_ $_) (ReasonerAssessmentDeferred InsufficientEvidence))
+        ($_ (ReasonerAssessmentRejected MissingReceipt))))
+)
+
+;; Compare outside the callback and mutex; replay uses the original retained comparison.
+;; Example: unsupported schemas stay deferred, with no reliability or engine update.
+(= (assessHostReasonerObservation $id $envelope $actual)
+    (let $prior (filter-atom (hostReasonerAssessments) $row (== (index-atom $row 1) $id))
+        (case $prior (
+            (($record) $record)
+            (() (let $comparator (hostReasonerPredictionComparator $envelope)
+                (if (== $comparator ()) (ReasonerAssessmentDeferred UnsupportedPrediction)
+                    (let* (
+                        ($prediction (getProposalPrediction (mrcValue $envelope 4)))
+                        ($comparison (catch (eval ($comparator (quote $prediction) (quote $actual)))))
+                    )
+                        (if (reasonerComparisonValid $comparison)
+                            (retainHostReasonerAssessment $id $envelope $comparator $comparison)
+                            (ReasonerAssessmentRejected InvalidComparison))))))
+            ($_ (ReasonerAssessmentRejected ConflictingAssessment)))))
+)
+
+;; Append bounded immutable grades separately; this path deliberately performs no learning.
+;; Example: an identical delivery returns the same assessment without another write.
+(= (retainHostReasonerAssessment $id $envelope $comparator $comparison)
+    (with_mutex omegaclaw_dispatch
+        (let* (
+            ($row (quote (HostReasonerAssessment $id $envelope $comparator $comparison)))
+            ($prior (filter-atom (hostReasonerAssessments) $old (== (index-atom $old 1) $id)))
+            ($limits (mrcValue (mrcValue $envelope 2) 12))
+        )
+            (case $prior (
+                (() (if (and (< (size-atom (hostReasonerAssessments)) (mrcValue $limits 4))
+                        (>= (reasonerProposalDataRemaining (quote $row) 32 (* 2 (mrcValue $limits 2))) 0))
+                    (progn (change-state! &host-reasoner-assessments
+                        (cons-atom $row (hostReasonerAssessments))) $row)
+                    (ReasonerAssessmentRejected AuditLimit)))
+                (($old) (if (== $old $row) $old (ReasonerAssessmentRejected ConflictingAssessment)))
+                ($_ (ReasonerAssessmentRejected ConflictingAssessment)))))
     )
 )
