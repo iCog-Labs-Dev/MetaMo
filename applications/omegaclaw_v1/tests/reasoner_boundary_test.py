@@ -15,7 +15,9 @@ REASONER_MODULES = {
         "reasoners/reasoner_integration.metta", "reasoners/reasoner_engines.pl", "reasoners/reasoner_fact_translation.metta",
     )
 }
-ASSESSMENT_MODULES = {str(APP / "reasoners/reasoner_outcome_assessment.metta")}
+ASSESSMENT_MODULES = {str(APP / name) for name in (
+    "reasoners/reasoner_outcome_assessment.metta", "reasoners/host_reasoner_comparators.metta",
+)}
 HOST_EVIDENCE_MODULES = {
     str(APP / name) for name in ("reasoners/reasoner_host_evidence.metta", "reasoners/reasoner_host_evidence.pl")
 }
@@ -965,6 +967,161 @@ class ReasonerBoundaryTests(unittest.TestCase):
                 source += f'!(test (size-atom (get-state &probe-notifications)) {3 if assessment_feedback else 2})\n'
             with self.subTest(assessment=assessment, learning=learning, assessment_feedback=assessment_feedback):
                 self.run_entry(source, "reasoner=probe")
+
+    def comparator_setup(self, register=True):
+        """Use a declared custom schema through actual intake, selection and dispatch."""
+        definitions = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
+(: PredictedPayloadType Type)
+(: PredictedPayload (-> Expression PredictedPayloadType))
+!(bind! &routed-calls (new-state 0))
+!(bind! &global-calls (new-state 0))
+!(bind! &routed-input (new-state ()))
+!(bind! &global-during-comparison (new-state ()))
+!(bind! &routed-result (new-state (ReasonerPredictionComparison Confirmed 0.75)))
+;; Record the actual quoted comparator input, without reading current host slots.
+(= (routedComparator $prediction $actual)
+    (progn (change-state! &routed-calls (+ (get-state &routed-calls) 1))
+        (change-state! &global-during-comparison (get-state &reasoner-prediction-comparator))
+        (change-state! &routed-input (quote ($prediction $actual))) (get-state &routed-result)))
+;; Changing a legacy global comparator must have no effect on this adapter's route.
+(= (globalComparatorTrap $prediction $actual)
+    (progn (change-state! &global-calls 1) (ReasonerPredictionComparison Refuted 0.0)))
+(= (routedCollect $i $v $a)
+    (let* (($raw (probeCollect $i $v $a)) ($refs (mrcValue $i 13))
+        ($p (quote (ReasonerMotivationalProposal predicted llm propose-candidate current-frame respond
+            claim support 0.8 (EvidenceReferences $refs) (PredictedPayload "expected")))))
+        (reasonerContractSet (quote (proposals)) ($p) $raw)))
+"""
+        source = self.attribution_setup("routedCollect").replace('(reasonerContractFixture registration)',
+            '(reasonerContractSet (quote (capabilities prediction-schemas)) ("PredictedPayload") (reasonerContractFixture registration))')
+        insert = source.index('\n', source.index('!(import!')) + 1
+        source = source[:insert] + definitions + source[insert:]
+        if register:
+            source = source.replace('!(bind! &test-bundle', r"""
+!(test (configureHostReasonerComparator "probe" "PredictedPayload" "calibration-v1" routedComparator) True)
+!(bind! &test-bundle""")
+        source += r"""
+!(bind! &test-primary (new-state
+    (let (HostReasonerProposalAdmission $e $_ $op)
+        (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3))
+        (quote (HostReasonerPrimary $e $op ShadowAgreement)))))
+""" + self.attribution_select("(get-state &test-primary)") + r"""
+!(bind! &routed-envelope (new-state (index-atom (get-state &test-primary) 1)))
+!(bind! &routed-receipt (new-state (car-atom (hostReasonerReceipts))))
+!(bind! &routed-id (new-state (index-atom (get-state &routed-receipt) 1)))
+!(bind! &routed-reliability (new-state (reasonerSourceReliability llm)))
+!(change-state! &reasoner-prediction-comparator globalComparatorTrap)
+"""
+        return source
+
+    def test_comparators_resolve_retained_adapter_schema_and_version_without_global_swaps(self):
+        source = self.comparator_setup() + r"""
+;; Another adapter can register the same schema without changing this invocation's route.
+!(test (registerHostReasoner (reasonerContractSet (quote (adapter)) "other"
+    (reasonerContractSet (quote (configuration-version)) "other-config" (hostReasonerRegistration)))
+    (quote probeLoad)) True)
+!(test (configureHostReasonerComparator "other" "PredictedPayload" "other-v2" globalComparatorTrap) True)
+!(test (hostReasonerComparatorFor "probe" "other-config" "PredictedPayload") ())
+!(test (hostReasonerPredictionComparator
+    (reasonerContractSet (quote (invocation configuration-version)) "other-config"
+        (get-state &routed-envelope))) ())
+!(test (configureHostReasonerComparator "probe" "Undeclared" "v1" routedComparator)
+    (ReasonerAssessmentRejected InvalidComparator))
+!(bind! &routed-assessment (new-state
+    (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id))))
+!(bind! &retained-route (new-state (index-atom (get-state &routed-assessment) 3)))
+!(test (mrcValue (get-state &retained-route) 1) "probe")
+!(test (mrcValue (get-state &retained-route) 2) "config-1")
+!(test (mrcValue (get-state &retained-route) 3) "PredictedPayload")
+!(test (mrcValue (get-state &retained-route) 4) "calibration-v1")
+!(test (mrcValue (get-state &retained-route) 5) routedComparator)
+!(test (get-state &routed-input) ((PredictedPayload "expected") "observed local file content"))
+!(test (index-atom (get-state &routed-assessment) 4) (ReasonerPredictionComparison Confirmed 0.75))
+!(test (configureHostReasonerComparator "probe" "PredictedPayload" "calibration-v1" routedComparator) True)
+!(test (configureHostReasonerComparator "probe" "PredictedPayload" "new-v2" globalComparatorTrap)
+    (ReasonerAssessmentRejected ComparatorAlreadyInvoked))
+!(change-state! &routed-result (ReasonerPredictionComparison Refuted 0.0))
+!(test (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id))
+    (get-state &routed-assessment))
+!(test (get-state &routed-calls) 1)
+!(test (get-state &global-calls) 0)
+!(test (get-state &global-during-comparison) globalComparatorTrap)
+!(test (get-state &reasoner-prediction-comparator) globalComparatorTrap)
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_malformed_and_unresolved_comparator_grades_preserve_evidence_and_allow_retry(self):
+        cases = [
+            ('(ReasonerPredictionComparison Confirmed "0.75")', "InvalidComparison"),
+            ('(ReasonerPredictionComparison Confirmed -0.1)', "InvalidComparison"),
+            ('(ReasonerPredictionComparison Refuted 1.1)', "InvalidComparison"),
+            ('(ReasonerPredictionComparison Unresolved 0.0)', "InvalidComparison"),
+            ('(ReasonerPredictionComparison Confirmed Ungraded)', "InvalidComparison"),
+            ('(ReasonerPredictionComparison Confirmed 1.0 extra)', "InvalidComparison"),
+            ('(ReasonerPredictionComparison Unresolved Ungraded)', "InsufficientEvidence"),
+        ]
+        for number in ("1.0Inf", "-1.0Inf", "1.5NaN"):
+            cases.append((f'(let $_ (translatePredicate (atom_number "{number}" $n)) (ReasonerPredictionComparison Confirmed $n))',
+                          "InvalidComparison"))
+        for comparison, reason in cases:
+            kind = "Deferred" if reason == "InsufficientEvidence" else "Rejected"
+            source = self.comparator_setup() + f'!(change-state! &routed-result {comparison})\n'
+            source += f'!(test (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id)) (ReasonerAssessment{kind} {reason}))\n'
+            source += r"""
+!(test (hostReasonerAssessments) ())
+!(test (hostReasonerLearning) ())
+!(test (learnHostReasonerOutcome (get-state &routed-id)) (ReasonerAssessmentDeferred MissingAssessment))
+!(test (hostReasonerReceiptFor (get-state &routed-id)) (get-state &routed-receipt))
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+!(test (size-atom (get-state &probe-notifications)) 2)
+!(change-state! &routed-result (ReasonerPredictionComparison Confirmed 0.75))
+!(test (index-atom (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id)) 4)
+    (ReasonerPredictionComparison Confirmed 0.75))
+!(test (get-state &routed-calls) 2)
+!(test (get-state &global-calls) 0)
+"""
+            with self.subTest(comparison=comparison):
+                self.run_entry(source, "reasoner=probe")
+
+    def test_unsupported_comparator_route_cannot_be_installed_after_observation(self):
+        source = self.comparator_setup(register=False) + r"""
+!(test (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id))
+    (ReasonerAssessmentDeferred UnsupportedPrediction))
+!(test (configureHostReasonerComparator "probe" "PredictedPayload" "late-v1" routedComparator)
+    (ReasonerAssessmentRejected ComparatorAlreadyInvoked))
+!(test (hostReasonerAssessments) ())
+!(test (get-state &routed-calls) 0)
+!(test (get-state &global-calls) 0)
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_conflicting_assessments_and_learning_feedback_cannot_replace_committed_results(self):
+        source = self.comparator_setup() + r"""
+!(bind! &routed-assessment (new-state
+    (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id))))
+!(bind! &routed-learning (new-state (learnHostReasonerOutcome (get-state &routed-id))))
+!(bind! &learned-reliability (new-state (reasonerSourceReliability llm)))
+!(bind! &learning-invocation (new-state (mrcValue (get-state &routed-envelope) 2)))
+!(test (learnHostReasonerOutcome (get-state &routed-id)) (get-state &routed-learning))
+!(test (commitHostReasonerLearning (get-state &routed-assessment) (get-state &learning-invocation))
+    (get-state &routed-learning))
+!(test (retainHostReasonerAssessment (get-state &routed-id) (get-state &routed-envelope)
+    (index-atom (get-state &routed-assessment) 3) (ReasonerPredictionComparison Refuted 0.0))
+    (ReasonerAssessmentRejected ConflictingAssessment))
+!(test (let (HostReasonerAssessment $id $e $route $_) (get-state &routed-assessment)
+    (commitHostReasonerLearning
+        (quote (HostReasonerAssessment $id $e $route (ReasonerPredictionComparison Refuted 0.0)))
+        (get-state &learning-invocation))) (ReasonerAssessmentRejected ConflictingLearning))
+!(test (hostReasonerAssessments) ((get-state &routed-assessment)))
+!(test (hostReasonerLearning) ((get-state &routed-learning)))
+!(test (reasonerSourceReliability llm) (get-state &learned-reliability))
+!(test (size-atom (get-state &probe-notifications)) 3)
+!(test (hostReasonerReceiptFor (get-state &routed-id)) (get-state &routed-receipt))
+!(test (get-state &routed-calls) 1)
+"""
+        self.run_entry(source, "reasoner=probe")
 
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:

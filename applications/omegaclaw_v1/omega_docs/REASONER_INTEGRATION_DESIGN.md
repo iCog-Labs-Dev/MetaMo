@@ -449,9 +449,10 @@ does not erase captured evidence. Receipts contain no grade.
 
 After enabling assessment and explicitly loading `reasoner_outcome_assessment`, trusted host code can call
 `(assessHostReasonerProposalOutcome ORIGINAL-ENVELOPE OUTCOME-REF)` outside MetaMo.
-The initial fixed route uses `compareReasonerOperationResult` only for the retained
-adapter's declared `ExpectedOperationResult` schema. It ignores the legacy global
-comparator. `hostReasonerAssessments` holds bounded, idempotent
+Routes resolve by the retained adapter ID, configuration version and declared
+prediction schema. The built-in `ExpectedOperationResult` route defaults to
+`compareReasonerOperationResult`, version `exact-operation-result-1`.
+`hostReasonerAssessments` holds bounded, idempotent
 `(HostReasonerAssessment OUTCOME-REF ENVELOPE COMPARATOR COMPARISON)` records;
 the envelope retains invocation and configuration provenance. This path performs
 no reliability update or engine learning, and callback capture never invokes it.
@@ -459,6 +460,31 @@ Blocked, unobserved, unsupported and non-primary predictions stay deferred.
 Rejected alternatives need independent authoritative evidence; another operation's
 result is not grounds for grading them. No such observation adapter is installed
 by the operation-result route.
+
+`reasoners/host_reasoner_comparators.metta` supplies trusted route registration:
+
+```metta
+(configureHostReasonerComparator "adapter-id" "ExpectedOperationResult"
+  "exact-v1" compareReasonerOperationResult)
+```
+
+Register before intake. Configuration accepts only schemas declared by that
+adapter and trusted function symbols. Identical registration is idempotent;
+changed or first-time registration after intake rejects, including replacing an
+implicit default or unsupported route. Registry size is bounded by the existing
+adapter and schema registration limits. The prediction constructor names its
+schema; it never supplies an executable comparator.
+
+The assessment's comparator field retains
+`(HostReasonerComparator (adapter ID) (configuration-version VERSION)
+(schema SCHEMA) (version COMPARATOR-VERSION) (function SYMBOL))`.
+Calls receive quoted retained prediction/observation data, run outside the
+recording mutex with the invocation's elapsed-time allowance, and never read or
+swap the legacy global comparator. Unsupported routes and unresolved comparisons
+remain deferred. Malformed, nonfinite or out-of-range grades reject without an
+assessment or learning marker, preserving the receipt for a valid retry.
+Identical assessment/learning delivery returns the original record; conflicting
+delivery rejects without changing grades, reliability or adapter feedback counts.
 
 Trusted code configures runtime behavior and stages alongside a registered adapter:
 
@@ -700,11 +726,10 @@ blocked and unobserved cases remain ungraded. General frame claims and rejected
 alternatives require additional authoritative observation adapters before they
 can be assessed.
 
-The coordinator's initial route checks the retained adapter's declared schema;
-additional routes should resolve trusted comparator registrations from retained
-adapter metadata. The legacy service still has one global comparator setting;
-the coordinator port does not use or swap it. Reuse comparison validation and
-retain the comparator/configuration version in
+The coordinator resolves trusted comparator registrations from retained adapter
+metadata and declared schemas. The legacy service still has one global comparator
+setting; the coordinator port does not use or swap it. Comparison validation is
+shared, and the comparator/configuration version is retained in
 assessment provenance. A changed configuration does not regrade a completed
 assessment; unsupported predictions can be retried because deferral reserves no
 assessment identity.

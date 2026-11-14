@@ -155,6 +155,13 @@ for explicit comparison of supported predictions. Collection and receipt capture
 enable neither grading nor learning; this assessment entry point requires
 `reasoner-assessment=True` and performs no learning.
 
+Trusted hosts can register a versioned comparator with
+`configureHostReasonerComparator ADAPTER SCHEMA VERSION FUNCTION` before intake.
+Routing uses the retained adapter/configuration/schema; each assessment keeps its
+resolved route. The built-in exact-result comparator remains the default for
+`ExpectedOperationResult`. No global comparator is swapped around calls.
+Invalid grades and unresolved comparisons leave evidence and learning unchanged.
+
 `reasoner-learning=True` separately permits declared adapter feedback.
 `learnHostReasonerOutcome` explicitly applies one retained assessment to source
 reliability and attempts supported assessment feedback once. Previewing an
