@@ -137,7 +137,8 @@
                                  (>= (reasonerProposalDataRemaining (quote $batch) 32 (* 2 (mrcValue $limits 2))) 0))
                             (progn
                                 (change-state! &host-reasoner-admissions (cons-atom $batch (hostReasonerAdmissions)))
-                                (hostReasonerMergeActions $native $decisions)) $native)))
+                                (if (hostReasonerStageEnabledFor (mrcValue $invocation 2) influence)
+                                    (hostReasonerMergeActions $native $decisions) $native)) $native)))
                     ($_ $native)
                 ))))
         ($_ $native)

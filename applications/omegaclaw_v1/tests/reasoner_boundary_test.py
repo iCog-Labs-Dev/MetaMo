@@ -102,6 +102,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "probe-1" probeCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -146,6 +148,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
             ((ReasonerNativeFact $source (Sentence
                 (($implication (SignalHolds $frame user-waiting) (Recommend $frame respond)) (stv 1 0.9))
                 ((ObservationRef "trusted-rule-config" "respond-1"))))) 0.8)))) True)
+!(test (configureHostReasonerControls (repr (argk "reasoner"))
+    (HostReasonerControls (collection True) (influence False) (assessment False) (learning False))) True)
 !(test (boundaryCycle builtin) 1)
 !(test (size-atom (hostReasonerCycles)) 1)
 !(test (mrcValue (index-atom (car-atom (hostReasonerCycles)) 3) 3) Proposals)
@@ -168,6 +172,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "timeout-test" timeoutCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -202,6 +208,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "invalid-test" invalidCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -228,6 +236,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "phase-test" phaseProbeCollect probeNotify () 0.8))) True)
 !(test (configureHostReasonerModeIntake "probe") True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -293,6 +303,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "late-test" probeCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -324,6 +336,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "limit-test" checkedCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -376,6 +390,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "expiry-test" probeCollect probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -420,6 +436,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "admission-test" probeCollect admissionNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -535,6 +553,8 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (quote probeLoad)) True)
 !(test (configureHostReasonerRuntime "probe"
     (quote (HostReasonerRuntime "attribution-test" COLLECTOR probeNotify () 0.8))) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)
 !(test (selectHostReasoner "probe") True)
 !(test (boundaryStart) 1)
 !(test (boundaryProvision "allowed") 1)
@@ -824,6 +844,127 @@ class ReasonerBoundaryTests(unittest.TestCase):
                     source += '!(test (get-state &budget-test-effects) 1)\n'
                 self.run_entry(source.replace('REASON', 'InsufficientEvidence' if uncertain
                                               else 'UnsupportedPrediction'), "reasoner=probe")
+
+    def test_stage_controls_default_off_and_collection_does_not_enable_feedback(self):
+        setup = self.attribution_setup()
+        configure = '!(test (configureHostReasonerControls "probe"\n    (HostReasonerControls (collection True) (influence False) (assessment True) (learning True))) True)\n'
+        setup = setup[:setup.index('!(bind! &test-bundle')].replace(configure, '')
+        source = setup + r"""
+!(test (hostReasonerControlsFor "probe")
+    (HostReasonerControls (collection False) (influence False) (assessment False) (learning False)))
+!(test (boundaryCycle disabled-stages) 1)
+!(test (get-state &probe-count) 0)
+!(test (hostReasonerCycles) ())
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection False) (influence False) (assessment True) (learning True))) True)
+!(test (configureHostReasonerStartupControls) True)
+!(test (hostReasonerControlsFor "probe")
+    (HostReasonerControls (collection False) (influence False) (assessment True) (learning True)))
+!(test (boundaryCycle still-no-collection) 1)
+!(test (get-state &probe-count) 0)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment False) (learning False))) True)
+!(test (boundaryCycle collection-only) 1)
+!(test (get-state &probe-count) 1)
+!(test (get-state &probe-notifications) ())
+!(test (fullLoopDispatch collection-only (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (size-atom (hostReasonerReceipts)) 1)
+!(test (get-state &probe-notifications) ())
+!(bind! &controls-before (new-state (hostReasonerControlsFor "probe")))
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence False) (assessment False) (learning True)))
+    (ReasonerRuntimeError AlreadyInvoked))
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence True) (assessment False) (learning False)))
+    (ReasonerRuntimeError UnsupportedInfluence))
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection "True") (influence False) (assessment False) (learning False)))
+    (ReasonerRuntimeError InvalidControls))
+!(test (hostReasonerControlsFor "probe") (get-state &controls-before))
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_collection_without_influence_does_not_add_an_advised_candidate(self):
+        source = self.attribution_setup().replace(
+            '(get-state &test-state) (get-state &test-native))) $pool)))',
+            '(get-state &test-state) ())) $pool)))').replace(
+            '!(test (get-state &test-pool) (get-state &test-native))', '!(test (get-state &test-pool) ())')
+        source += r"""
+!(test (getStatus (index-atom (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3)) 2)) Accepted)
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_startup_stage_flags_are_independent_and_default_disabled(self):
+        base = '!(import! &self (library MetaMo applications/omegaclaw_v1/tests/host_startup_test))\n'
+        for collection, assessment, learning in ((False, False, False), (True, False, False),
+                                                  (False, True, True)):
+            source = base + f'!(test (hostReasonerControlsFor "nars") (HostReasonerControls (collection {collection}) (influence False) (assessment {assessment}) (learning {learning})))\n'
+            source += f'!(test (> (size-atom (hostReasonerCycles)) 0) {collection})\n'
+            arguments = ["reasoner=nars"]
+            if any((collection, assessment, learning)):
+                arguments += [f"reasoner-collection={collection}", f"reasoner-assessment={assessment}",
+                              f"reasoner-learning={learning}"]
+            with self.subTest(collection=collection, assessment=assessment, learning=learning):
+                self.run_entry(source, *arguments)
+
+    def test_assessment_preview_and_learning_are_independent_and_feedback_is_capability_gated(self):
+        callback = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_outcome_assessment))
+;; A declared operation prediction can be assessed without training the adapter.
+(= (controlledCollect $i $v $a)
+    (let* (($raw (probeCollect $i $v $a)) ($refs (mrcValue $i 13))
+        ($p (quote (ReasonerMotivationalProposal predicted llm propose-candidate current-frame respond
+            claim support 0.8 (EvidenceReferences $refs) (ExpectedOperationResult "observed local file content")))))
+        (reasonerContractSet (quote (proposals)) ($p) $raw)))
+"""
+        for assessment, learning, assessment_feedback in ((False, True, True), (True, False, True),
+                                                          (True, True, True), (True, True, False)):
+            source = self.attribution_setup("controlledCollect")
+            insert = source.index('\n', source.index('!(import!')) + 1
+            source = source[:insert] + callback + source[insert:]
+            source = source.replace('(assessment True) (learning True)',
+                f'(assessment {assessment}) (learning {learning})')
+            if not assessment_feedback:
+                source = source.replace('(reasonerContractFixture registration)',
+                    '(reasonerContractSet (quote (capabilities feedback)) (Decision Observation) (reasonerContractFixture registration))')
+            source += r"""
+!(bind! &test-primary (new-state
+    (let (HostReasonerProposalAdmission $e $_ $op)
+        (car-atom (index-atom (car-atom (hostReasonerAdmissions)) 3))
+        (quote (HostReasonerPrimary $e $op ShadowAgreement)))))
+""" + self.attribution_select("(get-state &test-primary)") + r"""
+!(bind! &outcome-ref (new-state (index-atom (car-atom (hostReasonerReceipts)) 1)))
+!(bind! &reliability-before (new-state (reasonerSourceReliability llm)))
+!(bind! &preview (new-state (assessHostReasonerProposalOutcome
+    (index-atom (get-state &test-primary) 1) (get-state &outcome-ref))))
+!(test (reasonerSourceReliability llm) (get-state &reliability-before))
+!(test (hostReasonerLearning) ())
+"""
+            if not assessment:
+                source += r"""
+!(test (get-state &preview) (ReasonerAssessmentDeferred AssessmentDisabled))
+!(test (learnHostReasonerOutcome (get-state &outcome-ref)) (ReasonerAssessmentDeferred MissingAssessment))
+"""
+            elif not learning:
+                source += r"""
+!(test (index-atom (get-state &preview) 4) (ReasonerPredictionComparison Confirmed 1.0))
+!(test (learnHostReasonerOutcome (get-state &outcome-ref)) (ReasonerAssessmentDeferred LearningDisabled))
+!(test (get-state &probe-notifications) ())
+"""
+            else:
+                source += r"""
+!(bind! &expected-reliability (new-state (reasonerSourceReliabilityAfterGrade llm 1.0)))
+!(bind! &learned (new-state (learnHostReasonerOutcome (get-state &outcome-ref))))
+!(test (index-atom (get-state &learned) 0) HostReasonerLearning)
+!(test (reasonerSourceReliability llm) (get-state &expected-reliability))
+!(test (index-atom (get-state &learned) 3) (get-state &reliability-before))
+!(test (learnHostReasonerOutcome (get-state &outcome-ref)) (get-state &learned))
+!(test (size-atom (hostReasonerLearning)) 1)
+"""
+                source += f'!(test (size-atom (get-state &probe-notifications)) {3 if assessment_feedback else 2})\n'
+            with self.subTest(assessment=assessment, learning=learning, assessment_feedback=assessment_feedback):
+                self.run_entry(source, "reasoner=probe")
 
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:

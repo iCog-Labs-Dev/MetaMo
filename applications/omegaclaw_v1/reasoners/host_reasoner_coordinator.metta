@@ -5,6 +5,7 @@
     (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_runtime.pl)
     (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent reasonerRuntimeSelectionCurrent reasonerRuntimeReceipt))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_admission))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_controls))
 (: HostReasonerRuntimeType Type)
 (: HostReasonerRuntime (-> String Symbol Symbol Expression Number HostReasonerRuntimeType))
 (: HostReasonerRuntimeBindingType Type)
@@ -260,6 +261,13 @@
 ;; Share collection and validation while retaining each phase independently.
 ;; Example: pre-mode collection supplies no post-mode admitted actions.
 (= (collectHostReasonerPhase $phase $bundle $actions)
+    (if (hostReasonerStageEnabledFor (hostReasonerSelection) collection)
+        (collectEnabledHostReasonerPhase $phase $bundle $actions) True)
+)
+
+;; Collect only after the trusted collection switch grants permission.
+;; Example: disabled collection creates neither an invocation nor an empty audit row.
+(= (collectEnabledHostReasonerPhase $phase $bundle $actions)
     (let* (
         ($context (get-state &operation-context))
         ($registration (hostReasonerRegistration))
@@ -301,9 +309,10 @@
 ;; Notify only declared adapter capabilities; callback failures do not affect native state.
 ;; Example: built-ins with empty feedback receive no Observation call.
 (= (notifyHostReasoner $stage $invocation $payload)
-    (if (and (tpContains (mrcValue (mrcValue $invocation 11) 4) $stage)
+    (if (and (hostReasonerStageEnabledFor (mrcValue $invocation 2) learning)
+        (and (tpContains (mrcValue (mrcValue $invocation 11) 4) $stage)
              (>= (reasonerProposalDataRemaining (quote $payload) 32
-                 (mrcValue (mrcValue $invocation 12) 2)) 0))
+                 (mrcValue (mrcValue $invocation 12) 2)) 0)))
         (case (hostReasonerRuntimeBinding (mrcValue $invocation 2)) (
             ((HostReasonerRuntime $_ $_ $notify $_ $_)
                 (reasonerRuntimeCall (mrcValue (mrcValue $invocation 12) 9)

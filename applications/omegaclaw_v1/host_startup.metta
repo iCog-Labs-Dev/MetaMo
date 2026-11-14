@@ -28,7 +28,9 @@
       (($adapter)
          (progn
             (import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))
-            (eval (startHostReasoner $adapter))))
+            (case (eval (startHostReasoner $adapter)) (
+               (True (eval (configureHostReasonerStartupControls)))
+               ($error $error)))))
       ($_ (ReasonerStartupRejected InvalidSelection))
    ))
 )

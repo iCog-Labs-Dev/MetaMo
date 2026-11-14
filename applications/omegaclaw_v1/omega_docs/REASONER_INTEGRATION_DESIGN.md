@@ -1,6 +1,6 @@
 # Loosely coupled reasoner integration
 
-Status: optional collection and proposal admission connected; attribution, bounded influence and assessment remain proposed
+Status: optional collection, admission, attribution, receipts and controlled assessment/learning connected; bounded influence remains proposed
 
 The integration should connect the existing reasoner adapters to the normal
 OmegaClaw runtime through an optional host coordinator. MetaMo should receive
@@ -232,9 +232,8 @@ The built-in registrations declare candidate proposals, the existing candidates,
 `ExpectedOperationResult` predictions and no feedback capability. Other adapters
 may declare only their supported stages. NARS/PLN reuse the existing inference
 extension, which loads both local engines in separate namespaces; selection
-retains one adapter. No provider, grading or learning is enabled; explicitly selected adapters now
-participate in bounded shadow intake.
-Automatic collection and feedback routing remain later runtime work.
+retains one adapter. Selection enables no collection, provider, grading or learning.
+Independent controls enable bounded shadow intake and declared adapter feedback.
 
 ## Ownership
 
@@ -385,8 +384,8 @@ and selection boundary. Its state and callback helper load only for explicit
 reasoner startup. The default-disabled bridge performs no reasoner invocation.
 Candidate collection runs after concrete operation admission and before final scheduling;
 Collected candidate proposals now pass the existing native feasibility, concrete
-dispatch-policy, availability and scoring checks before scheduling. Admitted
-candidate classes join the pool without duplicates or extra weighting.
+dispatch-policy, availability and scoring checks before scheduling. With influence
+disabled, the native candidate pool and scores remain unchanged.
 
 `reasoners/host_reasoner_admission.metta` consumes the exact operation rows captured
 for native admission; it never captures another command or ticket. Unsupported
@@ -448,7 +447,7 @@ it. Capture remains bounded by invocation audit limits. Failed capture cannot
 publish fabricated feedback or change native dispatch. Later slot replacement
 does not erase captured evidence. Receipts contain no grade.
 
-After explicitly loading `reasoner_outcome_assessment`, trusted host code can call
+After enabling assessment and explicitly loading `reasoner_outcome_assessment`, trusted host code can call
 `(assessHostReasonerProposalOutcome ORIGINAL-ENVELOPE OUTCOME-REF)` outside MetaMo.
 The initial fixed route uses `compareReasonerOperationResult` only for the retained
 adapter's declared `ExpectedOperationResult` schema. It ignores the legacy global
@@ -461,13 +460,40 @@ Rejected alternatives need independent authoritative evidence; another operation
 result is not grounds for grading them. No such observation adapter is installed
 by the operation-result route.
 
-Trusted code configures runtime behavior alongside a registered adapter:
+Trusted code configures runtime behavior and stages alongside a registered adapter:
 
 ```metta
 (configureHostReasonerRuntime "adapter-id"
   (quote (HostReasonerRuntime "engine-version" collectAdapter notifyAdapter
     () 0.9)))
+(configureHostReasonerControls "adapter-id"
+  (HostReasonerControls (collection True) (influence False)
+    (assessment True) (learning False)))
 ```
+
+The four controls default to `False`; configuring a runtime or selecting an
+adapter does not enable them. Startup exposes the same controls through
+`reasoner-collection`, `reasoner-influence`, `reasoner-assessment` and
+`reasoner-learning` Boolean arguments. Configuration is immutable after the first
+retained invocation; repeated identical configuration is harmless. Invalid or
+late changes preserve the previous controls. Enabling influence currently rejects
+as `UnsupportedInfluence`; no weighting formula is supplied by these switches.
+
+Collection permission creates invocations and admission audits. Influence
+permission is separate: without it, an eligible proposal cannot add an action to
+the native pool. Assessment permission allows explicit preview and retained grades
+without reliability changes. Learning permission gates all adapter notifications,
+because engine notification handlers may train their native state. Local decisions,
+receipts and diagnostic getters remain available without engine feedback.
+
+`learnHostReasonerOutcome OUTCOME-REF` is a separate explicit learning entry point.
+It reads an existing validated assessment, reuses the source reliability learner,
+and retains `(HostReasonerLearning OUTCOME-REF ASSESSMENT BEFORE AFTER)` once.
+Only a newly committed update attempts `Assessment` feedback through the trusted
+runtime notifier, and only when the retained adapter declares that capability.
+Replay skips both learning and feedback; inference and adapter calls stay outside
+the recording mutex. Engines without feedback support receive no invented update.
+Application source weighting remains separate from engine-specific truth revision.
 
 Adapters that support mode advice or transition predictions can additionally opt
 in before any invocation is retained:

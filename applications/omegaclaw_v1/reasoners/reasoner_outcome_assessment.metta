@@ -246,6 +246,14 @@
 ;; Assess only the exact pre-dispatch primary against its captured execution receipt.
 ;; Example: rejected/unselected alternatives remain ungraded without independent evidence.
 (= (assessHostReasonerProposalOutcome $envelope $id)
+    (case (catch (hostReasonerStageEnabledFor (mrcValue (mrcValue $envelope 2) 2) assessment)) (
+        (True (assessEnabledHostReasonerProposalOutcome $envelope $id))
+        ($_ (ReasonerAssessmentDeferred AssessmentDisabled))))
+)
+
+;; Receipt comparison is independent of learning even when both switches are enabled.
+;; Example: a shadow assessment never calls updateReasonerSourceReliability.
+(= (assessEnabledHostReasonerProposalOutcome $envelope $id)
     (case (catch (hostReasonerReceiptFor $id)) (
         ((HostReasonerReceipt $id
             (HostReasonerSelection $_ $_ $decision (HostReasonerPrimary $primary $_ $_))
@@ -294,4 +302,67 @@
                 (($old) (if (== $old $row) $old (ReasonerAssessmentRejected ConflictingAssessment)))
                 ($_ (ReasonerAssessmentRejected ConflictingAssessment)))))
     )
+)
+
+(: HostReasonerLearningType Type)
+(: HostReasonerLearning (-> Expression Expression Number Number HostReasonerLearningType))
+(: HostReasonerLearningCommitted (-> Expression HostReasonerLearningType))
+!(bind! &host-reasoner-learning (new-state ()))
+
+;; Learning has its own audit and explicit entry point; assessment remains a preview.
+;; Example: (hostReasonerLearning) stays () during pure shadow evaluation.
+(= (hostReasonerLearning) (get-state &host-reasoner-learning))
+
+;; Learn only from a retained validated grade, never a caller-supplied comparison.
+;; Example: (learnHostReasonerOutcome OUTCOME-REF) is disabled unless explicitly configured.
+(= (learnHostReasonerOutcome $id)
+    (let $rows (filter-atom (hostReasonerAssessments) $row (== (index-atom $row 1) $id))
+        (case $rows (
+            (($assessment) (let $invocation (mrcValue (index-atom $assessment 2) 2)
+                (if (hostReasonerStageEnabledFor (mrcValue $invocation 2) learning)
+                    (commitHostReasonerLearning $assessment $invocation)
+                    (ReasonerAssessmentDeferred LearningDisabled))))
+            ($_ (ReasonerAssessmentDeferred MissingAssessment)))))
+)
+
+;; Reserve one learning update before adapter feedback, keeping engine calls outside locks.
+;; Example: identical delivery returns its original learning record without another callback.
+(= (commitHostReasonerLearning $assessment $invocation)
+    (case (catch (with_mutex omegaclaw_dispatch
+            (transaction (writeHostReasonerLearning $assessment $invocation)))) (
+        ((HostReasonerLearningCommitted $record)
+            (progn (notifyHostReasoner Assessment $invocation $assessment) $record))
+        ($result $result)))
+)
+
+;; Recheck identity under the commit mutex, including concurrent duplicate deliveries.
+;; Example: only the first writer receives the committed marker and sends feedback.
+(= (writeHostReasonerLearning $assessment $invocation)
+    (let $prior (filter-atom (hostReasonerLearning) $row (== (index-atom $row 1) (index-atom $assessment 1)))
+        (case $prior (
+            (($record) (if (== (index-atom $record 2) $assessment) $record
+                (ReasonerAssessmentRejected ConflictingLearning)))
+            (() (writeNewHostReasonerLearning $assessment $invocation))
+            ($_ (ReasonerAssessmentRejected ConflictingLearning)))))
+)
+
+;; Source weighting uses the existing learner; native engine revision belongs to adapters.
+;; Example: invalid reliability rejects without a marker, update or feedback.
+(= (writeNewHostReasonerLearning $assessment $invocation)
+    (let* (
+        ((HostReasonerAssessment $id $envelope $_ $comparison) $assessment)
+        ((ReasonerPredictionComparison $_ $grade) $comparison)
+        ($source (getProposalSource (mrcValue $envelope 4)))
+        ($before (reasonerSourceReliability $source))
+        ($limits (mrcValue $invocation 12))
+        ($audit (quote (HostReasonerLearning $id $assessment $before 0)))
+    )
+        (if (and (< (size-atom (hostReasonerLearning)) (mrcValue $limits 4))
+                (>= (reasonerProposalDataRemaining (quote $audit) 32 (* 2 (mrcValue $limits 2))) 0))
+            (case (updateReasonerSourceReliability $source $grade) (
+                ((ReasonerAssessmentRejected $reason) (ReasonerAssessmentRejected $reason))
+                ($after (let $record (HostReasonerLearning $id $assessment $before $after)
+                    (progn (change-state! &host-reasoner-learning
+                        (cons-atom $record (hostReasonerLearning))) (HostReasonerLearningCommitted $record))))))
+            (ReasonerAssessmentRejected AuditLimit)))
 )

@@ -132,15 +132,17 @@ fixed score; the real bundle feasibility gate is still exercised and asserted.
 
 Reasoners are explicitly optional. `reasoner=disabled` is the default: no reasoner
 modules, audit state or callbacks are loaded. Startup with `reasoner=nars` or
-`reasoner=pln` enables bounded shadow collection during the normal cycle.
+`reasoner=pln` selects an adapter. Its collection, influence, assessment and
+learning controls all default to disabled. Add `reasoner-collection=True` to
+enable bounded shadow collection during the normal cycle.
 The coordinator supplies the published factual signals and stable references,
 collects candidate proposals, applies native admission and scoring before scheduling,
 retains the native decision, and routes observed
 outcomes to adapters that declare the corresponding feedback capabilities.
 Trusted adapters can separately enable pre-mode advice with
 `configureHostReasonerModeIntake`; candidate-only adapters incur no extra query.
-Admitted candidates are de-duplicated against the native pool without an extra
-confidence/reliability bonus. Native tie order, policy, tickets and final dispatch
+With influence disabled, advice does not add candidates or alter native scoring.
+Native tie order, policy, tickets and final dispatch
 checks are preserved. `hostReasonerAdmissions` retains proposal references,
 admission/rejection reasons, native scores and exact admitted operation bindings.
 `hostReasonerSelections` retains at most one primary proposal before dispatch,
@@ -150,7 +152,15 @@ matched to the exact command and ticket in retained intake order. This is labell
 dispatch-outcome callback, before adapter notification or slot replacement.
 The optional external assessment service exposes `assessHostReasonerProposalOutcome`
 for explicit comparison of supported predictions. Collection and receipt capture
-enable neither grading nor learning; this assessment entry point performs no learning.
+enable neither grading nor learning; this assessment entry point requires
+`reasoner-assessment=True` and performs no learning.
+
+`reasoner-learning=True` separately permits declared adapter feedback.
+`learnHostReasonerOutcome` explicitly applies one retained assessment to source
+reliability and attempts supported assessment feedback once. Previewing an
+assessment never calls it. Unsupported feedback stages are skipped. Selection
+influence remains unavailable until bounded weighting is implemented;
+`reasoner-influence=True` currently rejects with `UnsupportedInfluence`.
 
 Built-ins preserve engine truth values and evidence; they declare no native
 feedback support. Without explicitly configured native rules, an inference
@@ -202,8 +212,8 @@ It returns an advisory scheduler directive; it does not execute anything.
 Enabled runtime collection and capability-based notifications are connected in
 shadow mode with proposal admission and exact selection agreement recorded.
 Explicit assessment of captured operation-result predictions is available separately.
-Additional advisory influence, causal selection credit and configured
-learning remain separate integration work. Shared
+Explicit learning from retained grades and capability-gated feedback are available.
+Additional advisory influence and causal selection credit remain separate work. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 
 Legacy proposal accessors require a ground `ReasonerMotivationalProposal` with
