@@ -43,6 +43,7 @@
 ;; Only the entry point above performs host bookkeeping and snapshot capture.
 (= (motivationContextBlockForBundle $bundle)
    (let* (
+      ($_ (optionalHostReasoner CycleBegin (get-state &operation-context)))
       ($_ (eval (refreshSignals $bundle)))
       ($modeBefore (modeTransitionStateForCurrent (constitutionalMode)))
       ($_ (optionalHostReasoner ModeCollect $bundle))

@@ -169,6 +169,18 @@ assessment never calls it. Unsupported feedback stages are skipped. Selection
 influence remains unavailable until bounded weighting is implemented;
 `reasoner-influence=True` currently rejects with `UnsupportedInfluence`.
 
+Motivational parameter adaptation is a separate optional application extension:
+explicitly import `reasoners/host_reasoner_parameter_updates` after the assessment
+service, then configure `configureHostReasonerParameterLearner ADAPTER VERSION FUNCTION`
+before intake. With learning enabled, `deriveHostReasonerParameterUpdates OUTCOME-REF`
+passes a retained grade and current allowed values to that trusted learner.
+There is no built-in formula that treats prediction accuracy as justification
+for changing motivation. Accepted changes are queued and applied atomically at
+the next native cycle before mode evaluation and appraisal. Registry bounds and
+step limits cover only two appraisal coefficients and the wake entry threshold;
+preemption, threat/recovery rules and policy floors remain fixed. Derivation and
+application do not update source reliability or invoke native engine learning.
+
 Built-ins preserve engine truth values and evidence; they declare no native
 feedback support. Without explicitly configured native rules, an inference
 request may return `NoConclusion`. The coordinator never invents a recommendation

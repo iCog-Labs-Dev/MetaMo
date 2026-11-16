@@ -19,6 +19,7 @@
 !(bind! &host-reasoner-runtimes (new-state ()))
 !(bind! &host-reasoner-cycles (new-state ()))
 !(bind! &host-reasoner-mode-intake (new-state ()))
+!(bind! &host-reasoner-parameter-boundary (new-state ()))
 (: HostReasonerReceiptType Type)
 (: HostReasonerReceipt (-> Expression Expression Expression HostReasonerReceiptType))
 (: ReasonerOutcomeRefType Type)
@@ -356,6 +357,8 @@
 (= (hostReasonerRuntime $stage $payload)
     (if (== (hostReasonerSelection) disabled) True
         (case ($stage $payload) (
+            ((CycleBegin $context) (case (get-state &host-reasoner-parameter-boundary) (
+                (() True) ($apply (eval ($apply (quote $context)))))))
             ((ModeCollect $bundle) (case (collectHostReasonerMode $bundle) (
                 ((ReasonerRuntimeError $reason) (ReasonerRuntimeError $reason))
                 ($_ (progn

@@ -748,12 +748,62 @@ to an engine only through an explicitly configured feedback adapter that
 understands its semantics. An EMA source-weight update must never be translated
 automatically into a NARS or PLN truth-value update.
 
-Future appraisal-weight or mode-threshold learning should publish update
+Appraisal-weight or mode-threshold learning publishes update
 proposals externally. The host validates a whitelist of registry fields, numeric
 ranges, evidence and update identity, then applies accepted values at a cycle
 boundary. Keep before/after values and provenance. Never mutate the bundle or
 parameters halfway through an active selection. Preemption order, authority,
 permission checks and policy floors are not learnable fields.
+
+The v1-specific extension `reasoners/host_reasoner_parameter_updates.metta` is
+explicitly imported after the assessment service. Generic assessment does not
+import it. Configure a trusted rule before intake:
+
+```metta
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_parameter_updates))
+(configureHostReasonerParameterLearner "adapter-id" "calibrated-rule-v1" deriveChanges)
+(deriveHostReasonerParameterUpdates OUTCOME-REF)
+```
+
+Learning permission is required. There is no default derivation rule: a correct
+prediction alone is not sufficient evidence for changing motivational settings.
+The configured function receives the retained `HostReasonerAssessment` and a list
+of `(HostReasonerParameterValue KEY CURRENT-ROWS)` snapshots. It returns data:
+`(HostReasonerParameterChange KEY EXPECTED-BEFORE AFTER JUSTIFICATION)` records,
+or `()` to defer without proposing changes. Rule identity/version and the exact
+assessment identity remain attached to every accepted batch. The learner owns
+the justification connecting grades to parameter changes; MetaMo performs no
+induction. Derivation uses the invocation's callback time and payload allowances.
+
+The initial `LearnableParameter` whitelist permits only:
+
+| Key | Range | Maximum step |
+| --- | --- | --- |
+| `AppraisalWeight stalled-progress importance BooleanIndicator` | 0.10–0.30 | 0.025 |
+| `AppraisalWeight progress-made opportunity BooleanIndicator` | 0.05–0.25 | 0.025 |
+| `ModeThreshold wake execution-request classifier-score Enter` | 0.00–0.25 | 0.05 |
+
+These are application permission bounds, not inferred optimal values. Safety
+appraisal coefficients, threat/recovery rules, exit thresholds, preemption,
+permissions and budgets are outside the writable set. Native appraisal and mode
+readers already consume registry data and require no alternative evaluator.
+
+`hostReasonerParameterBatches` exposes bounded records:
+`(HostReasonerParameterBatch OUTCOME-REF LEARNER QUEUED-CONTEXT EDITS STATUS FINISHED-CONTEXT)`.
+Each edit retains the proposed change and complete old/new registry rows. Queueing
+does not mutate the registry. Duplicate keys, nonfinite/out-of-range values,
+excessive steps, stale expected values and overlapping pending edits reject.
+Repeated successful derivation returns its original batch without another callback.
+
+The optional cycle hook runs before signal refresh, mode evaluation and appraisal.
+It applies only in a later native cycle of the queueing session, rechecks all
+current rows and whitelist entries, and commits the batch transactionally. A
+single stale edit rejects the whole batch; old-session batches become
+`StaleSession`. The audit records `Applied` or the rejection status and context.
+Re-entry after mode evaluation cannot change an active decision. Parameter
+derivation/application updates neither source reliability nor native engine truth;
+those remain separate explicit learning paths. Per-proposal advisory influence
+remains disabled independently of this optional registry adaptation.
 
 Mode-transition prediction intake needs its own point before the transition it
 predicts. The initial candidate-intake hook runs after the current mode evaluation

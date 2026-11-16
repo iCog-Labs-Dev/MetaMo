@@ -18,6 +18,7 @@ REASONER_MODULES = {
 ASSESSMENT_MODULES = {str(APP / name) for name in (
     "reasoners/reasoner_outcome_assessment.metta", "reasoners/host_reasoner_comparators.metta",
 )}
+PARAMETER_MODULES = {str(APP / "reasoners/host_reasoner_parameter_updates.metta")}
 HOST_EVIDENCE_MODULES = {
     str(APP / name) for name in ("reasoners/reasoner_host_evidence.metta", "reasoners/reasoner_host_evidence.pl")
 }
@@ -55,7 +56,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
             resolved = {edge["resolved"] for edge in edges}
             self.assertIn(str(APP / "reasoners/host_reasoner_contracts.metta"), resolved)
             forbidden = ((REASONER_MODULES - {str(APP / "reasoners/reasoner_proposal_helpers.metta")})
-                         | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES)
+                         | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES | PARAMETER_MODULES)
             self.assertFalse(resolved & forbidden)
             self.assertFalse(any(edge["resolved"].endswith(".pl")
                                  and "host_reasoner_contracts" in edge["resolved"]
@@ -1123,13 +1124,190 @@ class ReasonerBoundaryTests(unittest.TestCase):
 """
         self.run_entry(source, "reasoner=probe")
 
+    def parameter_setup(self, configure=True):
+        """Supply a test-only calibrated rule, not a built-in grade-to-parameter formula."""
+        source = self.comparator_setup()
+        definitions = r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_parameter_updates))
+!(bind! &parameter-learner-calls (new-state 0))
+!(bind! &parameter-learner-input (new-state ()))
+!(bind! &parameter-test-changes (new-state (
+    (HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator)
+        0.175 0.2 "offline calibrated appraisal rule")
+    (HostReasonerParameterChange (ModeThreshold wake execution-request classifier-score Enter)
+        0.0 0.05 "offline calibrated wake rule"))))
+;; Test policy receives retained grades and the allowed current parameter snapshot.
+(= (parameterTestLearner $assessment $parameters)
+    (progn
+        (change-state! &parameter-learner-calls (+ (get-state &parameter-learner-calls) 1))
+        (change-state! &parameter-learner-input (quote ($assessment $parameters)))
+        (get-state &parameter-test-changes)))
+;; Snapshot fixed preemption, threat evidence and safety appraisal rows.
+(= (parameterProtectedRegistry)
+    (let* (
+        ($priorities (collapse (match &self (SchedulingPriority $c $p) (SchedulingPriority $c $p))))
+        ($rules (modeTransitionRules))
+        ($threat (modeSignalRules threat))
+        ($safety (collapse (match &self (SignalAppraisalRule danger $d $t $c)
+            (SignalAppraisalRule danger $d $t $c))))
+    ) (quote ($priorities $rules $threat $safety))))
+"""
+        setup = definitions
+        if configure:
+            setup += '!(test (configureHostReasonerParameterLearner "probe" "calibrated-fixture-v1" parameterTestLearner) True)\n'
+        source = source.replace('!(bind! &test-bundle', setup + '!(bind! &test-bundle')
+        source += r"""
+!(bind! &parameter-grade (new-state
+    (assessHostReasonerProposalOutcome (get-state &routed-envelope) (get-state &routed-id))))
+!(bind! &fixed-registry (new-state (parameterProtectedRegistry)))
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.175)
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (ModeThreshold wake execution-request classifier-score Enter)))) 0.0)
+"""
+        return source
+
+    def test_parameter_learning_is_queued_once_and_applied_at_the_next_native_cycle(self):
+        source = self.parameter_setup() + r"""
+!(bind! &parameter-batch (new-state (deriveHostReasonerParameterUpdates (get-state &routed-id))))
+!(test (index-atom (get-state &parameter-batch) 0) HostReasonerParameterBatch)
+!(test (index-atom (get-state &parameter-batch) 1) (get-state &routed-id))
+!(test (index-atom (index-atom (get-state &parameter-batch) 2) 3) "calibrated-fixture-v1")
+!(test (index-atom (get-state &parameter-batch) 5) Pending)
+!(test (index-atom (get-state &parameter-learner-input) 0) (get-state &parameter-grade))
+!(test (size-atom (index-atom (get-state &parameter-learner-input) 1)) 3)
+!(test (deriveHostReasonerParameterUpdates (get-state &routed-id)) (get-state &parameter-batch))
+!(test (get-state &parameter-learner-calls) 1)
+!(applyHostReasonerParameterUpdates (get-state &operation-context))
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.175)
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (ModeThreshold wake execution-request classifier-score Enter)))) 0.0)
+!(test (hostReasonerLearning) ())
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+!(test (size-atom (get-state &probe-notifications)) 2)
+!(test (boundaryCycle apply-parameters) 1)
+!(test (index-atom (car-atom (hostReasonerParameterBatches)) 5) Applied)
+!(test (index-atom (car-atom (hostReasonerParameterBatches)) 6) (get-state &operation-context))
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.2)
+!(test (tpContains (modeSignalRules wake)
+    (ModeRatioTrigger wake execution-request classifier-score 0.05 0.0)) True)
+!(test (let $rows (appraiseFactualSignal
+    (FactualSignal (kind stalled-progress) (value (BooleanFact True))
+        (provenance ((SessionObservationRef "parameter-test" 0)))))
+    (mrcValue (car-atom (filter-atom $rows $row (== (mrcValue $row 2) importance))) 5)) 0.2)
+!(test (parameterProtectedRegistry) (get-state &fixed-registry))
+!(test (applyHostReasonerParameterUpdates (get-state &operation-context)) (ParameterUpdateRejected LateBoundary))
+!(test (boundaryCycle keep-parameters) 1)
+!(test (size-atom (hostReasonerParameterBatches)) 1)
+!(test (index-atom (car-atom (hostReasonerParameterBatches)) 5) Applied)
+!(test (get-state &parameter-learner-calls) 1)
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_invalid_parameter_batches_leave_registry_evidence_and_learning_unchanged(self):
+        cases = [
+            '((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 0.3 "too large"))',
+            '((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 0.4 "outside range"))',
+            '((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.1 0.12 "stale"))',
+            '((HostReasonerParameterChange (ModeThreshold threat danger classifier-score Enter) 0.0 0.05 "forbidden"))',
+            '((HostReasonerParameterChange (AppraisalWeight danger risk IdentityRatio) 0.8 0.79 "fixed safety"))',
+            '((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 "0.2" "not numeric"))',
+            '((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 0.2 ""))',
+            '((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 0.2 "first") (HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 0.19 "duplicate"))',
+            '(ReasonerRuntimeError Timeout)',
+        ]
+        for number in ("1.0Inf", "-1.0Inf", "1.5NaN"):
+            cases.append(f'(let $_ (translatePredicate (atom_number "{number}" $n)) ((HostReasonerParameterChange (AppraisalWeight stalled-progress importance BooleanIndicator) 0.175 $n "nonfinite")))')
+        for changes in cases:
+            source = self.parameter_setup() + f'!(change-state! &parameter-test-changes {changes})\n' + r"""
+!(test (deriveHostReasonerParameterUpdates (get-state &routed-id)) (ParameterUpdateRejected InvalidChanges))
+!(test (hostReasonerParameterBatches) ())
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.175)
+!(test (parameterProtectedRegistry) (get-state &fixed-registry))
+!(test (hostReasonerLearning) ())
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+!(test (hostReasonerReceiptFor (get-state &routed-id)) (get-state &routed-receipt))
+"""
+            with self.subTest(changes=changes):
+                self.run_entry(source, "reasoner=probe")
+
+    def test_stale_parameters_reject_the_entire_pending_batch(self):
+        source = self.parameter_setup() + r"""
+!(deriveHostReasonerParameterUpdates (get-state &routed-id))
+!(remove-atom &self (SignalAppraisalRule stalled-progress importance BooleanIndicator 0.175))
+!(add-atom &self (SignalAppraisalRule stalled-progress importance BooleanIndicator 0.19))
+!(test (boundaryCycle stale-parameters) 1)
+!(test (index-atom (car-atom (hostReasonerParameterBatches)) 5) StaleParameter)
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.19)
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (ModeThreshold wake execution-request classifier-score Enter)))) 0.0)
+!(test (parameterProtectedRegistry) (get-state &fixed-registry))
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_parameter_derivation_requires_explicit_learner_and_learning_permission(self):
+        source = self.parameter_setup(configure=False) + r"""
+!(test (deriveHostReasonerParameterUpdates (get-state &routed-id)) (ParameterUpdateDeferred NoLearner))
+!(test (configureHostReasonerParameterLearner "probe" "late-v1" parameterTestLearner)
+    (ParameterUpdateRejected AlreadyInvoked))
+!(test (hostReasonerParameterBatches) ())
+!(test (get-state &parameter-learner-calls) 0)
+"""
+        self.run_entry(source, "reasoner=probe")
+        source = self.parameter_setup().replace('(assessment True) (learning True)', '(assessment True) (learning False)')
+        source += r"""
+!(test (deriveHostReasonerParameterUpdates (get-state &routed-id)) (ParameterUpdateDeferred LearningDisabled))
+!(test (hostReasonerParameterBatches) ())
+!(test (get-state &parameter-learner-calls) 0)
+!(test (boundaryCycle parameter-learning-disabled) 1)
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_parameter_batches_do_not_stack_pending_steps_or_cross_sessions(self):
+        source = self.parameter_setup() + r"""
+;; Gather another real assessment before queueing either, preserving the original values.
+!(test (boundaryCycle second-parameter-grade) 1)
+!(test (fullLoopDispatch second-parameter-grade (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(bind! &second-id (new-state (index-atom (car-atom (hostReasonerReceipts)) 1)))
+!(assessHostReasonerProposalOutcome
+    (index-atom (index-atom (car-atom (hostReasonerSelections)) 4) 1) (get-state &second-id))
+!(deriveHostReasonerParameterUpdates (get-state &routed-id))
+!(test (deriveHostReasonerParameterUpdates (get-state &second-id))
+    (ParameterUpdateRejected PendingConflictOrLimit))
+!(test (size-atom (hostReasonerParameterBatches)) 1)
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.175)
+!(initOperationSession)
+!(test (boundaryCycle new-parameter-session) 1)
+!(test (index-atom (car-atom (hostReasonerParameterBatches)) 5) StaleSession)
+!(test (hostReasonerParameterValue (car-atom (hostReasonerParameterRows
+    (AppraisalWeight stalled-progress importance BooleanIndicator)))) 0.175)
+!(test (parameterProtectedRegistry) (get-state &fixed-registry))
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_parameter_learner_can_defer_without_proposing_a_change(self):
+        source = self.parameter_setup() + r"""
+!(change-state! &parameter-test-changes ())
+!(test (deriveHostReasonerParameterUpdates (get-state &routed-id)) (ParameterUpdateDeferred NoChanges))
+!(test (hostReasonerParameterBatches) ())
+!(test (parameterProtectedRegistry) (get-state &fixed-registry))
+"""
+        self.run_entry(source, "reasoner=probe")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):
                 with self.subTest(entry=name):
                     edges = self.audit(APP / name, Path(directory) / "imports.json")
                     resolved = {edge["resolved"] for edge in edges}
-                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES))
+                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES | PARAMETER_MODULES))
                     self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
                     # The native decision and policy path still loads.
                     self.assertIn(str(APP / "omegaclaw_decision.metta"), resolved)
@@ -1219,9 +1397,15 @@ class ReasonerBoundaryTests(unittest.TestCase):
             edges = self.audit(entry, Path(directory) / "imports.json")
             resolved = {edge["resolved"] for edge in edges}
             self.assertTrue(ASSESSMENT_MODULES | HOST_EVIDENCE_MODULES <= resolved)
+            self.assertFalse(PARAMETER_MODULES & resolved)
             self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
             proposals = [e for e in edges if e["resolved"] == str(APP / "reasoners/reasoner_proposals.metta")]
             self.assertEqual(len(proposals), 1)
+            entry.write_text(entry.read_text() +
+                "!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_parameter_updates))\n")
+            parameter_edges = self.audit(entry, Path(directory) / "parameters.json")
+            self.assertTrue(PARAMETER_MODULES <= {edge["resolved"] for edge in parameter_edges})
+            self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in parameter_edges))
 
 
 if __name__ == "__main__":

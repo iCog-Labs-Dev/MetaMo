@@ -68,6 +68,18 @@
 ;; More urgent targets can bypass hold/cooldown, but still require entry evidence.
 (ModeTransitionOption urgent-bypass True)
 
+;; Optional learned parameters: key, minimum, maximum, maximum change per update.
+;; Threat/recovery triggers, safety appraisal, policy floors and preemption are fixed.
+(: AppraisalWeightType Type)
+(: AppraisalWeight (-> Symbol Symbol Symbol AppraisalWeightType))
+(: ModeThresholdType Type)
+(: ModeThreshold (-> Symbol Symbol Symbol Symbol ModeThresholdType))
+(: LearnableParameterType Type)
+(: LearnableParameter (-> Expression Number Number Number LearnableParameterType))
+(LearnableParameter (AppraisalWeight stalled-progress importance BooleanIndicator) 0.10 0.30 0.025)
+(LearnableParameter (AppraisalWeight progress-made opportunity BooleanIndicator) 0.05 0.25 0.025)
+(LearnableParameter (ModeThreshold wake execution-request classifier-score Enter) 0.0 0.25 0.05)
+
 ;; Scheduling priority classes, highest first. These are neither
 ;; constitutional modes nor ContextFrames Fast/Slow execution modes.
 (SchedulingPriority Threat-remediation 7)
