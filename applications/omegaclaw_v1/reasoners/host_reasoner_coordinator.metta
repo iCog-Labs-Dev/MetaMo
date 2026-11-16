@@ -20,6 +20,13 @@
 !(bind! &host-reasoner-cycles (new-state ()))
 !(bind! &host-reasoner-mode-intake (new-state ()))
 !(bind! &host-reasoner-parameter-boundary (new-state ()))
+!(bind! &host-reasoner-advisory-hook (new-state ()))
+
+;; Optional application scoring extension; no influence module is loaded by collection.
+;; Example: an absent adviser leaves intake, native selection and attribution unchanged.
+(= (optionalHostReasonerAdvisory $stage $payload)
+    (case (get-state &host-reasoner-advisory-hook) (
+        (() True) ($callback (catch (eval ($callback $stage (quote $payload))))))))
 (: HostReasonerReceiptType Type)
 (: HostReasonerReceipt (-> Expression Expression Expression HostReasonerReceiptType))
 (: ReasonerOutcomeRefType Type)
@@ -330,7 +337,8 @@
                 (case (retainHostReasonerCycle
                     (quote (HostReasonerCycle $context $invocation $intake $proposals $decision $outcome))) (
                     ((ReasonerRuntimeError $reason) (ReasonerRuntimeError $reason))
-                    ($_ (progn (retainHostReasonerSelectionAudit $invocation $decision)
+                    ($_ (progn (optionalHostReasonerAdvisory Retain $decision)
+                        (retainHostReasonerSelectionAudit $invocation $decision)
                         (notifyHostReasoner Decision $invocation $decision)))
                 )) (ReasonerRuntimeError MismatchedDecision)))
         ($_ True)))
@@ -357,8 +365,10 @@
 (= (hostReasonerRuntime $stage $payload)
     (if (== (hostReasonerSelection) disabled) True
         (case ($stage $payload) (
-            ((CycleBegin $context) (case (get-state &host-reasoner-parameter-boundary) (
-                (() True) ($apply (eval ($apply (quote $context)))))))
+            ((CycleBegin $context) (progn (optionalHostReasonerAdvisory Begin $context)
+                (case (get-state &host-reasoner-parameter-boundary) (
+                    (() True) ($apply (eval ($apply (quote $context))))))))
+            ((PrepareInfluence $payload) (optionalHostReasonerAdvisory Prepare $payload))
             ((ModeCollect $bundle) (case (collectHostReasonerMode $bundle) (
                 ((ReasonerRuntimeError $reason) (ReasonerRuntimeError $reason))
                 ($_ (progn

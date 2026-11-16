@@ -53,20 +53,6 @@
     ) (quote (HostReasonerProposalAdmission $envelope $decision $operation)))
 )
 
-;; Keep native actions and ties intact; repeated advice contributes one candidate.
-;; Example: ten admitted respond proposals do not add ten respond actions.
-(= (hostReasonerMergeActions $native $decisions)
-    (if (== $decisions ()) $native
-        (let* (
-            (($head $tail) (decons-atom $decisions))
-            ((HostReasonerProposalAdmission $_ $decision $_) $head)
-            ($candidate (getCandidate $decision))
-            ($present (!= (filter-atom $native $action (== (actionId $action) $candidate)) ()))
-            ($next (if (and (== (getStatus $decision) Accepted) (not $present))
-                (append $native ((candidateToAction $candidate))) $native))
-        ) (hostReasonerMergeActions $next $tail)))
-)
-
 (: HostReasonerSelectionType Type)
 (: HostReasonerSelection (-> Expression String Expression Expression HostReasonerSelectionType))
 (: HostReasonerPrimaryType Type)
@@ -77,7 +63,7 @@
 ;; Example: an empty primary means no eligible proposal matched the native choice.
 (= (hostReasonerSelections) (get-state &host-reasoner-selections))
 
-;; First retained matching admission wins; confidence does not break ties.
+;; Shadow attribution uses intake order; active advice supplies its exact contributor.
 ;; Example: identical candidates with another command or ticket cannot match.
 (= (hostReasonerPrimary $invocation $decision $admissions)
     (let $matches (filter-atom $admissions $entry
@@ -87,8 +73,12 @@
                     (reasonerRuntimeSelectionCurrent $invocation $operation $decision)))))
         (case $matches (
             (() ())
-            ($_ (let (HostReasonerProposalAdmission $envelope $_ $operation) (car-atom $matches)
-                (quote (HostReasonerPrimary $envelope $operation ShadowAgreement)))))))
+            ($_ (case (optionalHostReasonerAdvisory Primary ($invocation $decision $matches)) (
+                ((HostReasonerPrimary $envelope $operation $attribution)
+                    (quote (HostReasonerPrimary $envelope $operation $attribution)))
+                (NoPrimaryAttribution ())
+                ($_ (let (HostReasonerProposalAdmission $envelope $_ $operation) (car-atom $matches)
+                    (quote (HostReasonerPrimary $envelope $operation ShadowAgreement))))))))))
 )
 
 ;; Retain once before notification/dispatch, including an explicit absent primary.
@@ -137,8 +127,7 @@
                                  (>= (reasonerProposalDataRemaining (quote $batch) 32 (* 2 (mrcValue $limits 2))) 0))
                             (progn
                                 (change-state! &host-reasoner-admissions (cons-atom $batch (hostReasonerAdmissions)))
-                                (if (hostReasonerStageEnabledFor (mrcValue $invocation 2) influence)
-                                    (hostReasonerMergeActions $native $decisions) $native)) $native)))
+                                $native) $native)))
                     ($_ $native)
                 ))))
         ($_ $native)

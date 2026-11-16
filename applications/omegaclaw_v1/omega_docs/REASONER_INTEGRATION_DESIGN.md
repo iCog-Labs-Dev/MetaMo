@@ -1,6 +1,6 @@
 # Loosely coupled reasoner integration
 
-Status: optional collection, admission, attribution, receipts and controlled assessment/learning connected; bounded influence remains proposed
+Status: optional collection, admission, attribution, receipts, controlled assessment/learning and bounded advisory selection connected
 
 The integration should connect the existing reasoner adapters to the normal
 OmegaClaw runtime through an optional host coordinator. MetaMo should receive
@@ -28,8 +28,9 @@ The following are implemented and should be reused:
 
 Explicitly enabled startup now connects shadow proposal collection, retained
 native decisions and capability-based outcome notifications through the normal
-bridge and dispatch callbacks. Automatic causal attribution, assessment, learning
-and proposal influence remain separate work.
+bridge and dispatch callbacks. Assessment and learning remain explicit operations.
+The separate optional application influence extension can enable bounded scoring
+after predictive evidence has been retained.
 
 Existing relationships are documented in [COMPOSITION.md](COMPOSITION.md),
 [CONTRACTS.md](CONTRACTS.md), [SCHEDULING.md](SCHEDULING.md) and
@@ -500,10 +501,11 @@ Trusted code configures runtime behavior and stages alongside a registered adapt
 The four controls default to `False`; configuring a runtime or selecting an
 adapter does not enable them. Startup exposes the same controls through
 `reasoner-collection`, `reasoner-influence`, `reasoner-assessment` and
-`reasoner-learning` Boolean arguments. Configuration is immutable after the first
-retained invocation; repeated identical configuration is harmless. Invalid or
-late changes preserve the previous controls. Enabling influence currently rejects
-as `UnsupportedInfluence`; no weighting formula is supplied by these switches.
+`reasoner-learning` Boolean arguments. Collection, assessment and learning controls
+are immutable after the first retained invocation. Influence may be authorized
+after shadow calibration, but requires a separately configured cap; the switch
+alone rejects with `MissingPredictiveEvidence`. Repeated identical configuration
+is harmless. Invalid changes preserve the previous controls.
 
 Collection permission creates invocations and admission audits. Influence
 permission is separate: without it, an eligible proposal cannot add an action to
@@ -688,13 +690,39 @@ confidence and source reliability. It is not a replacement for the native
 candidate score. Do not apply that scaling to every native candidate, because
 missing proposals would then suppress ordinary work. Reuse its validated inputs
 for an explicitly bounded overlay whose zero-influence behavior reproduces the
-native selector. The overlay's cap and formula need registry declarations and
-selection tests before activation.
+native selector. The application overlay is now declared in `ReasonerInfluencePolicy`
+and implemented by the explicitly imported `reasoners/host_reasoner_influence`.
+It does not apply the legacy source-reliability multiplier to native scores.
 
 Do not sum arbitrary numbers of agreeing proposals into unbounded influence.
 Start with one eligible representative per source/candidate and a capped
 aggregate; duplicates must contribute once. Keep the current selector while
 evidence is collected. Bootstrap source priors are not earned performance.
+
+Configure `configureHostReasonerInfluence ADAPTER CAP OUTCOME-REFS`, then enable
+the influence control independently. Initial policy allows cap 0 through 0.10;
+positive caps require three distinct retained graded receipts with mean grade
+at least 0.75, matching the adapter/configuration and full comparator route.
+Repeated receipt references count once. Unresolved, missing, ambiguous or mixed
+route evidence cannot authorize influence. Zero requires no accuracy claim.
+
+After native scheduling, freeze maximum-confidence representatives for eligible
+native candidates whose predictions match the calibrated schema. With confidence
+`c_i` and retained mean grade `q`, allocate
+`bonus_i = cap * q * c_i / max(1, sum(c_j))` over distinct candidates; clamp the
+native score plus bonus to [0, 1]. Strict greater-than comparison preserves native
+tie order. There is no new candidate, command, scheduling class or dispatch ticket.
+Configuration changes wait for the next cycle; an invocation's stale ownership
+or publication disables its contribution. Missing/invalid advice preserves the
+native path under its existing checks.
+
+`hostReasonerInfluenceDecisions` retains the exact operation/ticket and a bounded
+trace of the first actual bimonad decision, including native and advised winners
+at the same state, scores, configuration and contributing envelopes. Later
+stability probes cannot replace that trace. Primary attribution uses the stable
+maximum contributor, labelled `AdvisoryChangedSelection` or `AdvisoryAgreement`;
+shadow attribution remains `ShadowAgreement`. A failed attribution audit grants
+no primary and never allocates a replacement ticket.
 
 ## Attribution, comparison and learning
 

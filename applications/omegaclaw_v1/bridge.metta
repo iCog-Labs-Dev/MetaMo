@@ -81,6 +81,7 @@
       ;; Scheduling precedence is separate from admission, numeric score,
       ;; constitutional posture, and ContextFrames Fast/Slow execution mode.
       ($scheduledActions (scheduleAdmittedActions (getSignals) $candidatePool))
+      ($_ (optionalHostReasoner PrepareInfluence (quote ($bundle $scheduledActions))))
       ($sysStates
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))
       ($cycleResult
@@ -94,7 +95,7 @@
       ($nextState (eval (decayMetamoState $rawNextState)))
       ($_ (eval (writeBackMetamoState $nextState)))
 
-      ($score (omegaclawScoreForBundle $bundle $nextState $finalAction))
+      ($score (omegaclawSelectionScoreForBundle $bundle $nextState $finalAction))
       ($decisionResult
          (eval (metamoActionToDecision $finalAction $score)))
       ((decision $selectedCandidate $_mode $_directive $_score)

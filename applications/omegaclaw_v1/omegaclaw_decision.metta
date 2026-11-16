@@ -1,5 +1,6 @@
 !(bind! &consecutive-safety-wins (new-state 0))
 !(bind! &active-frame-bundle (new-state ()))
+!(bind! &selection-advice-hook (new-state ()))
 
 (= (setActiveFrameBundle $bundle)
    (change-state! &active-frame-bundle $bundle))
@@ -117,6 +118,23 @@
        0.0
        (omegaclawScore $state $action)))
 
+;; Optional application advice cannot introduce a candidate outside the admitted class.
+;; Example: an absent or invalid adviser preserves the native winner exactly.
+(= (omegaclawAdvisedChoice $bundle $state $candidates $native)
+   (case (get-state &selection-advice-hook) (
+      (() $native)
+      ($advice (let $chosen (catch (eval ($advice Choice (quote ($bundle $state $candidates $native)))))
+         (if (tpContains $candidates $chosen) $chosen $native))))))
+
+;; Native admission scores stay untouched; only selection uses the optional contribution.
+;; Example: zero influence returns the native number without adding or rounding zero.
+(= (omegaclawSelectionScoreForBundle $bundle $state $action)
+   (let $native (omegaclawScoreForBundle $bundle $state $action)
+      (case (get-state &selection-advice-hook) (
+         (() $native)
+         ($advice (let $score (catch (eval ($advice Score (quote ($bundle $action $native)))))
+            (if (fsNumberIn $score 0 1) $score $native)))))))
+
 
 (= (findBestAction $state () $bestAction $bestScore) $bestAction)
 (= (findBestAction $state $remaining $bestAction $bestScore)
@@ -184,9 +202,10 @@
            (let* (
               (($head $tail) (decons-atom $candidates))
               ($firstScore (omegaclawScoreForBundle $bundle $state $head))
-              ($bestAction
+              ($nativeAction
                  (findBestActionForBundle
                     $bundle $state $tail $head $firstScore))
+              ($bestAction (omegaclawAdvisedChoice $bundle $state $candidates $nativeAction))
               ($candName (actionId $bestAction))
               ($isSafety (isSafetyCandidate $candName))
               ($_ (if $isSafety
@@ -199,7 +218,7 @@
    (let $bundle (activeFrameBundle)
       (if (== $bundle ())
           (omegaclawScore $state $action)
-          (omegaclawScoreForBundle $bundle $state $action))))
+          (omegaclawSelectionScoreForBundle $bundle $state $action))))
 
 (= (omegaclawDecideBound $state $candidates)
    (let $bundle (activeFrameBundle)
@@ -216,4 +235,4 @@
 (= (omegaclawDecisionForBundle $bundle)
    (decisionMonad omegaclawUnit
       (omegaclawDecideForBundle $bundle)
-      (omegaclawScoreForBundle $bundle)))
+      (omegaclawSelectionScoreForBundle $bundle)))

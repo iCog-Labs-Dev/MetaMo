@@ -19,6 +19,7 @@ ASSESSMENT_MODULES = {str(APP / name) for name in (
     "reasoners/reasoner_outcome_assessment.metta", "reasoners/host_reasoner_comparators.metta",
 )}
 PARAMETER_MODULES = {str(APP / "reasoners/host_reasoner_parameter_updates.metta")}
+INFLUENCE_MODULES = {str(APP / "reasoners/host_reasoner_influence.metta")}
 HOST_EVIDENCE_MODULES = {
     str(APP / name) for name in ("reasoners/reasoner_host_evidence.metta", "reasoners/reasoner_host_evidence.pl")
 }
@@ -56,7 +57,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
             resolved = {edge["resolved"] for edge in edges}
             self.assertIn(str(APP / "reasoners/host_reasoner_contracts.metta"), resolved)
             forbidden = ((REASONER_MODULES - {str(APP / "reasoners/reasoner_proposal_helpers.metta")})
-                         | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES | PARAMETER_MODULES)
+                         | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES | PARAMETER_MODULES | INFLUENCE_MODULES)
             self.assertFalse(resolved & forbidden)
             self.assertFalse(any(edge["resolved"].endswith(".pl")
                                  and "host_reasoner_contracts" in edge["resolved"]
@@ -880,7 +881,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
     (ReasonerRuntimeError AlreadyInvoked))
 !(test (configureHostReasonerControls "probe"
     (HostReasonerControls (collection True) (influence True) (assessment False) (learning False)))
-    (ReasonerRuntimeError UnsupportedInfluence))
+    (ReasonerRuntimeError MissingPredictiveEvidence))
 !(test (configureHostReasonerControls "probe"
     (HostReasonerControls (collection "True") (influence False) (assessment False) (learning False)))
     (ReasonerRuntimeError InvalidControls))
@@ -1301,13 +1302,210 @@ class ReasonerBoundaryTests(unittest.TestCase):
 """
         self.run_entry(source, "reasoner=probe")
 
+    def influence_setup(self):
+        """Calibrate with three distinct, real shadow dispatch receipts."""
+        source = self.comparator_setup()
+        # All tests use the production intake/ownership/receipt/comparator path.
+        source = source.replace('(reasonerContractFixture registration)',
+            '(reasonerContractSet (quote (capabilities candidates)) (respond ask-clarification) '
+            '(reasonerContractFixture registration))')
+        source += r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_influence))
+!(test (index-atom (assessHostReasonerProposalOutcome
+    (get-state &routed-envelope) (get-state &routed-id)) 4)
+    (ReasonerPredictionComparison Confirmed 0.75))
+"""
+        for cycle in (2, 3):
+            source += f'!(test (boundaryCycle shadow-{cycle}) 1)\n'
+            source += f'!(test (fullLoopDispatch shadow-{cycle} (coreLoopDispatchBegin) (selectedHostCommand))\n'
+            source += r"""    (DispatchResult Executed Feasible "observed local file content"))
+!(test (let* (($receipt (car-atom (hostReasonerReceipts)))
+    ($envelope (car-atom (index-atom (hostReasonerCycleFor (get-state &operation-context)) 4))))
+    (index-atom (assessHostReasonerProposalOutcome $envelope (index-atom $receipt 1)) 4))
+    (ReasonerPredictionComparison Confirmed 0.75))
+"""
+        source += r"""
+!(bind! &influence-ids (new-state (map-atom (hostReasonerAssessments) $row (index-atom $row 1))))
+!(test (size-atom (get-state &influence-ids)) 3)
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+!(test (size-atom (get-state &host-reasoner-influence-decisions)) 0)
+"""
+        return source
+
+    def test_influence_requires_distinct_predictive_evidence_and_explicit_cap(self):
+        source = self.influence_setup() + r"""
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence True) (assessment True) (learning True)))
+    (ReasonerRuntimeError MissingPredictiveEvidence))
+!(test (configureHostReasonerInfluence "probe" 0.11 (get-state &influence-ids))
+    (ReasonerRuntimeError InvalidInfluenceConfig))
+!(test (configureHostReasonerInfluence "probe" -0.1 (get-state &influence-ids))
+    (ReasonerRuntimeError InvalidInfluenceConfig))
+!(test (let $id (car-atom (get-state &influence-ids))
+    (configureHostReasonerInfluence "probe" 0.1 ($id $id $id)))
+    (ReasonerRuntimeError MissingPredictiveEvidence))
+!(test (configureHostReasonerInfluence "other" 0.1 (get-state &influence-ids))
+    (ReasonerRuntimeError InvalidInfluenceConfig))
+!(test (get-state &host-reasoner-influence-settings) ())
+!(test (configureHostReasonerInfluence "probe" 0.1 (get-state &influence-ids)) True)
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence True) (assessment True) (learning True))) True)
+!(test (index-atom (hostReasonerInfluenceSettingFor "probe") 2) ())
+!(test (index-atom (index-atom (hostReasonerInfluenceSettingFor "probe") 3) 3) 0.1)
+;; Historical cycles and assessments are unchanged by authorization.
+!(test (size-atom (hostReasonerAssessments)) 3)
+!(test (map-atom (hostReasonerSelections) $row (index-atom (index-atom $row 4) 3))
+    (ShadowAgreement ShadowAgreement ShadowAgreement))
+!(test (boundaryCycle influence) 1)
+!(test (index-atom (index-atom (hostReasonerInfluenceSettingFor "probe") 2) 3) 0.1)
+!(test (size-atom (get-state &host-reasoner-influence-decisions)) 1)
+!(test (index-atom (index-atom (car-atom (hostReasonerSelections)) 4) 3) AdvisoryAgreement)
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def influence_competition_setup(self, cap=0.1):
+        """Use real native competitors; duplicate advice has a stable maximum."""
+        source = self.influence_setup()
+        source = source.replace('(= (routedCollect $i $v $a)', r"""
+!(bind! &influence-candidate (new-state respond))
+(= (routedCollect $i $v $a)""")
+        source = source.replace('($p (quote (ReasonerMotivationalProposal predicted',
+            '($candidate (get-state &influence-candidate))\n'
+            '        ($p (quote (ReasonerMotivationalProposal predicted')
+        source = source.replace('current-frame respond\n            claim support 0.8',
+            'current-frame $candidate\n            claim support 0.8')
+        source = source.replace('(reasonerContractSet (quote (proposals)) ($p) $raw)',
+            r"""(reasonerContractSet (quote (proposals))
+            (if (== $candidate respond) ($p)
+                ($p (ReasonerMotivationalProposal strongest llm propose-candidate current-frame
+                    $candidate claim support 1.0 (EvidenceReferences $refs) (PredictedPayload "expected"))
+                    (ReasonerMotivationalProposal tied llm propose-candidate current-frame
+                    $candidate claim support 1.0 (EvidenceReferences $refs) (PredictedPayload "expected")))) $raw)""")
+        source += r"""
+;; Consume the preceding callback normally before comparing another decision.
+!(test (boundaryCycle consume) 1)
+!(test (boundaryProvision "interactive") 1)
+!(change-state! &new-msg-flag False)
+!(change-state! &influence-candidate ask-clarification)
+"""
+        source += f'!(test (configureHostReasonerInfluence "probe" {cap} (get-state &influence-ids)) True)\n'
+        source += r"""
+!(test (configureHostReasonerControls "probe"
+    (HostReasonerControls (collection True) (influence True) (assessment True) (learning True))) True)
+"""
+        return source
+
+    def test_bounded_influence_changes_only_native_competitors_and_retains_exact_primary(self):
+        source = self.influence_competition_setup() + r"""
+!(writeBackMetamoState (motivation
+    (0.1 0.1 0.1 0.1 0.1 0.35 0.1 0.1 0.1 0.1 0.1)
+    (0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5)))
+!(test (boundaryCycle advised) 1)
+!(test (map-atom (get-state &operation-admitted-actions) $a (actionId $a)) (respond ask-clarification))
+!(bind! &influence-trace (new-state (get-state &host-reasoner-influence-trace)))
+!(test (actionId (index-atom (get-state &influence-trace) 5)) respond)
+!(test (actionId (index-atom (get-state &influence-trace) 6)) ask-clarification)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) ask-clarification)
+!(bind! &influence-primary (new-state (index-atom (car-atom (hostReasonerSelections)) 4)))
+!(test (index-atom (get-state &influence-primary) 3) AdvisoryChangedSelection)
+!(test (getProposalId (mrcValue (index-atom (get-state &influence-primary) 1) 4)) strongest)
+!(test (index-atom (get-state &influence-primary) 2) (get-state &selected-host-operation))
+!(test (index-atom (index-atom (get-state &influence-primary) 2) 6) (selectedHostTicket))
+!(bind! &influence-view (new-state (get-state &host-reasoner-influence-view)))
+!(test (size-atom (index-atom (get-state &influence-view) 4)) 1)
+!(test (fsNumberIn (hostReasonerInfluenceBonus (get-state &influence-view) ask-clarification) 0.074999 0.075001) True)
+!(test (hostReasonerInfluenceBonus (get-state &influence-view) respond) 0)
+!(test (hostReasonerInfluenceBonus (get-state &influence-view) learn) 0)
+!(test (size-atom (index-atom (car-atom (hostReasonerAdmissions)) 3)) 3)
+;; Repeated lifecycle notifications and bimonad probes retain the original choice.
+!(test (hostReasonerRuntime CycleBegin (get-state &operation-context)) True)
+!(test (get-state &host-reasoner-influence-trace) (get-state &influence-trace))
+!(test (configureHostReasonerInfluence "probe" 0 ()) True)
+!(test (fsNumberIn (hostReasonerInfluenceBonus (get-state &influence-view) ask-clarification) 0.074999 0.075001) True)
+!(test (index-atom (index-atom (hostReasonerInfluenceSettingFor "probe") 2) 3) 0.1)
+!(test (let $result (dispatchSelectedHostCommand (selectedHostTicket) (selectedHostCommand))
+    (case $result (((DispatchResult Executed Feasible $_) True) ($_ False)))) True)
+!(test (index-atom (car-atom (hostReasonerReceipts)) 1)
+    (let (OperationContext $session $_ $_) (get-state &operation-context)
+        (let (DispatchTicket $id) (selectedHostTicket) (ReasonerOutcomeRef $session $id))))
+!(test (boundaryCycle zero-next-cycle) 1)
+!(test (index-atom (index-atom (hostReasonerInfluenceSettingFor "probe") 2) 3) 0)
+!(test (get-state &host-reasoner-influence-view) ())
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_zero_influence_and_saturated_ties_preserve_native_selection(self):
+        for cap in (0, 0.1):
+            source = self.influence_competition_setup(cap) + r"""
+!(test (boundaryCycle tied) 1)
+!(test (map-atom (get-state &operation-admitted-actions) $a (actionId $a)) (respond ask-clarification))
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (index-atom (car-atom (hostReasonerSelections)) 4) ())
+!(test (omegaclawSelectionScoreForBundle (activeFrameBundle)
+    (motivosToMetamoState) (candidateToAction respond))
+    (omegaclawScoreForBundle (activeFrameBundle) (motivosToMetamoState) (candidateToAction respond)))
+!(test (reasonerSourceReliability llm) (get-state &routed-reliability))
+"""
+            if cap == 0:
+                source += r"""
+!(test (get-state &host-reasoner-influence-view) ())
+!(test (get-state &host-reasoner-influence-trace) ())
+!(test (get-state &host-reasoner-influence-decisions) ())
+"""
+            else:
+                source += r"""
+!(bind! &tie-trace (new-state (get-state &host-reasoner-influence-trace)))
+!(test (map-atom (index-atom (get-state &tie-trace) 4) $row (index-atom $row 4)) (1.0 1.0))
+!(test (actionId (index-atom (get-state &tie-trace) 5)) respond)
+!(test (actionId (index-atom (get-state &tie-trace) 6)) respond)
+;; A changed publication immediately removes the usable contribution.
+!(bind! &stale-next-publication (new-state (prepareTaskStateForMetaMo)))
+!(test (hostReasonerInfluenceViewFor (activeFrameBundle)) ())
+!(test (hostReasonerInfluencedScore (activeFrameBundle) (candidateToAction ask-clarification) 0.4) 0.4)
+"""
+            with self.subTest(cap=cap):
+                self.run_entry(source, "reasoner=probe")
+
+    def test_low_quality_or_missing_receipts_cannot_authorize_influence(self):
+        source = self.influence_setup().replace("0.75", "0.5") + r"""
+!(test (configureHostReasonerInfluence "probe" 0.1 (get-state &influence-ids))
+    (ReasonerRuntimeError MissingPredictiveEvidence))
+!(test (configureHostReasonerInfluence "probe" 0.1 (missing-a missing-b missing-c))
+    (ReasonerRuntimeError MissingPredictiveEvidence))
+!(test (get-state &host-reasoner-influence-settings) ())
+;; A zero cap requires no predictive claim and still grants no learning.
+!(test (configureHostReasonerInfluence "probe" 0 ()) True)
+"""
+        self.run_entry(source, "reasoner=probe")
+
+    def test_aggregate_influence_is_capped_across_distinct_candidates(self):
+        source = self.influence_competition_setup().replace(
+            '$candidate claim support 1.0 (EvidenceReferences $refs) (PredictedPayload "expected")))) $raw)',
+            '$candidate claim support 1.0 (EvidenceReferences $refs) (PredictedPayload "expected"))\n'
+            '                    (ReasonerMotivationalProposal agreeing llm propose-candidate current-frame\n'
+            '                    respond claim support 1.0 (EvidenceReferences $refs) (PredictedPayload "expected")))) $raw)')
+        source += r"""
+!(test (boundaryCycle aggregate) 1)
+!(bind! &aggregate-view (new-state (get-state &host-reasoner-influence-view)))
+!(test (size-atom (index-atom (get-state &aggregate-view) 4)) 2)
+!(test (fsNumberIn (hostReasonerInfluenceBonus (get-state &aggregate-view) respond) 0.037499 0.037501) True)
+!(test (hostReasonerInfluenceBonus (get-state &aggregate-view) respond)
+    (hostReasonerInfluenceBonus (get-state &aggregate-view) ask-clarification))
+!(test (<= (sum (map-atom (index-atom (get-state &aggregate-view) 4) $row
+    (hostReasonerInfluenceBonus (get-state &aggregate-view) (index-atom $row 1)))) 0.1) True)
+!(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
+!(test (index-atom (index-atom (car-atom (hostReasonerSelections)) 4) 3) AdvisoryAgreement)
+"""
+        self.run_entry(source, "reasoner=probe")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):
                 with self.subTest(entry=name):
                     edges = self.audit(APP / name, Path(directory) / "imports.json")
                     resolved = {edge["resolved"] for edge in edges}
-                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES | PARAMETER_MODULES))
+                    self.assertFalse(resolved & (REASONER_MODULES | HOST_EVIDENCE_MODULES | ASSESSMENT_MODULES | PARAMETER_MODULES | INFLUENCE_MODULES))
                     self.assertFalse(any(edge["kind"] == "reasoner_engine" for edge in edges))
                     # The native decision and policy path still loads.
                     self.assertIn(str(APP / "omegaclaw_decision.metta"), resolved)

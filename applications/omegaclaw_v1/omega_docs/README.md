@@ -165,9 +165,33 @@ Invalid grades and unresolved comparisons leave evidence and learning unchanged.
 `reasoner-learning=True` separately permits declared adapter feedback.
 `learnHostReasonerOutcome` explicitly applies one retained assessment to source
 reliability and attempts supported assessment feedback once. Previewing an
-assessment never calls it. Unsupported feedback stages are skipped. Selection
-influence remains unavailable until bounded weighting is implemented;
-`reasoner-influence=True` currently rejects with `UnsupportedInfluence`.
+assessment never calls it. Unsupported feedback stages are skipped.
+
+Advisory selection is a separate optional application extension. Explicitly import
+`reasoners/host_reasoner_influence` after the reasoner runtime, collect and assess
+shadow outcomes, then call `configureHostReasonerInfluence ADAPTER CAP OUTCOME-REFS`
+and enable that adapter's influence control. A positive cap requires at least
+three distinct graded receipts from the same adapter configuration and comparator
+route/schema, with a mean grade of at least 0.75. These are initial registry
+settings, not a claim of general predictive accuracy. Missing evidence rejects
+with `MissingPredictiveEvidence`. A zero cap needs no evidence.
+
+The registry caps aggregate influence at 0.10. For each candidate in the highest
+native admitted scheduling class, use its maximum eligible proposal confidence
+`c`; duplicates and confidence ties count once, preserving intake order. Its
+bonus is `cap * mean-grade * c / max(1, sum(distinct candidate confidences))`.
+Add that bonus to the native score and clamp to [0, 1]. Native candidates and
+tie order are preserved; zero influence returns the exact native score.
+Cap changes apply at the next cycle boundary, and a prepared decision keeps
+its configuration snapshot. Raising a cap always requires explicit configuration
+with predictive evidence. Source reliability and engine learning remain separate.
+
+`hostReasonerInfluenceDecisions` retains the first actual decision's native and
+advised winners, per-candidate scores, configuration and exact operation/ticket.
+Primary attribution identifies the maximum contributor as `AdvisoryChangedSelection`
+when the winner differs, or `AdvisoryAgreement` when it agrees. Shadow agreement
+continues to carry no causal claim. This extension loads neither by default nor
+through assessment alone.
 
 Motivational parameter adaptation is a separate optional application extension:
 explicitly import `reasoners/host_reasoner_parameter_updates` after the assessment
@@ -232,7 +256,7 @@ Enabled runtime collection and capability-based notifications are connected in
 shadow mode with proposal admission and exact selection agreement recorded.
 Explicit assessment of captured operation-result predictions is available separately.
 Explicit learning from retained grades and capability-gated feedback are available.
-Additional advisory influence and causal selection credit remain separate work. Shared
+Bounded advisory selection requires the separate configuration described above. Shared
 wire contracts may still represent proposals without loading an adapter or engine.
 
 Legacy proposal accessors require a ground `ReasonerMotivationalProposal` with

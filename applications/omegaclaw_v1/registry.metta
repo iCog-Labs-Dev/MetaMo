@@ -80,6 +80,13 @@
 (LearnableParameter (AppraisalWeight progress-made opportunity BooleanIndicator) 0.05 0.25 0.025)
 (LearnableParameter (ModeThreshold wake execution-request classifier-score Enter) 0.0 0.25 0.05)
 
+;; Advisory eligibility policy: distinct graded receipts, not bootstrap source priors.
+;; Total bonuses are cap * quality * confidence / max(1, sum of per-candidate maxima).
+(: ReasonerInfluencePolicyType Type)
+(: ReasonerInfluencePolicy (-> Expression Expression Expression Expression ReasonerInfluencePolicyType))
+(ReasonerInfluencePolicy (max-cap 0.10) (min-samples 3) (min-mean-grade 0.75)
+    (formula NormalizedMaxConfidence))
+
 ;; Scheduling priority classes, highest first. These are neither
 ;; constitutional modes nor ContextFrames Fast/Slow execution modes.
 (SchedulingPriority Threat-remediation 7)
