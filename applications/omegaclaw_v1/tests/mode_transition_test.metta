@@ -26,6 +26,16 @@
 !(test (maintenanceWorkFitsMode unknown-maintenance Sleep) False)
 !(test (maintenanceWorkFitsMode episode-replay Fast) False)
 
+;; A registry remapping cannot admit restructuring while asleep.
+!(remove-atom &self (MaintenanceWorkClass Restructuring Rumination))
+!(add-atom &self (MaintenanceWorkClass Restructuring Sleep))
+!(test (maintenanceWorkFitsMode memory-compression Sleep) False)
+!(test (maintenanceWorkFitsMode memory-reencoding Sleep) False)
+!(test (maintenanceWorkFitsMode evidence-restructuring Sleep) False)
+!(test (maintenanceWorkFitsMode memory-rent Sleep) True)
+!(remove-atom &self (MaintenanceWorkClass Restructuring Sleep))
+!(add-atom &self (MaintenanceWorkClass Restructuring Rumination))
+
 ;; Tightening a duration ceiling does not reclassify restructuring as a cheap sweep.
 !(remove-atom &self (MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1000)))
 !(add-atom &self (MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1)))

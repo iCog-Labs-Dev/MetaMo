@@ -189,11 +189,12 @@
 (= (constitutionalMode)
    (get-state &constitutional-mode))
 
-;; Pure class eligibility, not handler availability or permission to dispatch.
+;; Pure class eligibility; Sleep permits only bounded sweeps, even after remapping.
 ;; Example: fast memory-compression still fits Rumination, never Sleep.
 (= (maintenanceWorkFitsMode $operation $mode)
    (== (collapse (match &self (MaintenanceWork $operation $class $_limits)
-      (match &self (MaintenanceWorkClass $class $mode) True))) (True)))
+      (match &self (MaintenanceWorkClass $class $mode)
+         (or (!= $mode Sleep) (== $class BoundedSweep))))) (True)))
 
 (= (setConstitutionalMode $mode)
    (if (constitutionalModeValid $mode)

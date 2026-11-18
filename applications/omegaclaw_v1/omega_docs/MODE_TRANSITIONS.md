@@ -319,7 +319,11 @@ does not enable them.
 `MaintenanceWorkClass` maps `BoundedSweep` to Sleep and `Restructuring` to
 Rumination. `MaintenanceWork` assigns an operation to one class and its initial
 per-cycle limits. `maintenanceWorkFitsMode OPERATION MODE` reads only that class
-membership; it returns false for unknown operations, missing/ambiguous mappings
+membership, with Sleep restricted to `BoundedSweep` even if the registry remaps
+`Restructuring` to Sleep. The same check runs at selection and final dispatch;
+a retained Rumination command cannot run after switching to Sleep. Normal
+permission/resource gates and salience/stakes inputs still apply.
+It returns false for unknown operations, missing/ambiguous mappings
 and mismatched modes. It never measures elapsed time to decide whether work is
 cheap, and grants neither handler availability nor dispatch authority.
 
