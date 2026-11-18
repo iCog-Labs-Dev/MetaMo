@@ -52,8 +52,8 @@
 ;; runs in the bridge; PrimitiveOnly and LifecycleOnly are not maintenance jobs.
 (: MaintenanceCapabilityType Type)
 (: MaintenanceCapability (-> Symbol Symbol Expression Symbol Symbol MaintenanceCapabilityType))
-(MaintenanceCapability motivational-decay MetaMo (decayMetamoState) BookkeepingOnly ExistingCycleOwner)
-(MaintenanceCapability homeostatic-correction MetaMo (runHomeostasis) BookkeepingOnly ExistingCycleOwner)
+(MaintenanceCapability motivational-decay MetaMo (decayMetamoState) BookkeepingOnly BridgeAfterMotivationUpdate)
+(MaintenanceCapability homeostatic-correction MetaMo (runHomeostasis) BookkeepingOnly BridgeAfterSelfModelUpdate)
 (MaintenanceCapability memory-rent Host (hostMaintenanceRun) Available RequiresConfiguredPendingWork)
 (MaintenanceCapability recharge-accounting Unassigned () Unavailable MissingUpdateLaw)
 (MaintenanceCapability episode-replay Unassigned () Unavailable MissingBoundedReplay)

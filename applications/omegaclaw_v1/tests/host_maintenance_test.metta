@@ -4,7 +4,7 @@
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_maintenance.pl)
    (maintenanceFixtureQueue maintenanceFixtureTotal maintenanceFixtureRemaining maintenanceFixtureRevoke maintenanceFixtureDependency
     maintenanceFixtureBatch maintenanceFixtureProbe maintenanceFixtureWork maintenanceFixtureProcessed
-    maintenanceFixtureDirectDenied maintenanceFixtureSlow maintenanceFixtureIdleTotal))
+    maintenanceFixtureDirectDenied maintenanceFixtureSlow maintenanceFixtureIdleTotal maintenanceFixtureRegistrationDenied))
 (: ProbeProcessedType Type)
 (: ProbeProcessed (-> Number ProbeProcessedType))
 
@@ -16,6 +16,13 @@
 !(test (maintenanceFixtureQueue "no-idle-policy" ((MemoryRentCharge "idle-memory" 3)))
    (MaintenanceRejected InvalidBatch))
 !(test (py-call (host_mode_fixture.provision_idle "allowed")) 1)
+;; Bridge-owned corrections stay undispatchable even if assigned a sweep class.
+!(test (maintenanceFixtureRegistrationDenied motivational-decay) True)
+!(test (maintenanceFixtureWork motivational-decay "duplicate-decay" (a)) (MaintenanceRejected InvalidBatch))
+!(add-atom &self (MaintenanceWork homeostatic-correction BoundedSweep (MaintenanceWorkLimits 8 0 0 1000)))
+!(test (maintenanceFixtureRegistrationDenied homeostatic-correction) True)
+!(test (maintenanceFixtureWork homeostatic-correction "duplicate-homeostasis" (a)) (MaintenanceRejected InvalidBatch))
+!(remove-atom &self (MaintenanceWork homeostatic-correction BoundedSweep (MaintenanceWorkLimits 8 0 0 1000)))
 !(test (get-state &cfv2-current-frame-id) ())
 !(test (commitmentSnapshot) NoCommitment)
 !(test (maintenanceFixtureQueue "idle-1" ((MemoryRentCharge "idle-memory" 3))) (MaintenanceQueued "idle-1"))
@@ -34,12 +41,19 @@
          (costs ((ResourceCost "commands" "units" 1)))) respond (SessionTarget (get-state &idle-session))))
    (GateDecision Rejected InvalidOperation))
 !(bind! &idle-ticket (new-state (selectedHostTicket)))
+!(bind! &idle-motivation (new-state (motivosToMetamoState)))
+!(bind! &idle-self-model (new-state (getSelfModel)))
+!(bind! &idle-corrections (new-state (lastHomeostaticCorrections)))
 !(test (py-call (host_mode_fixture.provision_idle "allowed")) 1)
 !(test (fullLoopDispatch idle (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "idle-1" 1 (MemoryRentAccounted 3))))
 !(test (get-state &cfv2-current-frame-id) ())
 !(test (commitmentSnapshot) NoCommitment)
 !(test (maintenanceFixtureIdleTotal (get-state &idle-session)) 3)
+;; Dispatch settles observed rent without repeating the bridge's corrections.
+!(test (motivosToMetamoState) (get-state &idle-motivation))
+!(test (getSelfModel) (get-state &idle-self-model))
+!(test (lastHomeostaticCorrections) (get-state &idle-corrections))
 !(test (budgetAvailability (BudgetAccountId "host" (SessionTarget (get-state &idle-session)) "commands" "units"))
    (ResourceBudget "commands" "units" 1 Open))
 !(test (maintenanceFixtureQueue "idle-2" ((MemoryRentCharge "idle-memory" 2))) (MaintenanceQueued "idle-2"))

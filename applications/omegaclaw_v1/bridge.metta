@@ -92,6 +92,7 @@
       ($finalAction (cycleFinalAction $cycleResult))
       ($nextSysStates (cycleNextStates $cycleResult))
       ($rawNextState (findSubsystemState omegaclaw $nextSysStates))
+      ;; Single cycle owner of motivational decay, in every posture.
       ($nextState (eval (decayMetamoState $rawNextState)))
       ($_ (eval (writeBackMetamoState $nextState)))
 
@@ -116,6 +117,7 @@
       ($_ (advanceAutonomyPhaseForBundle $bundle $selectedCandidate))
       ($_ (change-state! &last-motivation-decision $decisionResult))
       ($_ (updateSelfModel (hasErrors) (hasResults)))
+      ;; Single cycle owner of homeostatic correction, after self-model feedback.
       ($_ (runHomeostasis))
       ($_ (maybeSaveMotivationalState))
       ($_ (collapse (clearSignals)))

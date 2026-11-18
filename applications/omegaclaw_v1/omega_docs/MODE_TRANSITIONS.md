@@ -297,7 +297,16 @@ operation yet. These records register no candidates, bindings or permissions.
 Posture, scheduling priority and a reasoner's candidate vocabulary do not prove
 that a maintenance handler exists.
 
-`BookkeepingOnly` runs through the existing cycle. `PrimitiveOnly` denotes a
+`BookkeepingOnly` runs through the existing cycle. MetaMo owns motivational
+decay immediately after the motivational state update
+(`BridgeAfterMotivationUpdate`) and homeostatic correction after self-model
+feedback (`BridgeAfterSelfModelUpdate`), once per cycle in every posture.
+The maintenance policy excludes these operations from worker registration,
+queue intake and dispatch, even if a work class is declared for them. A rent
+sweep accounts for queued charges without changing motivational state or
+reapplying those corrections.
+
+`PrimitiveOnly` denotes a
 building block, and `LifecycleOnly` denotes explicit task completion. Neither
 is a dispatchable maintenance capability. `Unavailable` marks missing or
 incompatible implementations. Memory-rent accounting now has an `Available`

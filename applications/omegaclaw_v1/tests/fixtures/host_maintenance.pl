@@ -23,6 +23,9 @@ maintenanceFixtureBatch(Id,Count,Result) :-
 maintenanceFixtureProbe(Dependency,true) :-
     mm_maintenance_register('memory-compression',Dependency,maintenance_fixture_probe).
 maintenanceFixtureWork(Op,Id,Items,Result) :- mm_maintenance_queue(Op,Id,Items,Result).
+% Example: bridge bookkeeping cannot acquire a worker even with a work-class declaration.
+maintenanceFixtureRegistrationDenied(Op,true) :-
+    \+ mm_maintenance_register(Op,'Host',maintenance_fixture_probe).
 maintenanceFixtureProcessed(N) :- (maintenance_fixture_processed(N) -> true ; N=0).
 % Example: a direct call before dispatch must not record rent or consume the job.
 maintenanceFixtureDirectDenied(true) :- \+ hostMaintenanceRun('memory-rent',_).

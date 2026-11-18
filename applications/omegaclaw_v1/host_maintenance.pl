@@ -15,6 +15,7 @@ mm_maintenance_init :-
 
 % Example: limits and candidate identity come from registry classes, never queued data.
 mm_maintenance_policy(Op, Candidate, Limits) :-
+    \+ match('&self',['MaintenanceCapability',Op,_,_,'BookkeepingOnly',_],Op,Op),
     findall([C,L], (match('&self',['MaintenanceWork',Op,Class,L],L,L),
         match('&self',['MaintenanceCandidate',Class,C],C,C)), [[Candidate,Limits]]).
 
@@ -76,7 +77,7 @@ mm_maintenance_idle_resolve(Request,Command,Operation) :-
 % Trusted adapters own their worker semantics and enforcement of engine/provider allowances.
 % Example: register a worker with dependency "pln"; absence of that selected adapter disables it.
 mm_maintenance_register(Op, Dependency, Worker) :-
-    mm_maintenance_policy(Op,_,_), Op \== 'motivational-decay',
+    mm_maintenance_policy(Op,_,_),
     (Dependency == 'Host' ; string(Dependency)), atom(Worker), current_predicate(Worker/3),
     with_mutex(omegaclaw_dispatch, oc_dispatch_mutate((
         retractall(mm_maintenance_handler(Op,_,_)), assertz(mm_maintenance_handler(Op,Dependency,Worker))))).
@@ -97,7 +98,7 @@ mm_maintenance_queue(Op,Id,Items,Result) :-
          -> mm_maintenance_enqueue(Op,Id,Items,Owner,Result)
          ; Result=['MaintenanceRejected','InvalidBatch'])).
 mm_maintenance_queue_valid(Op,Id,Items,Owner) :-
-    mm_maintenance_policy(Op,_,_), Op \== 'motivational-decay',
+    mm_maintenance_policy(Op,_,_),
     string(Id), string_length(Id,N), between(1,256,N),
     ground(Items), is_list(Items), length(Items,Count), between(1,128,Count),
     term_size(Items,Nodes), Nodes =< 4096, write_length(Items,Chars,[max_length(16384)]), Chars =< 16384,
