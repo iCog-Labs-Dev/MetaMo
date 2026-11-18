@@ -11,6 +11,29 @@
 !(test (collapse (match &self (MaintenanceCapability $op $_ $_ $_ $_)
    (match &self (CandidateCondition $op $_ $_ $_) $op))) ())
 
+;; Class eligibility does not enable missing replay/recharge handlers.
+!(test (maintenanceWorkFitsMode episode-replay Sleep) True)
+!(test (maintenanceWorkFitsMode recharge-accounting Sleep) True)
+!(test (collapse (match &self (MaintenanceCapability episode-replay $_ $_ $status $_) $status))
+   (Unavailable))
+!(test (maintenanceWorkFitsMode memory-compression Sleep) False)
+!(test (maintenanceWorkFitsMode memory-reencoding Sleep) False)
+!(test (maintenanceWorkFitsMode evidence-restructuring Sleep) False)
+!(test (maintenanceWorkFitsMode memory-compression Rumination) True)
+!(test (maintenanceWorkFitsMode memory-reencoding Rumination) True)
+!(test (maintenanceWorkFitsMode evidence-restructuring Rumination) True)
+!(test (maintenanceWorkFitsMode episode-retrieval Sleep) False)
+!(test (maintenanceWorkFitsMode unknown-maintenance Sleep) False)
+!(test (maintenanceWorkFitsMode episode-replay Fast) False)
+
+;; Tightening a duration ceiling does not reclassify restructuring as a cheap sweep.
+!(remove-atom &self (MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1000)))
+!(add-atom &self (MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1)))
+!(test (maintenanceWorkFitsMode memory-compression Sleep) False)
+!(test (maintenanceWorkFitsMode memory-compression Rumination) True)
+!(remove-atom &self (MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1)))
+!(add-atom &self (MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1000)))
+
 (= (modeTestBundle $id)
    (FrameStateBundle
       (root (FrameStateRoot root $id (mode Fast) () ()))

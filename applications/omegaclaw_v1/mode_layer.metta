@@ -189,6 +189,12 @@
 (= (constitutionalMode)
    (get-state &constitutional-mode))
 
+;; Pure class eligibility, not handler availability or permission to dispatch.
+;; Example: fast memory-compression still fits Rumination, never Sleep.
+(= (maintenanceWorkFitsMode $operation $mode)
+   (== (collapse (match &self (MaintenanceWork $operation $class $_limits)
+      (match &self (MaintenanceWorkClass $class $mode) True))) (True)))
+
 (= (setConstitutionalMode $mode)
    (if (constitutionalModeValid $mode)
        (let $_ (change-state! &mode-transition-state (ModeTransitionState $mode 0 none 0 0))

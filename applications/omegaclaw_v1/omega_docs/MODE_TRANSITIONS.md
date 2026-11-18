@@ -304,6 +304,47 @@ incompatible implementations. There are currently no `Available` maintenance
 operations in the inventory. Future wiring must establish a real bounded
 handler, pending work, policy and outcome contract before enabling one.
 
+### Declared work classes and limits
+
+`MaintenanceWorkClass` maps `BoundedSweep` to Sleep and `Restructuring` to
+Rumination. `MaintenanceWork` assigns an operation to one class and its initial
+per-cycle limits. `maintenanceWorkFitsMode OPERATION MODE` reads only that class
+membership; it returns false for unknown operations, missing/ambiguous mappings
+and mismatched modes. It never measures elapsed time to decide whether work is
+cheap, and grants neither handler availability nor dispatch authority.
+
+The limits constructor is
+`(MaintenanceWorkLimits MAX-ITEMS MAX-ENGINE-STEPS MAX-PROVIDER-CALLS MAX-ELAPSED-MS)`.
+These are seed ceilings for each operation's total work in one cycle, not a fresh
+allowance for each item or retry. They are declarations for subsequent handler
+wiring; this change does not install an executor or claim runtime enforcement.
+Handlers must enforce applicable limits and normal policy/resource checks before
+their capability can become available. Unused budget creates no pending work.
+
+| Operation | Class / posture | Maximum items per cycle | Engine steps | Provider calls | Elapsed ceiling |
+| --- | --- | --- | --- | --- | --- |
+| Motivational decay | BoundedSweep / Sleep | 22 goal/modulator values | 0 | 0 | 1000 ms |
+| Memory rent bookkeeping | BoundedSweep / Sleep | 16 memory records | 0 | 0 | 1000 ms |
+| Recharge accounting | BoundedSweep / Sleep | 1 resource account | 0 | 0 | 1000 ms |
+| Important episode replay | BoundedSweep / Sleep | 2 important episodes | 8 | 0 | 1000 ms |
+| Memory compression | Restructuring / Rumination | 8 source records | 8 | 0 | 1000 ms |
+| Memory re-encoding | Restructuring / Rumination | 8 source records | 8 | 0 | 1000 ms |
+| Evidence restructuring | Restructuring / Rumination | 8 evidence records | 8 | 0 | 1000 ms |
+
+The one-second ceiling and eight-step inference ceiling start from the current
+local reasoner allowance. Zero provider calls keeps external inference disabled
+by these declarations. Item limits are initial policy choices, not measured
+capacity or proof of predictive value. A future handler can require tighter
+limits; increasing a limit never changes its class. Compression finishing in
+one millisecond remains Rumination work. Episode retrieval, garbage collection
+and legacy cleanup do not acquire sweep membership from their names or speed.
+
+The decay row classifies its bookkeeping role; it does not move the existing
+bridge decay call into a Sleep-only path or schedule a second copy. Existing
+homeostasis also continues at its current cycle point in every posture. All
+missing handlers retain their `Unavailable` inventory status, with no additional
+candidates or command bindings registered by the class declarations.
+
 ### Existing cycle bookkeeping
 
 | Operation / owner | Inputs and effects | Limits | Observable result |

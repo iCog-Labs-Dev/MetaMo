@@ -65,6 +65,25 @@
 (MaintenanceCapability legacy-frame-compaction Core (compact-frame) Unavailable LegacyContextState)
 (MaintenanceCapability frame-junk-cleanup Core (cfv2-clear-current-frame-junk) Unavailable MissingBoundedDispatch)
 
+;; Scheduled maintenance classes, independent of measured duration and availability.
+;; Limits are seed ceilings per operation per cycle: items, engine steps, provider
+;; calls, elapsed milliseconds. Existing bridge bookkeeping keeps its current owner.
+(: MaintenanceWorkClassType Type)
+(: MaintenanceWorkClass (-> Symbol Symbol MaintenanceWorkClassType))
+(: MaintenanceWorkLimitsType Type)
+(: MaintenanceWorkLimits (-> Number Number Number Number MaintenanceWorkLimitsType))
+(: MaintenanceWorkType Type)
+(: MaintenanceWork (-> Symbol Symbol MaintenanceWorkLimitsType MaintenanceWorkType))
+(MaintenanceWorkClass BoundedSweep Sleep)
+(MaintenanceWorkClass Restructuring Rumination)
+(MaintenanceWork motivational-decay BoundedSweep (MaintenanceWorkLimits 22 0 0 1000))
+(MaintenanceWork memory-rent BoundedSweep (MaintenanceWorkLimits 16 0 0 1000))
+(MaintenanceWork recharge-accounting BoundedSweep (MaintenanceWorkLimits 1 0 0 1000))
+(MaintenanceWork episode-replay BoundedSweep (MaintenanceWorkLimits 2 8 0 1000))
+(MaintenanceWork memory-compression Restructuring (MaintenanceWorkLimits 8 8 0 1000))
+(MaintenanceWork memory-reencoding Restructuring (MaintenanceWorkLimits 8 8 0 1000))
+(MaintenanceWork evidence-restructuring Restructuring (MaintenanceWorkLimits 8 8 0 1000))
+
 ;; Boolean triggers read truth; ratio thresholds use classifier-score units.
 ;; Entry/exit comparisons are inclusive and independent of appraisal weights.
 (ModeRatioTrigger threat danger classifier-score 0.0 0.0)
