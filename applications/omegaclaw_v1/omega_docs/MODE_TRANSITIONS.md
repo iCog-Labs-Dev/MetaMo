@@ -314,6 +314,37 @@ host implementation, which still needs an explicit policy binding and queued
 observations. Other missing handlers stay unavailable; declaring their class
 does not enable them.
 
+### Bootstrap parameters and numeric representation
+
+`BootstrapParameterPolicy` declares when initial choices may be replaced:
+
+- Appraisal weights use graded outcomes and validated updates at cycle boundaries.
+  Only existing `LearnableParameter` entries are writable; their bounds and maximum
+  steps still apply. Other appraisal rules retain their current fixed status.
+- Relation priors yield to verified evidence through host-authorized write-back.
+  No numeric relation prior is invented here. A prior supplies neither confirmation
+  nor permission to merge frames. Concrete relation write-back remains pending.
+- Selection influence requires predictive performance and explicit bounded
+  configuration under `ReasonerInfluencePolicy`: at least three distinct eligible
+  outcomes, a mean grade of at least 0.75, and an aggregate cap no greater than 0.10.
+  Influence starts disabled; meeting the performance requirement does not enable it.
+
+These declarations describe replacement conditions; they do not enable a learner,
+reasoner, write-back path or new mutable parameter.
+
+`NumericRepresentationPolicy` allows volatile floats and requires scaled integers
+for saved numbers. `PersistedNumberScale` declares units per one, encoded bounds
+and rounding. Normalized motivational values, relation confidence, influence,
+grades and mode thresholds use scale 10000 and integer range 0–10000. Signed
+appraisal coefficients use the same scale with range -10000–10000. For example,
+0.175 is saved as 1750; decode by dividing by 10000. Round to nearest with ties
+away from zero. Counts remain exact integers in 0–9007199254740991. Encoding bounds
+do not widen existing learning or influence limits.
+
+The legacy motivational snapshot writer still saves floats. Applying these
+declarations to save/restore requires the separate versioned encoding migration;
+no existing float snapshot is silently reinterpreted as scaled integers.
+
 ### Declared work classes and limits
 
 `MaintenanceWorkClass` maps `BoundedSweep` to Sleep and `Restructuring` to

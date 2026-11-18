@@ -141,6 +141,33 @@
 (ReasonerInfluencePolicy (max-cap 0.10) (min-samples 3) (min-mean-grade 0.75)
     (formula NormalizedMaxConfidence))
 
+;; Bootstrap families reuse existing values; these declarations grant no write authority.
+;; Appraisal coefficients remain subject to LearnableParameter bounds. Relation
+;; confidence is host-supplied; a prior alone cannot confirm, merge or rewrite frames.
+;; Influence remains zero until explicitly configured under ReasonerInfluencePolicy.
+(: BootstrapParameterPolicyType Type)
+(: BootstrapParameterPolicy (-> Symbol Symbol Symbol BootstrapParameterPolicyType))
+(BootstrapParameterPolicy appraisal-weights GradedOutcomes ValidatedCycleBoundaryUpdates)
+(BootstrapParameterPolicy relation-priors VerifiedEvidence HostAuthorizedWriteBack)
+(BootstrapParameterPolicy selection-influence PredictivePerformance ExplicitBoundedConfiguration)
+
+;; Saved numeric contracts: family, units per one, encoded minimum/maximum, rounding.
+;; These describe serialization boundaries, not volatile arithmetic or a legacy migration.
+;; Decode as integer / scale; reject out-of-range values rather than clamping them.
+(: NumericRepresentationPolicyType Type)
+(: NumericRepresentationPolicy (-> Symbol Symbol NumericRepresentationPolicyType))
+(NumericRepresentationPolicy Persisted ScaledInteger)
+(NumericRepresentationPolicy Volatile FloatsAllowed)
+(: PersistedNumberScaleType Type)
+(: PersistedNumberScale (-> Symbol Number Number Number Symbol PersistedNumberScaleType))
+(PersistedNumberScale motivational-state 10000 0 10000 NearestTiesAwayFromZero)
+(PersistedNumberScale appraisal-weights 10000 -10000 10000 NearestTiesAwayFromZero)
+(PersistedNumberScale relation-confidence 10000 0 10000 NearestTiesAwayFromZero)
+(PersistedNumberScale selection-influence 10000 0 10000 NearestTiesAwayFromZero)
+(PersistedNumberScale outcome-grade 10000 0 10000 NearestTiesAwayFromZero)
+(PersistedNumberScale mode-threshold 10000 0 10000 NearestTiesAwayFromZero)
+(PersistedNumberScale counts 1 0 9007199254740991 ExactInteger)
+
 ;; Scheduling priority classes, highest first. These are neither
 ;; constitutional modes nor ContextFrames Fast/Slow execution modes.
 (SchedulingPriority Threat-remediation 7)
