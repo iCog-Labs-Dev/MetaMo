@@ -1,6 +1,16 @@
 ;; Registry-driven transitions over the existing signals and bounded snapshot.
 !(import! &self (library MetaMo applications/omegaclaw_v1/composition))
 
+;; Inventory metadata must not register executable maintenance or enable a missing handler.
+!(test (collapse (match &self (MaintenanceCapability $op $_ $_ Unavailable $_) $op))
+   (memory-rent recharge-accounting episode-replay memory-compression memory-reencoding
+      evidence-restructuring legacy-frame-compaction frame-junk-cleanup))
+!(test (collapse (match &self (MaintenanceCapability $_ $_ $_ Available $_) True)) ())
+!(test (collapse (match &self (MaintenanceCapability $op $_ $_ $_ $_)
+   (match &self (CandidateSpec $op $_) $op))) ())
+!(test (collapse (match &self (MaintenanceCapability $op $_ $_ $_ $_)
+   (match &self (CandidateCondition $op $_ $_ $_) $op))) ())
+
 (= (modeTestBundle $id)
    (FrameStateBundle
       (root (FrameStateRoot root $id (mode Fast) () ()))

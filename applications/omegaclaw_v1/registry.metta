@@ -40,6 +40,31 @@
 (ConstitutionalMode Sleep)
 (ConstitutionalModeDefault Engaged)
 
+;; Maintenance inventory: operation, implementation owner, handler names as data,
+;; availability, reason. Unassigned means no concrete implementation owns it yet.
+;; These rows register neither candidates nor commands. BookkeepingOnly already
+;; runs in the bridge; PrimitiveOnly and LifecycleOnly are not maintenance jobs.
+(: MaintenanceCapabilityType Type)
+(: MaintenanceCapability (-> Symbol Symbol Expression Symbol Symbol MaintenanceCapabilityType))
+(MaintenanceCapability motivational-decay MetaMo (decayMetamoState) BookkeepingOnly ExistingCycleOwner)
+(MaintenanceCapability homeostatic-correction MetaMo (runHomeostasis) BookkeepingOnly ExistingCycleOwner)
+(MaintenanceCapability memory-rent Unassigned () Unavailable MissingHandler)
+(MaintenanceCapability recharge-accounting Unassigned () Unavailable MissingUpdateLaw)
+(MaintenanceCapability episode-replay Unassigned () Unavailable MissingBoundedReplay)
+(MaintenanceCapability memory-compression Unassigned () Unavailable MissingBoundedHandler)
+(MaintenanceCapability memory-reencoding Unassigned () Unavailable MissingBoundedHandler)
+(MaintenanceCapability evidence-restructuring Unassigned () Unavailable MissingBoundedHandler)
+(MaintenanceCapability episode-retrieval Core (episodes) PrimitiveOnly UnboundedHistoryScan)
+(MaintenanceCapability memory-query Core (query) PrimitiveOnly RetrievalOnly)
+(MaintenanceCapability memory-store Core (remember) PrimitiveOnly StorageOnly)
+(MaintenanceCapability memory-delete MemoryStore (forget_id forget_ids) PrimitiveOnly DeletionOnly)
+(MaintenanceCapability runtime-gc Core (gc) PrimitiveOnly NoPerCallWorkBound)
+(MaintenanceCapability frame-maintenance Core (cfv2-maintain-frame) PrimitiveOnly TouchOrSelectOnly)
+(MaintenanceCapability frame-completion Core
+    (cfv2-complete-current-frame-to-stm cfv2-complete-current-frame-to-ltm) LifecycleOnly ExplicitCommitmentRequired)
+(MaintenanceCapability legacy-frame-compaction Core (compact-frame) Unavailable LegacyContextState)
+(MaintenanceCapability frame-junk-cleanup Core (cfv2-clear-current-frame-junk) Unavailable MissingBoundedDispatch)
+
 ;; Boolean triggers read truth; ratio thresholds use classifier-score units.
 ;; Entry/exit comparisons are inclusive and independent of appraisal weights.
 (ModeRatioTrigger threat danger classifier-score 0.0 0.0)

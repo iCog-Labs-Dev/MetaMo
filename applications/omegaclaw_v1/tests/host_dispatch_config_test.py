@@ -336,6 +336,17 @@ class HostDispatchConfigTests(unittest.TestCase):
             with self.subTest(command=command), self.assertRaises(config.ConfigError):
                 config.build_config(dict(self.value, commands=[command]))
 
+    def test_maintenance_names_and_policy_grants_do_not_create_handlers(self):
+        for skill in ("memory-rent", "recharge-accounting", "episode-replay",
+                      "memory-compression", "memory-reencoding", "evidence-restructuring",
+                      "episodes", "query", "remember", "compact-frame", "clear-frame-junk"):
+            value = copy.deepcopy(self.value)
+            value["commands"] = [{"skill": skill, "arguments": []}]
+            for scope in ("global", "frame"):
+                value[scope]["skills"].append(skill)
+            with self.subTest(skill=skill), self.assertRaisesRegex(config.ConfigError, "unsupported skill"):
+                config.build_config(value)
+
     def test_paths_require_explicit_canonical_regular_file(self):
         alias = self.root / "alias.txt"
         alias.symlink_to(self.file)

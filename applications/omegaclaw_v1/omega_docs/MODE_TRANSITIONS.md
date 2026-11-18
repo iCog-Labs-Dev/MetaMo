@@ -287,3 +287,89 @@ matching are independent of `SignalAppraisalRule` coefficients. The same typed
 predicates generate retained evidence and matching results. Latest mode evidence
 pins its session sources; reset clears it and expires old references. September
 JSON/JSONL artifacts remain historical and have not been rewritten.
+
+## Maintenance capability inventory
+
+Inventory checked 18 November 2026. `MaintenanceCapability` rows in
+`registry.metta` record operation, implementation owner, handler names as inert
+data, availability and reason. `Unassigned` means no concrete handler owns that
+operation yet. These records register no candidates, bindings or permissions.
+Posture, scheduling priority and a reasoner's candidate vocabulary do not prove
+that a maintenance handler exists.
+
+`BookkeepingOnly` runs through the existing cycle. `PrimitiveOnly` denotes a
+building block, and `LifecycleOnly` denotes explicit task completion. Neither
+is a dispatchable maintenance capability. `Unavailable` marks missing or
+incompatible implementations. There are currently no `Available` maintenance
+operations in the inventory. Future wiring must establish a real bounded
+handler, pending work, policy and outcome contract before enabling one.
+
+### Existing cycle bookkeeping
+
+| Operation / owner | Inputs and effects | Limits | Observable result |
+| --- | --- | --- | --- |
+| Motivational decay / MetaMo: `decayMetamoState` in `adapter.metta` | A motivational state; returns goals and modulators moved toward registry baselines. No memory rent or commitment termination. | Eleven goals and eleven modulators; existing decay rate and normalized values. Already called once by the bridge before write-back. | Returned motivational state and subsequent live values. No separate dispatch receipt. |
+| Homeostatic correction / MetaMo: `runHomeostasis` in `homeostasis.metta` | Current signals, motivational values and registry rules; corrects declared goals/modulators toward set-points. | One pass over configured rules with bounded steps and eight declared targets. Already called by the bridge after self-model update. | `lastHomeostaticCorrections` and updated values, including unchanged/rejected corrections. |
+
+Reuse these existing owners when connecting posture work. Scheduling another
+copy would double-apply bookkeeping. Energy and fatigue currently retain valid
+values: `updateSelfModel` does not measure consumption or implement recharge.
+Budget reservation/settlement also does not replenish resources.
+
+### Missing maintenance operations
+
+No implementation owner is assigned for these operations. Their eventual
+handlers belong in the host or a supported reasoner adapter, outside the mode
+regulator. Inputs and results below describe the missing contract, not an API
+that can currently be called.
+
+| Operation / status | Inputs and intended effect still to define | Missing bounds and observable result |
+| --- | --- | --- |
+| Memory rent / unavailable | Identified memory items, declared retention policy and accounting state; account for retention cost. | No rent handler, item/work limits or before/after accounting receipt. Motivational decay is a different operation. |
+| Recharge accounting / unavailable | An explicitly defined resource and recovery/update law; account for replenishment. | No recharge law, justified delta, cycle limit or observed before/after resource result. Setting `energy` alone is not a recharge implementation. |
+| Episode replay / unavailable | Identified important episodes and a supported replay consumer; process a bounded selection. | No bounded selection/processing handler, replay item/engine limits or processed-evidence result. Retrieval alone does not replay episodes. |
+| Memory compression / unavailable | Identified source records and a retained replacement with provenance. | No bounded compressor, publication mechanism or verified source-to-result receipt. |
+| Memory re-encoding / unavailable | Identified existing records and a declared destination representation. | No migration handler, batch/provider limits or verified replacement result. Embedding new text is not existing-store re-encoding. |
+| Evidence restructuring / unavailable | Identified evidence and supported causal/inductive results. | No supported adapter operation, bounded update mechanism or observed evidence revision. |
+
+### Existing host and memory primitives
+
+| Handler / owner | Inputs and effects | Existing limits / gaps | Observable result |
+| --- | --- | --- | --- |
+| `episodes` / Core `src/memory.metta`, `src/helper.py:around_time` | Timestamp; retrieves history lines near the closest timestamp. No replay or importance ranking. | `maxEpisodeRecallLines` defaults to 20 and controls the returned window, but `around_time` reads and buffers the entire history file. No scan/time/character bound. | Numbered history text, or no matching timestamp; no processing receipt. |
+| `query` / Core memory and `petta_lib_chromadb` | Text embedded locally or by a configured provider; nearest-memory retrieval without restructuring. | `maxRecallItems` defaults to 20; provider and storage work have no maintenance-specific cost/deadline contract. | Timestamp/content pairs; provider/storage failures can propagate. |
+| `remember` / Core memory and `petta_lib_chromadb` | Text, embedding and timestamp; appends a new record. No compression or replacement of existing evidence. | One record per call; text/provider/storage work needs explicit bounds before maintenance use. | Backend record ID; Core exposes `REMEMBER-SUCCESS` rather than retaining that ID in a maintenance receipt. |
+| `forget_id`, `forget_ids` / `repos/petta_lib_chromadb/lib_chromadb.py` | Supplied IDs; deletes memory records. No policy selecting eligible records. | List validation exists, but no maximum batch, rent policy, protected-evidence checks or maintenance dispatch contract. | Deleted ID or ID list from the backend. Not exposed by the current v1 command catalog. |
+| `gc` / Core `src/skills.pl` | No input; Prolog garbage/atom collection and stack trimming. No semantic memory rent or restructuring. | No per-call work/deadline or accounting bound. | Boolean success; no semantic-memory result or maintenance receipt. |
+| `cfv2-maintain-frame` / Core `src/context.metta` | Current ContextFrame state; touches the current frame or selects the next frame if none is focused. | Can change host focus; no sweep/replay/compression operation or maintenance contract. | Current/selected frame. The `ctx-maintain-frame` alias delegates here. |
+
+### ContextFrame compatibility and lifecycle exclusions
+
+| Handler / owner | Inputs, effects and result | Compatibility and limits / status |
+| --- | --- | --- |
+| `compact-frame` / Core `src/skills.metta` | Caller-supplied summary; attempts to update history, rebuild it and return the current frame. | **Unavailable:** references legacy `&ctx-history-summary`, `ctx-record-history`, `ctxHistorySummaryLimit` and `ctx-rebuild-history`. The current context module uses `&cfv2-*` state and does not supply those helper definitions. Text truncation does not establish bounded memory compression. |
+| `clear-frame-junk` in Core `src/skills.metta` | Summary; attempts to clear legacy hypotheses, results and deliverables, then rebuild history. | **Do not reuse:** writes `&ctx-*` variables. Core `src/context.metta` defines the same public name with a different implementation, so the public name is not a sufficient compatibility guarantee. |
+| `cfv2-clear-current-frame-junk` / Core `src/context.metta` | Summary and a current frame; clears current hypotheses/results, updates history/timestamp, returns `FRAME-JUNK-CLEARED` or `NO-CURRENT-FRAME-TO-CLEAR`. | Uses current `&cfv2-*` fields, but has no maintenance ownership/protection checks, bounded work contract or v1 dispatch binding. Clears evidence that may still matter to an open task. **Unavailable** for scheduled maintenance until those requirements are supplied. |
+| `cfv2-complete-current-frame-to-stm/ltm` / Core `src/context.metta` | Completion summary; stores a summary, marks/removes the active frame, clears its cache and selects another frame. Returns a completion status. | **LifecycleOnly:** current ContextFrame implementation, but changes task lifecycle and focus. Must remain behind explicit validated commitment completion; never use as a cleanup or compression shortcut. STM's supplied `pin` skill is a `PIN-SUCCESS` stub. LTM calls the external memory store without maintenance-specific work bounds. |
+
+### Reasoner capabilities
+
+The built-in `nars` and `pln` registrations in `reasoners/host_reasoner.metta`
+declare candidate proposals and two prediction schemas, with empty native
+feedback capabilities. Their candidate lists include `self-improve` and `learn`;
+these are proposal vocabulary, not replay, consolidation or learning handlers.
+
+`reasonerQuery` in `reasoners/reasoner_integration.metta` takes admitted Sentence
+facts, a query and inference limits. It returns native truth/evidence or no
+conclusion, preserving engine-specific semantics. The built-in runtime limits
+are 128 facts, 4096 payload nodes, 16 proposals, 8 engine steps, queue bound 40,
+zero provider calls and a 1000 ms intake timeout. Those bound candidate inference,
+not a persistent replay/restructuring job. Neither built-in adapter exposes one.
+Engine library inference/revision rules alone do not supply a host maintenance
+operation or supported native assessment feedback.
+
+The current trusted host command catalog in `host_dispatch_config.py` resolves
+only `read-file`, `show-current-frame` and `send` with approved candidate
+mappings. Adding a maintenance name to a policy skill list grants no handler;
+unsupported commands still reject. No maintenance command is enabled by this
+inventory, and no new module, provider call or scheduler is introduced.
