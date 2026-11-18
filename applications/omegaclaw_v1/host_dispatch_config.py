@@ -227,7 +227,7 @@ def binding(command, frame_id, allowed_files, destination=None):
 def build_config(value):
     """Build typed data only. No policy is inferred from model text or defaults."""
     keys(value, ("version", "frame_id", "allowed_files", "global", "frame", "commands"),
-         optional=("destination", "completion_criterion"))
+         optional=("destination", "completion_criterion", "idle_maintenance"))
     if type(value["version"]) is not int or value["version"] != 1:
         raise ConfigError("unsupported host configuration version")
     # Optional for existing read-only configurations, but never default a
@@ -236,6 +236,8 @@ def build_config(value):
     if "destination" in value:
         destination_metadata(value["destination"])
     completion_policy(value)
+    if "idle_maintenance" in value:
+        build_idle_config(value, "validation-session")
     frame_id = identifier(value["frame_id"])
     files = [allowed_file(path) for path in identifiers(value["allowed_files"])]
     global_scope = scope(value["global"], Symbol("Global"))
@@ -246,6 +248,40 @@ def build_config(value):
     if len(set(encoded_commands)) != len(encoded_commands):
         raise ConfigError("duplicate command binding")
     return encode(record("HostDispatchConfig", global_scope, frame_scope, bindings))
+
+
+# Example: idle grants name the real operation session and never a placeholder frame.
+def build_idle_config(value, session):
+    identifier(session)
+    idle = value["idle_maintenance"]
+    keys(idle, ("session", "commands"))
+    commands = items(idle["commands"])
+    if len(commands) != 1:
+        raise ConfigError("idle maintenance requires exactly one memory-rent binding")
+    command = commands[0]
+    if not isinstance(command, dict) or command.get("skill") != "host-maintenance" or command.get("arguments") != ["memory-rent"]:
+        raise ConfigError("idle maintenance supports only host memory-rent accounting")
+    target = record("SessionTarget", session)
+    return encode(record("IdleMaintenanceConfig", scope(value["global"], Symbol("Global")),
+                         scope(idle["session"], target), [binding(command, target, [])]))
+
+
+# Example: startup can install/revoke idle grants before the first user frame exists.
+def provision_idle():
+    import janus
+    if _startup_config is None or "idle_maintenance" not in _startup_config:
+        return int(janus.query_once("with_mutex(omegaclaw_dispatch, mm_maintenance_revoke_idle)").get("truth", False))
+    current = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        mm_maintenance_idle_owner(_Owner), _Owner=['SessionMaintenanceOwner',Session,_], swrite(_Owner,Owner)))''')
+    if not current.get('truth', False):
+        return 1  # A task or new input makes the idle scope inapplicable.
+    source = build_idle_config(_startup_config, current['Session'])
+    installed = janus.query_once('''with_mutex(omegaclaw_dispatch, (
+        sread(OwnerSource,_Expected), mm_maintenance_idle_owner(_Current), _Expected == _Current,
+        mm_maintenance_install_idle(Source)))''', {'OwnerSource': current['Owner'], 'Source': source})
+    if not installed.get('truth', False):
+        raise ConfigError('idle maintenance configuration rejected')
+    return 1
 
 
 # Example: older profiles remain open; IRC submission must be explicitly accepted.
@@ -455,6 +491,8 @@ def provision_admitted_task():
     if current['State'] == 'Retained' and not _startup_installed:
         current['State'] = 'Ready'
     if current['State'] != 'Ready':
+        if current['State'] == 'NoAdmittedCommitment':
+            provision_idle()
         return encode(record('TaskProvisioning', Symbol(current['State'])))
     try:
         provision_startup(expected_owner=current['Source'])

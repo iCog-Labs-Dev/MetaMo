@@ -370,6 +370,27 @@ class HostDispatchConfigTests(unittest.TestCase):
             with self.subTest(arguments=arguments), self.assertRaises(config.ConfigError):
                 config.binding(dict(skill="host-maintenance", arguments=arguments), "frame-1", [])
 
+    def test_idle_profile_uses_explicit_session_scope_and_only_local_rent_binding(self):
+        value = copy.deepcopy(self.value)
+        value['idle_maintenance'] = dict(session=copy.deepcopy(value['frame']),
+            commands=[dict(skill='host-maintenance', arguments=['memory-rent'])])
+        source = config.build_idle_config(value, 'actual-session')
+        self.assertIn('(target (SessionTarget "actual-session"))', source)
+        self.assertNotIn('FrameTarget', source)
+        self.assertIn('(candidate defer)', source)
+        self.assertIn('(permissions ("maintenance.memory-rent"))', source)
+        # Neither scope receives implicit maintenance permission grants.
+        self.assertNotIn('(skills ("host-maintenance"))', source)
+        config.build_config(value)
+        for operation in ('episode-replay', 'recharge-accounting', 'memory-compression', 'send'):
+            invalid = copy.deepcopy(value)
+            invalid['idle_maintenance']['commands'][0]['arguments'] = [operation]
+            with self.subTest(operation=operation), self.assertRaises(config.ConfigError):
+                config.build_config(invalid)
+        for session in ('', None):
+            with self.subTest(session=session), self.assertRaises(config.ConfigError):
+                config.build_idle_config(value, session)
+
     def test_paths_require_explicit_canonical_regular_file(self):
         alias = self.root / "alias.txt"
         alias.symlink_to(self.file)

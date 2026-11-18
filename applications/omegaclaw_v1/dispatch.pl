@@ -64,7 +64,8 @@ mm_budget_existing(Snapshot, Accounts, Records) :-
 
 % Example: task B adds its accounts while preserving task A and the global account.
 mm_budget_prepare(Global, Frame, ['BudgetAccounts',Accounts,Records]) :-
-    Frame=['PolicyScope',[target,Target]|_], Target=['FrameTarget',_],
+    Frame=['PolicyScope',[target,Target]|_],
+    (Target=['FrameTarget',_] ; Target=['SessionTarget',_]),
     mm_budget_scope_seeds(Global,'Global',GlobalSeeds),
     mm_budget_scope_seeds(Frame,Target,FrameSeeds),
     eval(['get-state','&budget-account-state'],Snapshot),
@@ -85,6 +86,13 @@ mm_budget_install(['BudgetAccounts',Accounts,Records]) :-
 
 % Example: both scopes and snapshot revisions come from the same locked read.
 % Rejection stays typed invalid policy; no fallback to configured availability.
+mm_dispatch_live_policies(Global, Frame, Accounting) :-
+    eval(['get-state','&budget-account-state'],Accounting),
+    mm_maintenance_idle_current(Owner), !,
+    mm_maintenance_idle(Owner,ConfiguredGlobal,ConfiguredScope,_),
+    eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredGlobal]],BudgetGlobal),
+    eval([budgetPolicyScopeForSnapshot,[quote,Accounting],[quote,ConfiguredScope]],Frame),
+    mm_native_scope('&cfv2-global-constraints',BudgetGlobal,Global).
 mm_dispatch_live_policies(Global, Frame, Accounting) :-
     eval(['get-state','&budget-account-state'],Accounting),
     (mm_dispatch_policies(ConfiguredGlobal,ConfiguredFrame)
@@ -136,6 +144,12 @@ mm_native_operation_reason(Origin, Target, Request, Operation, Reason) :-
      ; (Decision=['GateDecision','Rejected',Reason] -> true ; Reason='InvalidPolicyDecision')).
 
 % Example: feasible current policy still needs a justified, exact host operation.
+mm_native_justification_reason(Request, Operation, Reason) :-
+    memberchk([target,['SessionTarget',_]],Operation), !,
+    (mm_maintenance_idle_resolve(Request,_,Operation)
+     -> (nb_current('&cfv2-global-budget',Budget), memberchk([status,'Open'],Budget)
+         -> Reason='Feasible' ; Reason='BudgetExhausted')
+     ; Reason='MissingSessionMaintenanceAuthority').
 mm_native_justification_reason(Request, Operation, Reason) :-
     (\+ mm_native_source_authorized
      -> Reason='UnjustifiedAutonomousSideEffects'
@@ -367,10 +381,14 @@ mm_dispatch_enter_route(Token) :-
 mm_dispatch_leave_route(irc) :- !, py_call(host_operations:release_irc_route(), 1).
 mm_dispatch_leave_route(none).
 mm_dispatch_resolve(Intent, Command, Operation) :-
+    mm_maintenance_idle_resolve(Intent,Command,Operation).
+mm_dispatch_resolve(Intent, Command, Operation) :-
+    \+ mm_maintenance_idle_current(_),
     mm_dispatch_owner_current,
     mm_dispatch_binding(Command,Intent,Operation),
     (Command=['host-maintenance',Op] -> mm_maintenance_selected(Op) ; true).
 mm_dispatch_resolve(Intent, Command, Operation) :-
+    \+ mm_maintenance_idle_current(_),
     mm_dispatch_owner_current,
     eval([preparedHostBinding], ['HostCommandBinding',Command,Intent,Operation]),
     eval(['get-state','&prepared-host-operation'],

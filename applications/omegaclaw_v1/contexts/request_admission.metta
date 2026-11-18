@@ -113,8 +113,12 @@
 (= (feasibilityGateForRequest $origin $target $request $operation $global $frame)
    (if (not (is-ground ($origin $target $request $operation $global $frame)))
        (GateDecision Rejected InvalidRequest)
+       (case $operation (
+          ((PolicyOperation $_ (target (SessionTarget $_)) $_ $_ $_ $_)
+             (eval (sessionMaintenanceAdmission $origin $target $request $operation $global $frame)))
+          ($_
        (if (not (requestBundleShapeValid $origin))
            (GateDecision Rejected InvalidOriginSnapshot)
            (if (not (requestBundleShapeValid $target))
                (GateDecision Rejected InvalidTargetSnapshot)
-               (requestAdmissionForCandidate $origin $target $request $operation $global $frame)))))
+               (requestAdmissionForCandidate $origin $target $request $operation $global $frame))))))))

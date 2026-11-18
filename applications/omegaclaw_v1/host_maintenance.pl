@@ -1,13 +1,15 @@
-% Trusted task-owned maintenance queue. No setters are exported as model skills.
+% Trusted task/session-owned maintenance queue. No setters are exported as model skills.
 :- use_module(library(time)).
 :- dynamic mm_maintenance_handler/3, mm_maintenance_job/5, mm_maintenance_done/4.
 :- dynamic mm_maintenance_held/2, mm_maintenance_rent_total/2.
+:- dynamic mm_maintenance_idle/4.
 
 % Example: dispatcher initialization installs a local accounting handler, not work.
 mm_maintenance_init :-
     retractall(mm_maintenance_handler(_,_,_)), retractall(mm_maintenance_job(_,_,_,_,_)),
     retractall(mm_maintenance_done(_,_,_,_)), retractall(mm_maintenance_held(_,_)),
     retractall(mm_maintenance_rent_total(_,_)),
+    retractall(mm_maintenance_idle(_,_,_,_)),
     assertz(mm_maintenance_handler('memory-rent','Host',mm_maintenance_rent)),
     eval(['change-state!','&maintenance-view-hook',hostMaintenanceStatuses],_).
 
@@ -20,6 +22,56 @@ mm_maintenance_policy(Op, Candidate, Limits) :-
 mm_maintenance_owner([Session,Owner]) :-
     nb_current('&operation-context',['OperationContext',Session,_,_]),
     mm_dispatch_task_owner(Owner).
+mm_maintenance_owner([Session,Owner]) :-
+    mm_maintenance_idle_current(Owner), Owner=['SessionMaintenanceOwner',Session,_].
+
+% Example: an idle owner is the actual session/root, never an invented task frame.
+mm_maintenance_idle_owner(['SessionMaintenanceOwner',Session,Root]) :-
+    nb_current('&operation-context',['OperationContext',Session,_,_]), string(Session),
+    nb_current('&cfv2-root-id',Root), Root \== [],
+    nb_current('&cfv2-current-frame-id',[]), nb_current('&new-msg-flag',false).
+% Example: only an explicitly installed policy activates the current session owner.
+mm_maintenance_idle_current(Owner) :-
+    mm_maintenance_idle_owner(Owner), mm_maintenance_idle(Owner,_,_,_).
+
+% Example: repeated polling cannot replenish budgets or invalidate an existing ticket.
+mm_maintenance_install_idle(Source) :-
+    sread(Source,Parsed), !,
+    Parsed=['IdleMaintenanceConfig',Global,Scope,[Binding]],
+    mm_maintenance_idle_owner(Owner), Owner=['SessionMaintenanceOwner',Session,_],
+    Binding=['HostCommandBinding',['host-maintenance','memory-rent'],
+        ['AdmissionRequest','propose-candidate','current-frame',defer],Operation],
+    Operation=['PolicyOperation',[candidate,defer],[target,['SessionTarget',Session]],
+        [skill,"host-maintenance"],[permissions,["maintenance.memory-rent"]],[egress,[]],
+        [costs,[['ResourceCost',"commands","units",1]]]],
+    memberchk([target,['SessionTarget',Session]],Scope),
+    eval([typedOperationPolicyGate,[quote,Global],[quote,Scope],[quote,Operation],
+          defer,[quote,['SessionTarget',Session]]],['GateDecision',_,_]),
+    eval([tpScopeValid,[quote,Global],'Global'],true),
+    eval([tpScopeValid,[quote,Scope],[quote,['SessionTarget',Session]]],true),
+    eval([tpOperationValid,[quote,Operation]],true),
+    (mm_maintenance_idle(Owner,Global,Scope,[Binding]) -> true
+     ; mm_budget_prepare(Global,Scope,Accounts),
+       oc_dispatch_mutate((mm_budget_install(Accounts), retractall(mm_maintenance_idle(_,_,_,_)),
+           assertz(mm_maintenance_idle(Owner,Global,Scope,[Binding]))))).
+
+% Example: revoking idle grants retains queued observations and previously spent/reserved costs.
+mm_maintenance_revoke_idle :-
+    (mm_maintenance_idle(_,_,_,_)
+     -> oc_dispatch_mutate(retractall(mm_maintenance_idle(_,_,_,_))) ; true).
+
+% Example: task profiles never become idle profiles merely because the frame disappears.
+mm_maintenance_bindings(Command,Request,Operation) :-
+    (mm_maintenance_idle_current(Owner)
+     -> mm_maintenance_idle(Owner,_,_,Bindings), member(['HostCommandBinding',Command,Request,Operation],Bindings)
+     ; mm_dispatch_binding(Command,Request,Operation)).
+
+% Example: idle accounting uses only the supplied local host worker, without an engine dependency.
+mm_maintenance_idle_resolve(Request,Command,Operation) :-
+    mm_maintenance_idle_current(Owner),
+    mm_maintenance_idle(Owner,_,_,Bindings), member(['HostCommandBinding',Command,Request,Operation],Bindings),
+    Command=['host-maintenance','memory-rent'],
+    mm_maintenance_handler('memory-rent','Host',mm_maintenance_rent), mm_maintenance_selected('memory-rent').
 
 % Trusted adapters own their worker semantics and enforcement of engine/provider allowances.
 % Example: register a worker with dependency "pln"; absence of that selected adapter disables it.
@@ -32,7 +84,9 @@ mm_maintenance_register(Op, Dependency, Worker) :-
 % Example: declared classes without installed workers remain unavailable.
 mm_maintenance_available(Op, true) :-
     mm_maintenance_handler(Op,Dependency,_),
-    (Dependency == 'Host' -> true
+    (mm_maintenance_idle_current(_)
+     -> Op == 'memory-rent', Dependency == 'Host', mm_maintenance_handler(Op,'Host',mm_maintenance_rent)
+     ; Dependency == 'Host' -> true
      ; catch(eval([hostReasonerSelection],Selected),_,fail), Selected == Dependency), !.
 mm_maintenance_available(_, false).
 
@@ -73,7 +127,7 @@ mm_maintenance_enqueue(Op,Id,Items,Owner,Result) :-
 hostMaintenanceStatuses(Rows) :-
     with_mutex(omegaclaw_dispatch,
         findall(['MaintenanceStatus',Op,Candidate,Available,Count,Id],
-            (mm_dispatch_binding(['host-maintenance',Op],_,_),
+            (mm_maintenance_bindings(['host-maintenance',Op],_,_),
              mm_maintenance_policy(Op,Candidate,_),
              mm_maintenance_available(Op,Ready),
              (mm_maintenance_held(Op,_) -> Available=false ; Available=Ready),

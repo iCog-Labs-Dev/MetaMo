@@ -114,7 +114,8 @@
 ;; two-argument function contract, while the runtime boundary is explicit at
 ;; the v1 entry point and callers can only score a bundle-scoped candidate.
 (= (omegaclawScoreForBundle $bundle $state $action)
-   (if (== (frameBundleCurrentId $bundle) ())
+   (if (and (== (frameBundleCurrentId $bundle) ())
+            (not (sessionMaintenanceCandidateReady $bundle (actionId $action))))
        0.0
        (omegaclawScore $state $action)))
 
@@ -195,7 +196,9 @@
 
 ;; Only the winning scheduling class reaches the numeric scorer.
 (= (omegaclawDecideScheduledForBundle $bundle $state $candidates)
-   (if (== (frameBundleCurrentId $bundle) ())
+   (if (and (== (frameBundleCurrentId $bundle) ())
+            (not (tpAllTrue (map-atom $candidates $action
+               (sessionMaintenanceCandidateReady $bundle (actionId $action))))))
        (decisionResult (action none () 0.0 ()) ())
        (if (== $candidates ())
            (decisionResult (action none () 0.0 ()) ())

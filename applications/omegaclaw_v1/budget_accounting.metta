@@ -24,6 +24,7 @@
    (case $scope (
       (Global True)
       ((FrameTarget $frame) (tpFrameId $frame))
+      ((SessionTarget $session) (tpId $session))
       ($_ False))))
 
 (= (baAccountReason $account)
@@ -233,7 +234,7 @@
               ($globalCost (AccountCost
                  (BudgetAccountId $namespace Global $resource $unit) $amount))
               ($frameCost (AccountCost
-                 (BudgetAccountId $namespace (FrameTarget $target) $resource $unit) $amount))
+                 (BudgetAccountId $namespace (tpTargetScope $target) $resource $unit) $amount))
               ($remainingCosts (baExpectedCosts $namespace $target $tail))
               ($withFrame (cons-atom $frameCost $remainingCosts))
               ($withGlobal (cons-atom $globalCost $withFrame)))

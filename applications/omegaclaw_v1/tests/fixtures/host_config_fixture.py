@@ -63,6 +63,33 @@ def command():
     return '(read-file ' + json.dumps(_config["allowed_files"][0]) + ')'
 
 
+# Example: idle policy owns a session account and never installs a task frame.
+def write_idle(variant="allowed"):
+    config = copy.deepcopy(_config)
+    config['frame_id'] = 'current-frame'
+    config['global']['skills'].append('host-maintenance')
+    config['global']['permissions'].append('maintenance.memory-rent')
+    idle = copy.deepcopy(config['frame'])
+    idle['skills'] = ['host-maintenance']
+    idle['permissions'] = ['maintenance.memory-rent']
+    idle['constraints'] = []
+    idle['budgets'][0]['available'] = 2
+    if variant == 'permission-denied':
+        idle['permissions'] = []
+    elif variant == 'budget-denied':
+        idle['budgets'][0]['available'] = 0
+    elif variant == 'larger-ceiling':
+        idle['budgets'][0]['available'] = 10
+    elif variant == 'removed':
+        _path.write_text(json.dumps(config), encoding='utf-8')
+        return str(_path)
+    elif variant != 'allowed':
+        raise ValueError('unknown idle policy variant')
+    config['idle_maintenance'] = dict(session=idle, commands=[dict(skill='host-maintenance', arguments=['memory-rent'])])
+    _path.write_text(json.dumps(config), encoding='utf-8')
+    return str(_path)
+
+
 def write_send(variant):
     config = copy.deepcopy(_config)
     config['destination'] = {'channel': 'local', 'recipient': 'stdout'}

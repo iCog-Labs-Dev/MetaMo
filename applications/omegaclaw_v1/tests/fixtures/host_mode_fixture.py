@@ -14,6 +14,13 @@ def provision(frame, denied=False):
     return provision_variant(frame, 'permission-denied' if denied else 'allowed')
 
 
+# Example: exercise the same startup idle provisioning branch as the live loop.
+def provision_idle(variant="allowed"):
+    host.configure_startup(files.write_idle(variant))
+    host.provision_admitted_task()
+    return 1
+
+
 def provision_variant(frame, variant):
     import copy
     import janus

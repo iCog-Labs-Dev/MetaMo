@@ -11,7 +11,37 @@
 (: MaintenanceQueued (-> String MaintenanceQueueResultType))
 (: MaintenanceDuplicate (-> String MaintenanceQueueResultType))
 (: MaintenanceRejected (-> Symbol MaintenanceQueueResultType))
+(: SessionMaintenanceOwnerType Type)
+(: SessionMaintenanceOwner (-> String Symbol SessionMaintenanceOwnerType))
+(: IdleMaintenanceConfigType Type)
+(: IdleMaintenanceConfig (-> Expression Expression Expression IdleMaintenanceConfigType))
 !(bind! &maintenance-view-hook (new-state ()))
+
+;; Idle execution needs a managed publication for this exact session and no current frame.
+;; Example: a fresh message makes idle maintenance ineligible before a frame is created.
+(= (sessionMaintenanceBundleValid $bundle $session)
+   (case $bundle (
+      ((FrameStateBundle (root (FrameStateRoot $_ (current-frame-id ()) (mode $mode) $_ $_))
+          (current (FrameStateCurrent $id (parent $_) $_ $_ $_ $_ $_ $_ $_ $_ $_ $_ $_))
+          $_ (relations $_) (runtime $_))
+       (tpAllTrue ((== $id ()) (tpContains (Fast Slow) $mode) (not (frameRuntimeNewMessage $bundle))
+          (case (frameRuntimeSignalObservations $bundle) (
+             ((SignalObservationView (SessionObservationRef $session $_) $_ $_) True) ($_ False))))))
+      ($_ False))))
+
+;; This exception authorizes only local rent accounting under explicit session policy.
+;; Example: ordinary task commands retain the existing active-frame admission path.
+(= (sessionMaintenanceAdmission $origin $target $request $operation $global $scope)
+   (case ($request $operation) (
+      (((AdmissionRequest propose-candidate current-frame defer)
+         (PolicyOperation (candidate defer) (target (SessionTarget $session))
+            (skill "host-maintenance") (permissions ("maintenance.memory-rent"))
+            (egress ()) (costs ((ResourceCost "commands" "units" 1)))))
+       (if (tpAllTrue ((== $origin $target) (== (constitutionalMode) Sleep)
+               (sessionMaintenanceBundleValid $target $session)))
+          (typedOperationPolicyGate $global $scope $operation defer (SessionTarget $session))
+          (GateDecision Rejected SessionMaintenanceUnavailable)))
+      ($_ (GateDecision Rejected InvalidSessionMaintenance)))))
 
 ;; Distinguish internal accounting from an observed result of the user's task.
 ;; Example: successful rent accounting does not establish task progress or recovery.
@@ -74,6 +104,15 @@
          (!= (filter-atom (maintenanceCandidateRows $bundle $candidate) $row
             (tpAllTrue ((== (index-atom $row 3) True) (> (index-atom $row 4) 0)
                (maintenanceWorkFitsMode (index-atom $row 1) (constitutionalMode))))) ()))))
+
+;; The frame-less selector remains closed except for this managed host sweep.
+;; Example: a bare empty-frame bundle cannot enable selection of arbitrary task work.
+(= (sessionMaintenanceCandidateReady $bundle $candidate)
+   (case (frameRuntimeSignalObservations $bundle) (
+      ((SignalObservationView (SessionObservationRef $session $_) $_ $_)
+       (tpAllTrue ((== $candidate defer) (sessionMaintenanceBundleValid $bundle $session)
+          (maintenanceCandidateReady $bundle $candidate))))
+      ($_ False))))
 
 ;; The dispatcher owns invocation and its receipt; this wrapper is not a model skill.
 ;; Example: a captured memory-rent command processes only its admitted bounded batch.

@@ -493,11 +493,10 @@ does not become success or trigger an automatic retry. External adapters must
 provide their own idempotent/transactional effect boundary; a Prolog transaction
 cannot roll back an external service or native engine's private state.
 
-The queue is currently scoped to an active user-owned frame and open commitment.
-Sleep without a current frame needs a separate host scope and policy integration;
-it is not enabled by this connection. Host dispatch initialization resets the
-session-only queue/ledger. Ordinary cycles neither reset the queue nor apply the
-existing homeostatic/decay corrections a second time.
+Task-owned queues retain their active user frame and open-commitment checks.
+Idle local accounting has the separate session scope described below. Host
+dispatch initialization resets the session-only queue/ledger. Ordinary cycles
+neither reset the queue nor apply existing homeostatic/decay corrections twice.
 
 `tests/host_maintenance_test.metta` exercises actual local accounting, provenance,
 empty and consumed queues, bounded batch continuation, duplicate/conflicting
@@ -505,3 +504,61 @@ delivery, policy/budget denial, revoked handlers, native wake selection and
 unchanged commitments. A clearly labelled transactional probe tests the generic
 Rumination adapter, missing dependencies and timeout rollback; it does not claim
 to implement real compression or native engine learning.
+
+## Session-owned idle accounting
+
+Sleep can run local memory-rent accounting with no current task frame. Its owner
+is `(SessionMaintenanceOwner SESSION ROOT-ID)` and its policy/account target is
+`(SessionTarget SESSION)`. Both identities come from the actual host session;
+no frame or commitment is created to authorize the operation. Queued task work
+and session work cannot consume each other's observations or target budgets.
+
+Opt in with an `idle_maintenance` section in the existing trusted host profile:
+
+```json
+"idle_maintenance": {
+  "session": {
+    "skills": ["host-maintenance"],
+    "permissions": ["maintenance.memory-rent"],
+    "egress": [],
+    "constraints": [],
+    "budgets": [
+      {"resource": "commands", "unit": "units", "available": 2, "status": "Open"}
+    ]
+  },
+  "commands": [{"skill": "host-maintenance", "arguments": ["memory-rent"]}]
+}
+```
+
+The profile's existing `global` scope must also explicitly grant this skill and
+permission with an available command budget. Each invocation reserves/settles
+one global command unit and one session command unit. Native root constraints
+and the root budget status still apply. Reinstalling or raising a policy ceiling
+does not replenish spent/reserved accounting balances. The task's frame policy
+does not grant idle permission, and idle permission cannot authorize task work.
+
+Normal startup installs the optional idle profile when no admitted task is
+focused. Repeated polling is idempotent and preserves captured tickets. Removing
+the section revokes idle grants without deleting queued observations or resetting
+budgets. Default profiles provide no idle authority. Trusted hosts may also call
+`host_dispatch_config.provision_idle()` after configuring startup.
+
+Only the supplied local memory-rent worker is supported in this scope. Recharge,
+replay, restructuring, sends and arbitrary commands retain their existing task
+requirements; a selected engine or a broader permission list cannot extend this
+exception. Admission requires Sleep, no current frame, no new message and a
+managed observation for the exact session. The selector's empty-frame exception
+is restricted to the corresponding ready `defer` candidate; ordinary empty-frame
+bundles still select no work.
+
+Core reuses the same immutable ticket/result, policy checks, cost reservation
+and outcome callback. New input, a focused task, a changed session or revoked
+policy invalidates captured idle authority. A subsequent session cannot consume
+the previous owner's queue. Idle work can resume after focus clears while an
+unrelated commitment remains open, preserving that commitment and its frame
+record. Maintenance receipts still do not assert task progress or clear recovery.
+
+The normal-loop tests cover absent frames and commitments, exact session targets,
+both-scope budgets and permissions, root policy denial, idempotent provisioning,
+wake-up before ingestion, stale tickets, valid task dispatch, open-commitment
+preservation, session rollover, revocation and non-replenishing budget ceilings.

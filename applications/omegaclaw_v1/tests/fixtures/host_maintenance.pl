@@ -2,8 +2,12 @@
 maintenanceFixtureQueue(Id,Items,Result) :- mm_maintenance_queue('memory-rent',Id,Items,Result).
 maintenanceFixtureTotal(Total) :-
     mm_maintenance_owner(Owner), (mm_maintenance_rent_total(Owner,Total) -> true ; Total=0).
+% Read a retained session ledger even while user input makes that scope inapplicable.
+maintenanceFixtureIdleTotal(Session,Total) :-
+    (mm_maintenance_rent_total([Session,['SessionMaintenanceOwner',Session,_]],Total) -> true ; Total=0).
 maintenanceFixtureRemaining(Count) :-
-    (mm_maintenance_job('memory-rent',_,_,Items,_) -> length(Items,Count) ; Count=0).
+    (mm_maintenance_owner(Owner), mm_maintenance_job('memory-rent',_,_,Items,Owner)
+     -> length(Items,Count) ; Count=0).
 % Example: changing handler availability invalidates an already captured ticket.
 maintenanceFixtureRevoke(true) :-
     oc_dispatch_mutate(retractall(mm_maintenance_handler('memory-rent',_,_))).

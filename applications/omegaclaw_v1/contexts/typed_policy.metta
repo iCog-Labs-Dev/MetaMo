@@ -98,12 +98,28 @@
 (= (tpList $kind $items) (tpListValid $kind $items 128 ()))
 
 
+(: SessionTargetType Type)
+(: SessionTarget (-> String SessionTargetType))
+
+;; Only host maintenance may name a session instead of a task frame.
+;; Example: send cannot borrow a SessionTarget even with permissive policy scopes.
+(= (tpOperationTargetValid $target $candidate $skill)
+   (case $target (
+      ((SessionTarget $session)
+         (tpAllTrue ((tpId $session) (== $candidate defer) (== $skill "host-maintenance"))))
+      ($_ (tpFrameId $target)))))
+
+;; Budget and policy scopes retain explicit session identity rather than a fake frame ID.
+;; Example: a task target still maps to its original FrameTarget scope.
+(= (tpTargetScope $target)
+   (case $target (((SessionTarget $session) (SessionTarget $session)) ($_ (FrameTarget $target)))))
+
 (= (tpOperationValid $operation)
    (case $operation (
       ((PolicyOperation (candidate $candidate) (target $target) (skill $skill)
           (permissions $permissions) (egress $egress) (costs $costs))
        (tpAllTrue ((== (get-metatype $candidate) Symbol)
-          (tpFrameId $target) (tpId $skill) (tpList ids $permissions)
+          (tpOperationTargetValid $target $candidate $skill) (tpId $skill) (tpList ids $permissions)
           (tpList ids $egress) (tpList costs $costs))))
       ($_ False))))
 
@@ -191,7 +207,7 @@
 (= (tpOperationPolicyReason $global $frame $operation $target)
    (case (tpScopeValid $global Global) (
       (False InvalidGlobalPolicy)
-      (True (case (tpScopeValid $frame (FrameTarget $target)) (
+      (True (case (tpScopeValid $frame (tpTargetScope $target)) (
          (False InvalidFramePolicy)
          (True (tpOperationScopesReason $global $frame $operation))))))))
 
