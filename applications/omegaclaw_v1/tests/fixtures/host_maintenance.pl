@@ -32,6 +32,11 @@ maintenanceFixtureDirectDenied(true) :- \+ hostMaintenanceRun('memory-rent',_).
 % Probe timeout rolls back its transactional effect and leaves work unconsumed.
 maintenanceFixtureSlow(true) :-
     mm_maintenance_register('memory-compression','Host',maintenance_fixture_slow).
+% Example: an undeclared result cannot become a successful completion or consume work.
+maintenanceFixtureMalformed(true) :-
+    mm_maintenance_register('memory-compression','Host',maintenance_fixture_malformed).
+maintenance_fixture_malformed(Items,Limits,['UnexpectedMaintenanceResult']) :-
+    maintenance_fixture_probe(Items,Limits,_).
 maintenance_fixture_slow(Items,Limits,Details) :-
     maintenance_fixture_probe(Items,Limits,Details), sleep(0.05).
 maintenance_fixture_probe(Items,_,['ProbeProcessed',After]) :-

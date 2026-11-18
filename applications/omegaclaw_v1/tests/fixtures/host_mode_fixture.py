@@ -32,7 +32,8 @@ def provision_variant(frame, variant):
     elif variant == 'budget-denied':
         config['frame']['budgets'][0]['available'] = 0
     elif variant not in ('allowed', 'empty', 'interactive', 'maintenance', 'maintenance-denied', 'maintenance-budget',
-                         'maintenance-interactive', 'maintenance-restructure'):
+                         'maintenance-interactive', 'maintenance-restructure',
+                         'maintenance-unpriced', 'maintenance-unpermissioned'):
         raise ValueError('unknown policy variant')
     row = host.binding(config['commands'][0], frame, config['allowed_files'])
     row[2][-1] = host.Symbol('respond')
@@ -48,6 +49,11 @@ def provision_variant(frame, variant):
         if variant == 'maintenance-budget':
             config['frame']['budgets'][0]['available'] = 0
         rows = [host.binding(dict(skill='host-maintenance', arguments=[operation]), frame, [])]
+        # Example: malformed trusted metadata must still fail the live operation contract.
+        if variant == 'maintenance-unpriced':
+            rows[0][3][-1] = host.record('costs', [])
+        if variant == 'maintenance-unpermissioned':
+            rows[0][3][4] = host.record('permissions', [])
         if variant == 'maintenance-interactive':
             rows.insert(0, row)
     if variant == 'interactive':

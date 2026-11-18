@@ -94,6 +94,13 @@
 (MaintenanceWork memory-reencoding Restructuring (MaintenanceWorkLimits 8 8 0 1000))
 (MaintenanceWork evidence-restructuring Restructuring (MaintenanceWorkLimits 8 8 0 1000))
 
+;; Concrete dispatch contracts: exact permissions, metered costs, observed result tag.
+;; A work-class declaration alone does not supply an executable operation contract.
+(: MaintenanceOperationContractType Type)
+(: MaintenanceOperationContract (-> Symbol Expression Expression Symbol MaintenanceOperationContractType))
+(MaintenanceOperationContract memory-rent ("maintenance.memory-rent")
+    ((ResourceCost "commands" "units" 1)) MemoryRentAccounted)
+
 ;; Boolean triggers read truth; ratio thresholds use classifier-score units.
 ;; Entry/exit comparisons are inclusive and independent of appraisal weights.
 (ModeRatioTrigger threat danger classifier-score 0.0 0.0)

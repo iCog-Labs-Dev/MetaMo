@@ -4,7 +4,8 @@
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_maintenance.pl)
    (maintenanceFixtureQueue maintenanceFixtureTotal maintenanceFixtureRemaining maintenanceFixtureRevoke maintenanceFixtureDependency
     maintenanceFixtureBatch maintenanceFixtureProbe maintenanceFixtureWork maintenanceFixtureProcessed
-    maintenanceFixtureDirectDenied maintenanceFixtureSlow maintenanceFixtureIdleTotal maintenanceFixtureRegistrationDenied))
+    maintenanceFixtureDirectDenied maintenanceFixtureSlow maintenanceFixtureIdleTotal maintenanceFixtureRegistrationDenied
+    maintenanceFixtureMalformed))
 (: ProbeProcessedType Type)
 (: ProbeProcessed (-> Number ProbeProcessedType))
 
@@ -173,6 +174,10 @@
 !(test (maintenanceFixtureTotal) 5)
 !(test (maintenanceFixtureRemaining) 0)
 !(test (index-atom (get-state &last-operation-outcome) 3) Success)
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &selected-operation-decision)
+      (attempted-command (get-state &maintenance-command)) Success
+      (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "rent-1" 2 (MemoryRentAccounted 5)))))
 !(test (dispatchSelectedHostCommand (get-state &maintenance-ticket) (get-state &maintenance-command))
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "rent-1" 2 (MemoryRentAccounted 5))))
 !(test (maintenanceFixtureTotal) 5)
@@ -190,6 +195,12 @@
 !(test (fullLoopDispatch maintenance (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "rent-bounded" 16 (MemoryRentAccounted 21))))
 !(test (maintenanceFixtureRemaining) 1)
+;; A fresh ticket in the same cycle cannot obtain another per-cycle allowance.
+!(test (let (DispatchResult $status $_ $_)
+   (coreDispatchCommand (coreDispatchCapture (AdmissionRequest propose-candidate current-frame defer))
+      (quote (host-maintenance memory-rent))) $status) Blocked)
+!(test (maintenanceFixtureTotal) 21)
+!(test (maintenanceFixtureRemaining) 1)
 !(test (boundaryCycle remainder-maintenance) 1)
 !(test (fullLoopDispatch maintenance (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "rent-bounded" 1 (MemoryRentAccounted 22))))
@@ -205,6 +216,16 @@
 !(test (maintenanceFixtureRemaining) 1)
 !(test (boundaryProvision "maintenance-budget") 1)
 !(test (boundaryCycle exhausted-maintenance) 1)
+!(test (selectedHostCommand) ())
+!(test (maintenanceFixtureTotal) 22)
+
+;; Empty permission/cost metadata cannot make a configured maintenance operation cheaper.
+!(test (boundaryProvision "maintenance-unpriced") 1)
+!(test (boundaryCycle unpriced-maintenance) 1)
+!(test (selectedHostCommand) ())
+!(test (maintenanceFixtureTotal) 22)
+!(test (boundaryProvision "maintenance-unpermissioned") 1)
+!(test (boundaryCycle unpermissioned-maintenance) 1)
 !(test (selectedHostCommand) ())
 !(test (maintenanceFixtureTotal) 22)
 
@@ -236,6 +257,9 @@
 
 ;; The same connection supports a registered Rumination adapter, with explicit engine absence.
 ;; This worker is a test probe; no native compression or learning support is claimed.
+!(test (maintenanceFixtureRegistrationDenied memory-compression) True)
+!(add-atom &self (MaintenanceOperationContract memory-compression ("maintenance.memory-compression")
+   ((ResourceCost "commands" "units" 1)) ProbeProcessed))
 !(test (boundaryProvision "maintenance-restructure") 1)
 !(change-state! &new-msg-flag False)
 !(remove-atom &self (ModeTransitionParameters Rumination 1 0 0))
@@ -304,4 +328,16 @@
 !(test (boundaryCycle closed-owner) 1)
 !(test (selectedHostCommand) ())
 !(test (signalQuantityAtLeastIn (lastFactualSignals) restructuring-ready-items count 1) False)
+!(test (maintenanceFixtureProcessed) 2)
+
+;; A malformed worker result rolls back the actual effect and stays unobserved.
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "maintenance-restructure") 1)
+!(change-state! &new-msg-flag False)
+!(setConstitutionalMode Rumination)
+!(test (maintenanceFixtureMalformed) True)
+!(test (maintenanceFixtureWork memory-compression "malformed-result" (a)) (MaintenanceQueued "malformed-result"))
+!(test (boundaryCycle malformed-maintenance-result) 1)
+!(test (fullLoopDispatch malformed (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Unobserved ExecutionUncertain none))
 !(test (maintenanceFixtureProcessed) 2)

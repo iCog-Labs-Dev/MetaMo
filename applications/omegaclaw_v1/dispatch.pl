@@ -386,7 +386,8 @@ mm_dispatch_resolve(Intent, Command, Operation) :-
     \+ mm_maintenance_idle_current(_),
     mm_dispatch_owner_current,
     mm_dispatch_binding(Command,Intent,Operation),
-    (Command=['host-maintenance',Op] -> mm_maintenance_selected(Op) ; true).
+    (Command=['host-maintenance',Op]
+     -> mm_maintenance_operation(Op,Operation), mm_maintenance_selected(Op) ; true).
 mm_dispatch_resolve(Intent, Command, Operation) :-
     \+ mm_maintenance_idle_current(_),
     mm_dispatch_owner_current,

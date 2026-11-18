@@ -3,6 +3,7 @@
 :- dynamic mm_maintenance_handler/3, mm_maintenance_job/5, mm_maintenance_done/4.
 :- dynamic mm_maintenance_held/2, mm_maintenance_rent_total/2.
 :- dynamic mm_maintenance_idle/4.
+:- dynamic mm_maintenance_used/2.
 
 % Example: dispatcher initialization installs a local accounting handler, not work.
 mm_maintenance_init :-
@@ -10,14 +11,27 @@ mm_maintenance_init :-
     retractall(mm_maintenance_done(_,_,_,_)), retractall(mm_maintenance_held(_,_)),
     retractall(mm_maintenance_rent_total(_,_)),
     retractall(mm_maintenance_idle(_,_,_,_)),
+    retractall(mm_maintenance_used(_,_)),
     assertz(mm_maintenance_handler('memory-rent','Host',mm_maintenance_rent)),
     eval(['change-state!','&maintenance-view-hook',hostMaintenanceStatuses],_).
 
 % Example: limits and candidate identity come from registry classes, never queued data.
 mm_maintenance_policy(Op, Candidate, Limits) :-
     \+ match('&self',['MaintenanceCapability',Op,_,_,'BookkeepingOnly',_],Op,Op),
+    mm_maintenance_contract(Op,_,_,_),
     findall([C,L], (match('&self',['MaintenanceWork',Op,Class,L],L,L),
         match('&self',['MaintenanceCandidate',Class,C],C,C)), [[Candidate,Limits]]).
+
+% Example: memory-rent requires one unique declared permission/cost/result contract.
+mm_maintenance_contract(Op,Permissions,Costs,Tag) :-
+    findall([P,C,T],match('&self',['MaintenanceOperationContract',Op,P,C,T],[P,C,T],[P,C,T]),
+        [[Permissions,Costs,Tag]]).
+
+% Example: a configured binding cannot omit the operation's catalog permission or cost.
+mm_maintenance_operation(Op,Operation) :-
+    mm_maintenance_contract(Op,Permissions,Costs,_), mm_maintenance_policy(Op,Candidate,_),
+    Operation=['PolicyOperation',[candidate,Candidate],[target,_],[skill,"host-maintenance"],
+        [permissions,Permissions],[egress,[]],[costs,Costs]].
 
 % Example: a queue belongs to one operation session and exact open commitment.
 mm_maintenance_owner([Session,Owner]) :-
@@ -131,7 +145,8 @@ hostMaintenanceStatuses(Rows) :-
             (mm_maintenance_bindings(['host-maintenance',Op],_,_),
              mm_maintenance_policy(Op,Candidate,_),
              mm_maintenance_available(Op,Ready),
-             (mm_maintenance_held(Op,_) -> Available=false ; Available=Ready),
+             nb_current('&operation-context',Context),
+             ((mm_maintenance_held(Op,_);mm_maintenance_used(Op,Context)) -> Available=false ; Available=Ready),
              (mm_maintenance_job(Op,Job,_,Items,Owner), mm_maintenance_owner(Current), Current == Owner
               -> length(Items,Count), Id=Job ; Count=0, Id=[])),Rows)).
 
@@ -146,6 +161,7 @@ hostMaintenanceRun(Op,Result) :-
     mm_maintenance_dispatching(Op),
     mm_maintenance_selected(Op),
     mm_maintenance_handler(Op,_,Worker), mm_maintenance_policy(Op,_,Limits),
+    nb_current('&operation-context',Context), \+ mm_maintenance_used(Op,Context),
     Limits=['MaintenanceWorkLimits',Max,Steps,Providers,Ms],
     maplist(integer,[Max,Steps,Providers,Ms]), Max > 0, Max =< 128,
     Steps >= 0, Providers >= 0, Ms > 0, Ms =< 1000,
@@ -153,7 +169,7 @@ hostMaintenanceRun(Op,Result) :-
     length(Items,N), Count is min(N,Max), length(Batch,Count), append(Batch,Rest,Items),
     Seconds is Ms/1000,
     (catch(call_with_time_limit(Seconds,transaction(
-        mm_maintenance_apply(Op,Id,Original,Items,Rest,Owner,Batch,Worker,Limits,Details))),_,fail)
+        mm_maintenance_apply(Op,Id,Original,Items,Rest,Owner,Batch,Worker,Limits,Context,Details))),_,fail)
      -> true ; assertz(mm_maintenance_held(Op,'Uncertain')),fail),
     Result=['MaintenanceCompleted',Op,Id,Count,Details].
 
@@ -167,10 +183,12 @@ mm_maintenance_dispatching(Op) :-
     \+ (oc_dispatch_result(Other,_,Pending), Other \== Ticket).
 
 % Example: successful batches consume their queued items once; a failed transaction consumes none.
-mm_maintenance_apply(Op,Id,Original,Items,Rest,Owner,Batch,Worker,Limits,Details) :-
+mm_maintenance_apply(Op,Id,Original,Items,Rest,Owner,Batch,Worker,Limits,Context,Details) :-
     call(Worker,Batch,Limits,Details), ground(Details),
+    mm_maintenance_contract(Op,_,_,Tag), Details=[Tag|_],
     write_length(Details,Chars,[max_length(4096)]), Chars =< 4096,
     oc_dispatch_mutate((retract(mm_maintenance_job(Op,Id,Original,Items,Owner)),
+        retractall(mm_maintenance_used(Op,_)), assertz(mm_maintenance_used(Op,Context)),
         (Rest == [] -> assertz(mm_maintenance_done(Op,Id,Original,Owner))
          ; assertz(mm_maintenance_job(Op,Id,Original,Rest,Owner))))).
 

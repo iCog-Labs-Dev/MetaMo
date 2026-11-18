@@ -367,6 +367,35 @@ are passed to trusted adapter workers, which must enforce them through their own
 supported mechanisms and honor their learning controls. The supplied accounting
 worker uses neither engines nor providers. Unused budget creates no pending work.
 
+`MaintenanceOperationContract` supplies the exact permission list, command/resource
+costs and observed result constructor for a connected worker. The supplied
+`memory-rent` contract requires `maintenance.memory-rent`, one `commands/units`
+credit per invocation and `MemoryRentAccounted` result details. Its existing
+work limits are 16 items, zero engine steps, zero provider calls and 1000 ms.
+Rent amounts are observed bookkeeping entries, not additional command charges.
+No token, byte or resource-recharge meter is inferred from them.
+
+The host checks the operation contract during ordinary resolution, then uses the
+normal policy gate, budget reservation, original operation/ticket and actual
+completion callback. Queue intake and proposal collection never execute workers.
+A completed worker consumes its allowance once per operation per cycle; capturing
+another ticket or delivering another batch cannot reset it. Replaying the original
+ticket returns its immutable result. The next cycle may process remaining items.
+Only the latest used context per operation is retained.
+
+A worker result must be ground, bounded to 4096 serialized characters and carry
+the contract's result constructor. The supplied rent worker validates observed
+integer charges and its resulting ledger total. Invalid results or timeouts leave
+the local transaction uncommitted and dispatch unobserved; they do not manufacture
+a success receipt. This rollback does not cover external adapter side effects.
+Receipts record observations without grades. Assessment still requires an
+explicitly configured comparator and enabled assessment controls.
+
+Only memory-rent has a supplied concrete operation contract and worker. Trusted
+adapters must declare a contract before registering another operation, enforce
+its engine/provider limits and return their declared observed result. Test probes
+declare their own contract; they do not supply production restructuring support.
+
 | Operation | Class / posture | Maximum items per cycle | Engine steps | Provider calls | Elapsed ceiling |
 | --- | --- | --- | --- | --- | --- |
 | Motivational decay | BoundedSweep / Sleep | 22 goal/modulator values | 0 | 0 | 1000 ms |
