@@ -300,9 +300,10 @@ that a maintenance handler exists.
 `BookkeepingOnly` runs through the existing cycle. `PrimitiveOnly` denotes a
 building block, and `LifecycleOnly` denotes explicit task completion. Neither
 is a dispatchable maintenance capability. `Unavailable` marks missing or
-incompatible implementations. There are currently no `Available` maintenance
-operations in the inventory. Future wiring must establish a real bounded
-handler, pending work, policy and outcome contract before enabling one.
+incompatible implementations. Memory-rent accounting now has an `Available`
+host implementation, which still needs an explicit policy binding and queued
+observations. Other missing handlers stay unavailable; declaring their class
+does not enable them.
 
 ### Declared work classes and limits
 
@@ -316,10 +317,11 @@ cheap, and grants neither handler availability nor dispatch authority.
 The limits constructor is
 `(MaintenanceWorkLimits MAX-ITEMS MAX-ENGINE-STEPS MAX-PROVIDER-CALLS MAX-ELAPSED-MS)`.
 These are seed ceilings for each operation's total work in one cycle, not a fresh
-allowance for each item or retry. They are declarations for subsequent handler
-wiring; this change does not install an executor or claim runtime enforcement.
-Handlers must enforce applicable limits and normal policy/resource checks before
-their capability can become available. Unused budget creates no pending work.
+allowance for each item or retry. The host adapter enforces item and worker-time
+ceilings and normal dispatch policy/resource checks. Engine/provider ceilings
+are passed to trusted adapter workers, which must enforce them through their own
+supported mechanisms and honor their learning controls. The supplied accounting
+worker uses neither engines nor providers. Unused budget creates no pending work.
 
 | Operation | Class / posture | Maximum items per cycle | Engine steps | Provider calls | Elapsed ceiling |
 | --- | --- | --- | --- | --- | --- |
@@ -342,8 +344,8 @@ and legacy cleanup do not acquire sweep membership from their names or speed.
 The decay row classifies its bookkeeping role; it does not move the existing
 bridge decay call into a Sleep-only path or schedule a second copy. Existing
 homeostasis also continues at its current cycle point in every posture. All
-missing handlers retain their `Unavailable` inventory status, with no additional
-candidates or command bindings registered by the class declarations.
+other missing handlers retain their `Unavailable` inventory status. Class
+declarations alone register no additional candidates or command bindings.
 
 ### Existing cycle bookkeeping
 
@@ -359,14 +361,13 @@ Budget reservation/settlement also does not replenish resources.
 
 ### Missing maintenance operations
 
-No implementation owner is assigned for these operations. Their eventual
+No implementation owner is assigned for the remaining operations below. Their eventual
 handlers belong in the host or a supported reasoner adapter, outside the mode
 regulator. Inputs and results below describe the missing contract, not an API
 that can currently be called.
 
 | Operation / status | Inputs and intended effect still to define | Missing bounds and observable result |
 | --- | --- | --- |
-| Memory rent / unavailable | Identified memory items, declared retention policy and accounting state; account for retention cost. | No rent handler, item/work limits or before/after accounting receipt. Motivational decay is a different operation. |
 | Recharge accounting / unavailable | An explicitly defined resource and recovery/update law; account for replenishment. | No recharge law, justified delta, cycle limit or observed before/after resource result. Setting `energy` alone is not a recharge implementation. |
 | Episode replay / unavailable | Identified important episodes and a supported replay consumer; process a bounded selection. | No bounded selection/processing handler, replay item/engine limits or processed-evidence result. Retrieval alone does not replay episodes. |
 | Memory compression / unavailable | Identified source records and a retained replacement with provenance. | No bounded compressor, publication mechanism or verified source-to-result receipt. |
@@ -409,8 +410,98 @@ not a persistent replay/restructuring job. Neither built-in adapter exposes one.
 Engine library inference/revision rules alone do not supply a host maintenance
 operation or supported native assessment feedback.
 
-The current trusted host command catalog in `host_dispatch_config.py` resolves
-only `read-file`, `show-current-frame` and `send` with approved candidate
-mappings. Adding a maintenance name to a policy skill list grants no handler;
-unsupported commands still reject. No maintenance command is enabled by this
-inventory, and no new module, provider call or scheduler is introduced.
+The trusted host command catalog in `host_dispatch_config.py` resolves
+`read-file`, `show-current-frame`, `send` and explicitly configured
+`host-maintenance` commands with approved candidate mappings. Adding a name to
+a policy skill list still grants no handler. There is no separate maintenance
+scheduler or automatic engine/provider activation.
+
+## Connected task-owned maintenance
+
+`host_maintenance.metta` supplies bounded snapshot readers, factual producers and
+eligibility. `host_maintenance.pl` owns the trusted queue and executor. Pure
+composition loads no queue backend or engine; the host dispatcher installs the
+local memory-rent worker during its normal initialization. Work remains opt-in.
+
+### Concrete host accounting
+
+The host queues already observed retention charges as
+`(MemoryRentCharge MEMORY-ID INTEGER-UNITS)` records. The local worker records
+their sum in a session/commitment-owned retention-accounting ledger and consumes
+at most 16 records per cycle. It reads or deletes no memories, invents no rent
+formula and changes no energy, motivational urgency or task lifecycle. Charges
+must come from trusted host observations; the mode regulator does not produce
+them. This is retention-charge accounting, not a complete retention/rent policy.
+
+The observable result is
+`(MaintenanceCompleted memory-rent BATCH-ID COUNT (MemoryRentAccounted TOTAL))`.
+Core records the original ticket/result and the ordinary outcome callback records
+success. That success is internal maintenance: it does not assert user-task
+progress, reset the task failure streak or resolve a task recovery hold.
+Identical ticket delivery does not apply the accounting twice. Batch IDs
+also reject conflicting input and recognize identical completed delivery. A batch
+can contain at most 128 items and 16384 serialized characters; retained pending
+and completed batch identities together are capped at 128 for the session.
+Amounts and ledger totals are bounded nonnegative integers.
+
+To expose this job, trusted configuration must contain:
+
+```json
+{"skill": "host-maintenance", "arguments": ["memory-rent"]}
+```
+
+Both policy scopes must grant the `host-maintenance` skill and the exact
+`maintenance.memory-rent` permission, with an available command budget. The
+catalog derives a cost of one command unit and the existing `defer` candidate.
+Restructuring operations map to `self-improve`. It rejects unknown operations,
+arbitrary candidate overrides and attempts to dispatch existing bridge decay or
+homeostasis again. Multiple pending operations in one class use configured
+binding order; only the first available pending operation resolves for that
+candidate, avoiding multiple concrete commands competing under one label.
+
+### Availability, provenance and execution
+
+Before mode evaluation, the ordinary frame snapshot includes bounded
+`MaintenanceStatus` rows: operation, candidate, handler availability, pending count
+and batch identity. Payloads stay in the host queue. The existing factual signal
+path derives `sweep-handler-available`, `sweep-ready-items`,
+`restructuring-handler-available` and `restructuring-ready-items`, with the same
+published observation reference. Ready counts include only jobs whose handlers
+are available. A configured but empty queue produces explicit zero; no configured
+bindings add no maintenance facts to the native signal path.
+
+Candidate generation requires positive ready-item facts and a matching snapshot
+row with available handler, pending work and class/posture eligibility. Native
+admission, scheduling ranks, selection and exact-ticket dispatch remain in use.
+Host-only accounting works with no reasoner selected. New user input can wake
+the system and select independently valid native work ahead of a sweep.
+
+Private host APIs `mm_maintenance_register(OP, DEPENDENCY, WORKER)` and
+`mm_maintenance_queue(OP, ID, ITEMS, RESULT)` support additional trusted adapters.
+`DEPENDENCY` is `Host` or an explicitly selected reasoner adapter's string ID.
+`WORKER(ITEMS, LIMITS, DETAILS)` owns its operation semantics, bounded engine use
+and native feedback/learning rules. Neither API is exported as a model skill.
+Built-in NARS/PLN adapters still provide no replay, compression or native learning
+worker. Unsupported operations cannot borrow a class declaration as a capability.
+
+The executor rechecks owner, selected engine and posture, requires Core's pending
+ticket/reservation boundary, and applies its item and elapsed limits. Direct
+expression evaluation cannot invoke a job before dispatch. The local accounting
+and queue updates are transactional. Failed/timed-out work remains unconsumed,
+holds further work for that operation and leaves Core's outcome uncertain; it
+does not become success or trigger an automatic retry. External adapters must
+provide their own idempotent/transactional effect boundary; a Prolog transaction
+cannot roll back an external service or native engine's private state.
+
+The queue is currently scoped to an active user-owned frame and open commitment.
+Sleep without a current frame needs a separate host scope and policy integration;
+it is not enabled by this connection. Host dispatch initialization resets the
+session-only queue/ledger. Ordinary cycles neither reset the queue nor apply the
+existing homeostatic/decay corrections a second time.
+
+`tests/host_maintenance_test.metta` exercises actual local accounting, provenance,
+empty and consumed queues, bounded batch continuation, duplicate/conflicting
+delivery, policy/budget denial, revoked handlers, native wake selection and
+unchanged commitments. A clearly labelled transactional probe tests the generic
+Rumination adapter, missing dependencies and timeout rollback; it does not claim
+to implement real compression or native engine learning.
