@@ -143,7 +143,8 @@
 
 ;; Example: runtime producers emit facts only, independent of appraisal weights.
 (= (produceRuntimeSignalFacts $bundle)
-    (union-atom (produceOutcomeSignalFacts $bundle) (produceTaskSignalFacts $bundle)))
+    (union-atom (produceMaintenanceSignalFacts $bundle)
+       (union-atom (produceOutcomeSignalFacts $bundle) (produceTaskSignalFacts $bundle))))
 
 ;; Example: two request classifiers contribute once through the declared reducer.
 (= (signalExecutionRequestScore $semantic $confirmation)

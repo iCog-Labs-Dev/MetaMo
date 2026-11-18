@@ -44,7 +44,7 @@
 
 !(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/factual_signals))
 !(fixturePutSignal user-waiting (quote (BooleanFact True)))
-!(test (size-atom (collapse (match &self (FactualSignalSpec $kind $type $unit $source) $kind))) 13)
+!(test (size-atom (collapse (match &self (FactualSignalSpec $kind $type $unit $source) $kind))) 17)
 !(test (filter-atom
    (collapse (match &self (FactualSignalSpec $kind $type $unit $source)
       (FactualSignalSpec $kind $type $unit $source))) $spec (not (fsSpecValid $spec))) ())

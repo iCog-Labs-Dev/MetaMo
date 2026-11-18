@@ -189,6 +189,14 @@ def binding(command, frame_id, allowed_files, destination=None):
             raise ConfigError("show-current-frame accepts no arguments")
         candidate = "search-knowledge"
         permissions = ["frames.read"]
+    elif skill == "host-maintenance":
+        sweep = ("memory-rent", "recharge-accounting", "episode-replay")
+        restructuring = ("memory-compression", "memory-reencoding", "evidence-restructuring")
+        if len(arguments) != 1 or arguments[0] not in sweep + restructuring:
+            raise ConfigError("host-maintenance requires one declared operation")
+        candidate = "defer" if arguments[0] in sweep else "self-improve"
+        arguments = [Symbol(arguments[0])]
+        permissions = ["maintenance." + str(arguments[0])]
     elif skill == "send":
         if len(arguments) != 1:
             raise ConfigError("send requires one text argument")

@@ -347,6 +347,29 @@ class HostDispatchConfigTests(unittest.TestCase):
             with self.subTest(skill=skill), self.assertRaisesRegex(config.ConfigError, "unsupported skill"):
                 config.build_config(value)
 
+    def test_maintenance_catalog_derives_class_candidate_and_exact_permission(self):
+        for operation, candidate in (
+            ("memory-rent", "defer"), ("recharge-accounting", "defer"), ("episode-replay", "defer"),
+            ("memory-compression", "self-improve"), ("memory-reencoding", "self-improve"),
+            ("evidence-restructuring", "self-improve"),
+        ):
+            with self.subTest(operation=operation):
+                row = config.binding(dict(skill="host-maintenance", arguments=[operation]), "frame-1", [])
+                self.assertEqual(row[1], ["host-maintenance", operation])
+                self.assertEqual(row[2][-1], candidate)
+                fields = dict(row[3][1:])
+                self.assertEqual(fields["permissions"], ["maintenance." + operation])
+                self.assertEqual(fields["costs"], [["ResourceCost", "commands", "units", 1]])
+                with self.assertRaisesRegex(config.ConfigError, "unsupported candidate/handler mapping"):
+                    config.binding(dict(skill="host-maintenance", arguments=[operation], candidate="respond"),
+                                   "frame-1", [])
+
+    def test_maintenance_catalog_rejects_unknown_operations_and_duplicate_bookkeeping(self):
+        for arguments in ([], ["motivational-decay"], ["homeostatic-correction"], ["unknown"],
+                          [["memory-rent"]], [None], ["memory-rent", "extra"]):
+            with self.subTest(arguments=arguments), self.assertRaises(config.ConfigError):
+                config.binding(dict(skill="host-maintenance", arguments=arguments), "frame-1", [])
+
     def test_paths_require_explicit_canonical_regular_file(self):
         alias = self.root / "alias.txt"
         alias.symlink_to(self.file)

@@ -116,6 +116,7 @@
       ($runtime
          (FrameStateRuntime
             (signal-observations (get-state &signal-observation-view))
+            (maintenance-work (eval (hostMaintenanceProjection)))
             (operation-feedback (get-state &operation-feedback))
             (recovery (get-state &recovery-view))
             (task-continuation (get-state &task-continuation-view))

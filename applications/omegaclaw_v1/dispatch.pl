@@ -368,7 +368,8 @@ mm_dispatch_leave_route(irc) :- !, py_call(host_operations:release_irc_route(), 
 mm_dispatch_leave_route(none).
 mm_dispatch_resolve(Intent, Command, Operation) :-
     mm_dispatch_owner_current,
-    mm_dispatch_binding(Command,Intent,Operation).
+    mm_dispatch_binding(Command,Intent,Operation),
+    (Command=['host-maintenance',Op] -> mm_maintenance_selected(Op) ; true).
 mm_dispatch_resolve(Intent, Command, Operation) :-
     mm_dispatch_owner_current,
     eval([preparedHostBinding], ['HostCommandBinding',Command,Intent,Operation]),
@@ -427,6 +428,7 @@ mm_budget_settle(Ticket, Operation, Command, Result, Settlement) :-
      ; Settlement=['BudgetAccountingRejected','MismatchedOutcome']).
 
 initMetaMoDispatch(true) :-
+    mm_maintenance_init,
     retractall(mm_completion_policy(_,_)),
     oc_dispatch_configure(mm_dispatch_snapshot,mm_dispatch_resolve,mm_dispatch_gate,mm_dispatch_execute),
     oc_dispatch_configure_guard(mm_dispatch_enter_route,mm_dispatch_leave_route),

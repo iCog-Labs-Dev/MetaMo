@@ -24,12 +24,25 @@ def provision_variant(frame, variant):
         config['frame']['permissions'] = []
     elif variant == 'budget-denied':
         config['frame']['budgets'][0]['available'] = 0
-    elif variant not in ('allowed', 'empty', 'interactive'):
+    elif variant not in ('allowed', 'empty', 'interactive', 'maintenance', 'maintenance-denied', 'maintenance-budget',
+                         'maintenance-interactive', 'maintenance-restructure'):
         raise ValueError('unknown policy variant')
     row = host.binding(config['commands'][0], frame, config['allowed_files'])
     row[2][-1] = host.Symbol('respond')
     row[3][1] = host.record('candidate', host.Symbol('respond'))
     rows = [row]
+    if variant.startswith('maintenance'):
+        operation = 'memory-compression' if variant == 'maintenance-restructure' else 'memory-rent'
+        for scope in ('global', 'frame'):
+            config[scope]['skills'].append('host-maintenance')
+            config[scope]['permissions'].append('maintenance.' + operation)
+        if variant == 'maintenance-denied':
+            config['frame']['permissions'].remove('maintenance.memory-rent')
+        if variant == 'maintenance-budget':
+            config['frame']['budgets'][0]['available'] = 0
+        rows = [host.binding(dict(skill='host-maintenance', arguments=[operation]), frame, [])]
+        if variant == 'maintenance-interactive':
+            rows.insert(0, row)
     if variant == 'interactive':
         other = host.binding(config['commands'][1], frame, config['allowed_files'])
         other[2][-1] = host.Symbol('ask-clarification')

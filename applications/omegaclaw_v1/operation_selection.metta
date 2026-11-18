@@ -236,6 +236,9 @@
        (case (car-atom $command) (
           (read-file (if (== (get-type $value) String) Success Unobserved))
           (send (sendOutcomeStatus $command $result))
+          (host-maintenance
+           (case $value (((MaintenanceCompleted $_ $_ $count $_)
+              (if (> $count 0) Success Unobserved)) ($_ Unobserved))))
           (show-current-frame
            (if (== (get-metatype $value) Expression)
                (if (== $value ()) Unobserved

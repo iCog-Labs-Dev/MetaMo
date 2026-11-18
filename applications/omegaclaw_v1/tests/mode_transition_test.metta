@@ -3,9 +3,9 @@
 
 ;; Inventory metadata must not register executable maintenance or enable a missing handler.
 !(test (collapse (match &self (MaintenanceCapability $op $_ $_ Unavailable $_) $op))
-   (memory-rent recharge-accounting episode-replay memory-compression memory-reencoding
+   (recharge-accounting episode-replay memory-compression memory-reencoding
       evidence-restructuring legacy-frame-compaction frame-junk-cleanup))
-!(test (collapse (match &self (MaintenanceCapability $_ $_ $_ Available $_) True)) ())
+!(test (collapse (match &self (MaintenanceCapability $op $_ $_ Available $_) $op)) (memory-rent))
 !(test (collapse (match &self (MaintenanceCapability $op $_ $_ $_ $_)
    (match &self (CandidateSpec $op $_) $op))) ())
 !(test (collapse (match &self (MaintenanceCapability $op $_ $_ $_ $_)

@@ -7,6 +7,9 @@
    (library MetaMo applications/omegaclaw_v1/dispatch.pl)
    (initMetaMoDispatch dispatchRoutingAllowed dispatchNativePolicyGate
     completeHostConversation hostReadPlanRequired))
+!(import_prolog_functions_from_file
+   (library MetaMo applications/omegaclaw_v1/host_maintenance.pl)
+   (hostMaintenanceStatuses hostMaintenanceRun))
 
 ;; Core holds its dispatch mutex and the IRC route guard from the final snapshot
 ;; through handler invocation. Check actual transport routing, not just config.

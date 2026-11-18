@@ -1499,6 +1499,34 @@ class ReasonerBoundaryTests(unittest.TestCase):
 """
         self.run_entry(source, "reasoner=probe")
 
+    def test_selected_engine_dependency_allows_explicitly_registered_maintenance_worker(self):
+        # Real selected engine identity; the accounting worker tests dependency routing, not native learning.
+        self.run_entry(r"""
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/boundary_loop))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))
+!(import_prolog_functions_from_file
+    (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_maintenance.pl)
+    (maintenanceFixtureQueue maintenanceFixtureDependency maintenanceFixtureTotal))
+!(test (startHostReasoner nars) True)
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "maintenance") 1)
+!(test (maintenanceFixtureDependency "nars") True)
+!(test (maintenanceFixtureQueue "engine-dependent" ((MemoryRentCharge "memory-a" 4)))
+    (MaintenanceQueued "engine-dependent"))
+!(change-state! &new-msg-flag False)
+!(remove-atom &self (ModeTransitionParameters Sleep 1 0 0))
+!(add-atom &self (ModeTransitionParameters Sleep 1 20 0))
+!(remove-atom &self (ModeTransitionOption urgent-bypass True))
+!(add-atom &self (ModeTransitionOption urgent-bypass False))
+!(setConstitutionalMode Sleep)
+!(test (boundaryCycle explicit-dependency) 1)
+!(test (signalTrueIn (lastFactualSignals) sweep-handler-available) True)
+!(test (fullLoopDispatch dependency (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "engine-dependent" 1 (MemoryRentAccounted 4))))
+!(test (maintenanceFixtureTotal) 4)
+!(test (hostReasonerCycles) ())
+""", "reasoner=nars")
+
     def test_default_composition_and_live_startup_exclude_reasoner_extension(self):
         with tempfile.TemporaryDirectory(prefix="reasoner-boundary-") as directory:
             for name in ("composition.metta", "run.metta"):
