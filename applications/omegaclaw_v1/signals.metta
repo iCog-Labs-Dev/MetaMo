@@ -112,7 +112,7 @@
         ($operation (frameRuntimeOperationFeedback $bundle))
         ($results (frameRuntimeText (frameRuntimeResults $bundle)))
         ((LegacyPrior $priorResults $_) (eval (hostSignalLegacyPrior (quote $bundle))))
-        ($success (case $operation (
+        ($observedSuccess (case $operation (
             (LegacyFeedback (and (hasTextContent $results) (!= $results $priorResults)))
             ((OperationFeedback Success $_) True)
             ($_ False))))
@@ -120,6 +120,8 @@
             (LegacyFeedback (bundle-runtime-has-error $bundle))
             ((OperationFeedback Failure $_) True)
             ($_ False))))
+        ($maintenance (eval (hostSignalMaintenanceOutcome $bundle)))
+        ($success (and $observedSuccess (not $maintenance)))
     ) (SignalOutcomeConditions $success $failure)))
 
 ;; Example: pending recovery cites its original failure without recounting it.

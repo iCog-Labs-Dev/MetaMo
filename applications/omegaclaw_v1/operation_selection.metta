@@ -330,6 +330,17 @@
                    (change-state! &host-recovery NoRecovery) True))
       ($_ True))))
 
+;; Internal maintenance cannot clear an unrelated task failure or recovery hold.
+;; Example: observed rent accounting leaves the user's existing failure streak intact.
+(= (applyTaskOperationFeedback $command $status $frame)
+   (if (isMaintenanceCommand $command) True
+      (progn
+         (recordOperationRecovery $status $frame)
+         (change-state! &operation-failure-streak
+            (case $status (
+               (Failure (+ (get-state &operation-failure-streak) 1))
+               (Success 0) ($_ (get-state &operation-failure-streak))))))))
+
 ;; Consume the preceding serialized cycle before publishing another snapshot.
 ;; A different frame/session/cycle cannot receive this feedback. Keeping only
 ;; the applied decision is sufficient for the single selected invocation path.
@@ -356,10 +367,7 @@
                         (if (and (== $action respond) (and (== $status Success)
                                  (!= (get-state &selected-answer-key) ())))
                             (change-state! &answered-operation-key (get-state &selected-answer-key)) True)
-                        (recordOperationRecovery $status $frame)
-                        (change-state! &operation-failure-streak
-                           (if (== $status Failure) (+ (get-state &operation-failure-streak) 1)
-                               (if (== $status Success) 0 (get-state &operation-failure-streak))))
+                        (applyTaskOperationFeedback $command $status $frame)
                         (change-state! &operation-feedback
                            (OperationFeedback $status (get-state &operation-failure-streak)))
                         (eval (recordSignalOutcome (quote $outcome))))

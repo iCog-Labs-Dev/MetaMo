@@ -54,6 +54,8 @@
 !(test (boundaryCycle consumed-maintenance) 1)
 !(test (selectedHostCommand) ())
 !(test (maintenanceFixtureRemaining) 0)
+!(test (signalTrueIn (lastFactualSignals) progress-made) False)
+!(test (get-state &success-count) 0)
 
 ;; The real host handler respects the item limit across cycles and retains the remainder.
 !(test (maintenanceFixtureBatch "rent-bounded" 17) (MaintenanceQueued "rent-bounded"))
@@ -131,6 +133,18 @@
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-compression "probe-1" 2 (ProbeProcessed 2))))
 !(test (maintenanceFixtureProcessed) 2)
 
+;; A maintenance result must preserve existing task recovery rather than resolve it.
+!(change-state! &operation-failure-streak 2)
+!(bind! &maintenance-recovery-before (new-state (get-state &host-recovery)))
+!(recordOperationRecovery Failure (get-state &cfv2-current-frame-id))
+!(bind! &maintenance-protected-recovery (new-state (get-state &host-recovery)))
+!(test (operationRecoveryLive) True)
+!(test (applyTaskOperationFeedback (quote (host-maintenance memory-rent)) Success
+   (get-state &cfv2-current-frame-id)) True)
+!(test (get-state &operation-failure-streak) 2)
+!(test (get-state &host-recovery) (get-state &maintenance-protected-recovery))
+!(change-state! &host-recovery (get-state &maintenance-recovery-before))
+!(change-state! &operation-failure-streak 0)
 !(test (commitmentSnapshot) (get-state &maintenance-owner))
 
 ;; A bounded adapter timeout neither commits its probe effect nor becomes success.

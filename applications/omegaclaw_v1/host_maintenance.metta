@@ -13,6 +13,12 @@
 (: MaintenanceRejected (-> Symbol MaintenanceQueueResultType))
 !(bind! &maintenance-view-hook (new-state ()))
 
+;; Distinguish internal accounting from an observed result of the user's task.
+;; Example: successful rent accounting does not establish task progress or recovery.
+(= (isMaintenanceCommand $command)
+   (if (and (== (get-metatype $command) Expression) (!= $command ()))
+      (== (car-atom $command) host-maintenance) False))
+
 ;; Publish bounded availability/counts through the ordinary host snapshot.
 ;; Example: pure composition has no configured maintenance and returns ().
 (= (hostMaintenanceProjection)

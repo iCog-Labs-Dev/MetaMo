@@ -306,6 +306,18 @@
             ($_ (hostExistingClassifications $bundle $snapshot))
         ))))
 
+;; Maintenance receipts remain real observations without claiming user-task progress.
+;; Example: the command comes from the consumed receipt, never the current queue.
+(= (hostSignalMaintenanceOutcome $bundle)
+    (case (frameRuntimeSignalObservations $bundle) (
+        ((SignalObservationView $_ $feedback $_)
+            (case (resolveSignalObservation $feedback) (
+                ((SourceObservation $_ $_ (ConsumedOutcome
+                    (OperationDecision $_ $_ $command $_) $_ $_) $_)
+                    (isMaintenanceCommand $command))
+                ($_ False))))
+        ($_ False))))
+
 ;; Example: provenance resolves to retained sources in the publication's owner.
 (= (hostSignalFactSupported $bundle $fact)
     (let* (
