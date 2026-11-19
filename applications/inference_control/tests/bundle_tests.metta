@@ -1,0 +1,87 @@
+!(import! &self ../../../core/validation)
+!(import! &self ../../../core/schema)
+!(import! &self ../../../core/features)
+!(import! &self ../../../core/state)
+!(import! &self ../../../core/helper)
+!(import! &self "../../../core/helpers.py")
+!(import! &self ../../../core/runtime)
+!(import! &self ../../common/openpsi_conventions)
+!(import! &self ../../../openpsi/profile)
+!(import! &self ../../../openpsi/appraisal)
+!(import! &self ../../../magus/profile)
+!(import! &self ../../../magus/goal_change)
+!(import! &self ../../../magus/decision)
+!(import! &self ../../../dynamics/stability)
+!(import! &self ../../../dynamics/coherence)
+!(import! &self ../../../category/merge)
+!(import! &self ../schema)
+!(import! &self ../state)
+!(import! &self ../pln)
+!(import! &self ../stimulus)
+!(import! &self ../planning)
+!(import! &self ../appraisal_profile)
+!(import! &self ../decision_profile)
+!(import! &self ../selection)
+!(import! &self ../bundle)
+
+(= (bundleTestFirst)
+   (Sentence ((Inheritance A B) (stv 0.8 0.9)) (1)))
+(= (bundleTestSecond)
+   (Sentence ((Inheritance B D) (stv 0.7 0.8)) (2)))
+(= (bundleTestThird)
+   (Sentence ((Inheritance A C) (stv 0.6 0.7)) (3)))
+(= (bundleTestFourth)
+   (Sentence ((Inheritance C D) (stv 0.9 0.9)) (4)))
+(= (bundleTestBeliefs)
+   ((bundleTestFirst) (bundleTestSecond)
+    (bundleTestThird) (bundleTestFourth)))
+(= (bundleTestRequest)
+   (inferenceRequest (Inheritance A D) (bundleTestBeliefs) 40))
+(= (bundleTestPrepared)
+   (validationValue
+     (inferenceControlPrepare
+       (inferenceControlDefaultState) (bundleTestRequest))))
+
+!(test (bundleId (inferenceControlBundle)) inference_control)
+!(test (bundleSchema (inferenceControlBundle)) (inferenceControlSchema))
+!(test (validationIsOk (inferenceControlValidatedBundle)) True)
+!(test (appraisalProfileName (bundleAppraisalProfile (inferenceControlBundle)))
+       inference_control_openpsi)
+!(test (decisionProfileName (bundleDecisionProfile (inferenceControlBundle)))
+       inference_control_magus_additive)
+!(test (inferenceRequestQuery (bundleTestRequest)) (Inheritance A D))
+!(test (inferenceRequestNextIndex (bundleTestRequest)) 40)
+!(test (bundleAdaptStimulus (inferenceControlBundle) (bundleTestRequest))
+       (bundleTestRequest))
+!(test (length
+         (bundleBuildCandidates
+           (inferenceControlBundle)
+           (inferenceControlDefaultState)
+           (bundleTestRequest))) 2)
+!(test (validationIsOk
+         (inferenceControlPrepare
+           (inferenceControlDefaultState) (bundleTestRequest))) True)
+!(test (length
+         (inferenceBatchCandidates
+           (inferencePreparationBatch (bundleTestPrepared)))) 2)
+!(test (inferencePreparationNextIndex (bundleTestPrepared)) 42)
+!(test (candidateId (inferencePreparationCandidate (bundleTestPrepared)))
+       inference_40)
+!(test (inferencePreparationProposal (bundleTestPrepared))
+       (plnProposal deduction (bundleTestFirst) (bundleTestSecond)))
+!(test (> (inferencePreparationScore (bundleTestPrepared)) 0.0) True)
+!(test (>
+         (stateModulator
+           (inferencePreparationAppraisedState (bundleTestPrepared)) approach)
+         (stateModulator (inferenceControlDefaultState) approach)) True)
+!(test (inferenceRequestBeliefs
+         (inferencePreparationRequest (bundleTestPrepared)))
+       (bundleTestBeliefs))
+!(test (inferenceTermPresent
+         (Inheritance A D)
+         (inferenceRequestBeliefs
+           (inferencePreparationRequest (bundleTestPrepared)))) False)
+!(test (inferenceControlPrepare
+         (inferenceControlDefaultState)
+         (inferenceRequest (Inheritance A D) () 0))
+       (validationError empty-candidates inference_control))
