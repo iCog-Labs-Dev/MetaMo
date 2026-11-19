@@ -3,11 +3,23 @@
    (-> Symbol Number InferenceRequest Expression MotivationState Expression
        InferenceRun))
 
-(= (inferenceControlRunFrom $state $request $steps $maxSteps $history $attempted)
+(= (INFERENCE_CONTROL_MIN_CONFIDENCE) 0.5)
+
+(= (inferenceAnswerAccepted () $minimumConfidence) False)
+(= (inferenceAnswerAccepted ((stv $strength $confidence) $evidence) $minimumConfidence)
+   (>= $confidence $minimumConfidence))
+
+(= (inferenceValidMinimumConfidence $minimumConfidence)
+   (and (>= $minimumConfidence 0.0) (<= $minimumConfidence 1.0)))
+
+(= (inferenceControlRunFrom
+      $state $request $steps $maxSteps $history $attempted $minimumConfidence)
    (let $answer (plnAnswer
                   (inferenceRequestBeliefs $request)
                   (inferenceRequestQuery $request))
-        (if (== $answer ())
+        (if (inferenceAnswerAccepted $answer $minimumConfidence)
+            (validationOk
+              (inferenceRun answered $steps $request $answer $state $history))
             (if (>= $steps $maxSteps)
                 (validationOk
                   (inferenceRun budgetExhausted $steps $request $answer
@@ -21,20 +33,26 @@
                       (append $history ($outcome))
                       (append $attempted
                         ((inferenceExecutionProposal
-                            (inferenceOutcomeExecution $outcome))))))
+                            (inferenceOutcomeExecution $outcome))))
+                      $minimumConfidence))
                    ((validationError empty-candidates $details)
                     (validationOk
                       (inferenceRun noCandidates $steps $request $answer
                                     $state $history)))
                    ((validationError $code $details)
-                    (validationError $code $details)))))
-            (validationOk
-              (inferenceRun answered $steps $request $answer $state $history)))))
+                    (validationError $code $details))))))))
 
-(= (inferenceControlRun $state $request $maxSteps)
+(= (inferenceControlRun $state $request $maxSteps $minimumConfidence)
    (if (< $maxSteps 0)
        (validationError invalid-step-budget $maxSteps)
-       (inferenceControlRunFrom $state $request 0 $maxSteps () ())))
+       (if (inferenceValidMinimumConfidence $minimumConfidence)
+           (inferenceControlRunFrom
+             $state $request 0 $maxSteps () () $minimumConfidence)
+           (validationError invalid-minimum-confidence $minimumConfidence))))
+
+(= (inferenceControlRun $state $request $maxSteps)
+   (inferenceControlRun $state $request $maxSteps
+                        (INFERENCE_CONTROL_MIN_CONFIDENCE)))
 
 (= (inferenceControlRun $state $request)
    (inferenceControlRun $state $request (PLN_MAX_STEPS)))
