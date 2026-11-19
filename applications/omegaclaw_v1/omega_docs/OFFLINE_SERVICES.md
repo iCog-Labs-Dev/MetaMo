@@ -81,6 +81,32 @@ retained known UUID-parser failures as nonzero results. Invocation from outside
 the repository resolved the same sources and correctly reported a scoring parser
 interruption while completing the mode scenario.
 
+### Posture maintenance acceptance coverage
+
+Run `python3 scripts/run-omegaclaw.py applications/omegaclaw_v1/tests/host_maintenance_test.metta`
+from the MetaMo repository root. It uses the shared full-loop fixture and verifies:
+
+| Scenario | Observed evidence |
+| --- | --- |
+| Sleep without a current frame | Explicit session policy, no manufactured frame/commitment, real rent ledger updates and the original-ticket completion callback. |
+| No pending work or unavailable handler | No dispatchable selection or worker effect, including an empty idle queue and queued Rumination work without an installed adapter. |
+| Sleep rejects restructuring | A pending registered probe cannot run in Sleep; switching to Sleep also blocks its retained Rumination ticket. Pure mode tests cover all three restructuring operations and registry remapping. |
+| Rumination admits supported work | The explicitly registered test worker processes two items through normal dispatch; its counter changes from zero to two and the callback retains the original decision, ticket and observed result. |
+| Wake and preemption | Incoming input invalidates an idle ticket; native task work runs through normal dispatch and callback while pending rent and the open commitment remain unchanged. |
+| Denied/exhausted budgets or absent engines | No worker effect; pending work and ownership survive. A missing adapter identity disables engine-dependent work; the local host worker needs no engine. |
+| Single bookkeeping owner | Nonbaseline values trigger real bridge decay and a homeostatic correction that has not reached its set-point. Dispatch changes the rent ledger while preserving motivational state, self-model and correction trace. |
+| Limits and failure | A 17-item rent job takes two cycles; recapture cannot reset a cycle's allowance. Timeout or undeclared results roll back the probe effect and yield unobserved dispatch rather than success. |
+
+Scope: provider classification and relation composition use deterministic doubles;
+memory lookup returns empty results and persistence is a no-op. Native temporary-file
+reads, rent accounting, frames, commitments, policy, budgets, selection, tickets,
+dispatch and callback recording use the production code. The Rumination worker is
+a transactional item counter used to test the adapter connection. It performs no
+compression, replay, learning, consolidation or live NARS/PLN inference. These
+checks establish the wiring and failure boundaries; production restructuring and
+durable external effects require their own handler tests. The offline guard also
+asserts that optional external service modules remain unloaded.
+
 ### Session scenarios checked on 24 September 2026
 
 | Requirement | Scenario and acceptance evidence |

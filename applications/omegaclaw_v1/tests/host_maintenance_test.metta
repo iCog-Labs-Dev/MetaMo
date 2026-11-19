@@ -1,4 +1,6 @@
-;; Real task-owned maintenance through the normal publication/selection/dispatch loop.
+;; Real session/task maintenance through the publication/selection/dispatch/callback loop.
+;; Provider/relation services and durable memory are offline doubles. Rent accounting
+;; and native file reads are real; the Rumination worker only counts processed items.
 !(import! &self fixtures/boundary_loop)
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/host_maintenance.pl)
@@ -13,10 +15,17 @@
 !(commitmentFixtureReset)
 !(initContextFrame)
 !(fullLoopStartSession)
+;; Nonbaseline values exercise actual decay and a homeostatic correction before dispatch.
+!(replaceModulator caution 0.95)
+!(replaceModulator exploration_bias 0.9)
 !(test (py-call (host_mode_fixture.setup)) 1)
 !(test (maintenanceFixtureQueue "no-idle-policy" ((MemoryRentCharge "idle-memory" 3)))
    (MaintenanceRejected InvalidBatch))
 !(test (py-call (host_mode_fixture.provision_idle "allowed")) 1)
+!(test (boundaryCycle idle-no-pending-work) 1)
+!(test (constitutionalMode) Sleep)
+!(test (selectedHostCommand) ())
+!(test (maintenanceFixtureIdleTotal (index-atom (get-state &operation-context) 1)) 0)
 ;; Bridge-owned corrections stay undispatchable even if assigned a sweep class.
 !(test (maintenanceFixtureRegistrationDenied motivational-decay) True)
 !(test (maintenanceFixtureWork motivational-decay "duplicate-decay" (a)) (MaintenanceRejected InvalidBatch))
@@ -45,12 +54,24 @@
 !(bind! &idle-motivation (new-state (motivosToMetamoState)))
 !(bind! &idle-self-model (new-state (getSelfModel)))
 !(bind! &idle-corrections (new-state (lastHomeostaticCorrections)))
+!(test (!= (decayMetamoState (get-state &idle-motivation)) (get-state &idle-motivation)) True)
+!(test (!= (filter-atom (get-state &idle-corrections) $row
+   (case $row (
+      ((HomeostaticRuleResult $_ (HomeostaticCorrection (variable modulator exploration_bias)
+         (from $before) (to $after) (set-point $point)))
+       (tpAllTrue ((< $after $before) (> $after $point))))
+      ($_ False)))) ()) True)
 !(test (py-call (host_mode_fixture.provision_idle "allowed")) 1)
 !(test (fullLoopDispatch idle (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "idle-1" 1 (MemoryRentAccounted 3))))
 !(test (get-state &cfv2-current-frame-id) ())
 !(test (commitmentSnapshot) NoCommitment)
 !(test (maintenanceFixtureIdleTotal (get-state &idle-session)) 3)
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (OperationDecision (get-state &operation-context) defer
+      (quote (host-maintenance memory-rent)) (get-state &idle-ticket))
+      (attempted-command (quote (host-maintenance memory-rent))) Success
+      (DispatchResult Executed Feasible (MaintenanceCompleted memory-rent "idle-1" 1 (MemoryRentAccounted 3)))))
 ;; Dispatch settles observed rent without repeating the bridge's corrections.
 !(test (motivosToMetamoState) (get-state &idle-motivation))
 !(test (getSelfModel) (get-state &idle-self-model))
@@ -243,6 +264,11 @@
    (dispatchSelectedHostCommand (selectedHostTicket) (selectedHostCommand)) $status) Blocked)
 !(test (maintenanceFixtureTotal) 22)
 
+;; Revocation leaves queued work unavailable without changing its owner.
+!(test (boundaryCycle unavailable-maintenance-handler) 1)
+!(test (selectedHostCommand) ())
+!(test (maintenanceFixtureRemaining) 1)
+!(test (commitmentSnapshot) (get-state &maintenance-owner))
 ;; A fresh user request retains independently valid native work ahead of a pending sweep.
 !(test (maintenanceFixtureDependency Host) True)
 !(test (boundaryProvision "maintenance-interactive") 1)
@@ -254,6 +280,16 @@
 !(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) respond)
 !(test (car-atom (selectedHostCommand)) read-file)
 !(test (maintenanceFixtureTotal) 22)
+!(bind! &maintenance-wake-decision (new-state (get-state &selected-operation-decision)))
+!(test (fullLoopDispatch native-wake (coreLoopDispatchBegin) (selectedHostCommand))
+   (DispatchResult Executed Feasible "observed local file content"))
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &maintenance-wake-decision)
+      (attempted-command (selectedHostCommand)) Success
+      (DispatchResult Executed Feasible "observed local file content")))
+!(test (maintenanceFixtureTotal) 22)
+!(test (maintenanceFixtureRemaining) 1)
+!(test (commitmentSnapshot) (get-state &maintenance-owner))
 
 ;; The same connection supports a registered Rumination adapter, with explicit engine absence.
 ;; This worker is a test probe; no native compression or learning support is claimed.
@@ -267,8 +303,12 @@
 !(remove-atom &self (ModeTransitionOption urgent-bypass True))
 !(add-atom &self (ModeTransitionOption urgent-bypass False))
 !(setConstitutionalMode Rumination)
-!(test (maintenanceFixtureProbe "not-loaded") True)
 !(test (maintenanceFixtureWork memory-compression "probe-1" (a b)) (MaintenanceQueued "probe-1"))
+!(test (boundaryCycle uninstalled-restructuring-handler) 1)
+!(test (selectedHostCommand) ())
+!(test (maintenanceFixtureProcessed) 0)
+!(test (commitmentSnapshot) (get-state &maintenance-owner))
+!(test (maintenanceFixtureProbe "not-loaded") True)
 !(test (boundaryCycle missing-restructuring-engine) 1)
 !(test (selectedHostCommand) ())
 !(test (signalTrueIn (lastFactualSignals) restructuring-handler-available) False)
@@ -280,6 +320,7 @@
 !(setConstitutionalMode Rumination)
 !(test (boundaryCycle supported-restructuring-adapter) 1)
 !(test (policyOutputOperation (get-state &last-meta-mo-policy-output)) self-improve)
+!(test (maintenanceFixtureProcessed) 0)
 ;; A retained Rumination selection grants no authority after switching to Sleep.
 !(bind! &restructuring-ticket (new-state (selectedHostTicket)))
 !(bind! &restructuring-command (new-state (selectedHostCommand)))
@@ -289,8 +330,19 @@
 !(test (maintenanceFixtureProcessed) 0)
 !(setConstitutionalMode Rumination)
 !(test (boundaryCycle restructuring-after-sleep) 1)
+!(bind! &restructuring-decision (new-state (get-state &selected-operation-decision)))
 !(test (fullLoopDispatch maintenance-probe (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Executed Feasible (MaintenanceCompleted memory-compression "probe-1" 2 (ProbeProcessed 2))))
+!(test (maintenanceFixtureProcessed) 2)
+!(test (get-state &last-operation-outcome)
+   (OperationOutcome (get-state &restructuring-decision)
+      (attempted-command (quote (host-maintenance memory-compression))) Success
+      (DispatchResult Executed Feasible (MaintenanceCompleted memory-compression "probe-1" 2 (ProbeProcessed 2)))))
+!(test (commitmentSnapshot) (get-state &maintenance-owner))
+;; The available adapter does not manufacture more restructuring work after consumption.
+!(test (boundaryCycle consumed-restructuring) 1)
+!(test (selectedHostCommand) ())
+!(test (signalQuantityAtLeastIn (lastFactualSignals) restructuring-ready-items count 1) False)
 !(test (maintenanceFixtureProcessed) 2)
 
 ;; A maintenance result must preserve existing task recovery rather than resolve it.
@@ -341,3 +393,4 @@
 !(test (fullLoopDispatch malformed (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Unobserved ExecutionUncertain none))
 !(test (maintenanceFixtureProcessed) 2)
+!(test (py-call (offline_guard.optional_modules_absent)) 1)
