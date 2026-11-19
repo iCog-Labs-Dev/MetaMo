@@ -15,6 +15,30 @@
    (Inheritance $a $c))
 
 (= (inferencePredictedTerm
+      (plnProposal induction
+        (Sentence ((Implication $a $b) $t1) $e1)
+        (Sentence ((Implication $a $c) $t2) $e2)))
+   (Implication $b $c))
+
+(= (inferencePredictedTerm
+      (plnProposal induction
+        (Sentence ((Inheritance $a $b) $t1) $e1)
+        (Sentence ((Inheritance $a $c) $t2) $e2)))
+   (Inheritance $b $c))
+
+(= (inferencePredictedTerm
+      (plnProposal abduction
+        (Sentence ((Implication $a $c) $t1) $e1)
+        (Sentence ((Implication $b $c) $t2) $e2)))
+   (Implication $a $b))
+
+(= (inferencePredictedTerm
+      (plnProposal abduction
+        (Sentence ((Inheritance $a $c) $t1) $e1)
+        (Sentence ((Inheritance $b $c) $t2) $e2)))
+   (Inheritance $a $b))
+
+(= (inferencePredictedTerm
       (plnProposal modus-ponens
         (Sentence ($a $t1) $e1)
         (Sentence ((Implication $a $b) $t2) $e2)))
@@ -92,6 +116,8 @@
 (= (inferenceEstimatedCost (plnProposal $type $first $second))
    (case $type (
      (deduction 0.5)
+     (induction 0.75)
+     (abduction 0.75)
      (modus-ponens 0.25)
      (revision 0.25)
      ($_ 1.0))))

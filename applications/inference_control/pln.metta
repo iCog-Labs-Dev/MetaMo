@@ -40,6 +40,36 @@
             (min $ac (min $bc (min $cc (min $abc $bcc)))))
        (stv 1.0 0.0)))
 
+;; Bayesian inversion followed by deduction; minimum-input confidence heuristic.
+(= (plnTruthInduction (stv $as $ac)
+                      (stv $bs $bc)
+                      (stv $cs $cc)
+                      (stv $abs $abc)
+                      (stv $acs $acc))
+   (if (and (> $bs 0.0)
+            (and (plnConditionalConsistent $as $bs $abs)
+                 (plnConditionalConsistent $as $cs $acs)))
+       (plnTruthDeduction
+         (stv $bs $bc) (stv $as $ac) (stv $cs $cc)
+         (stv (/ (* $abs $as) $bs) (min $ac (min $bc $abc)))
+         (stv $acs $acc))
+       (stv 1.0 0.0)))
+
+;; Invert B -> C, then deduce A -> B; minimum-input confidence heuristic.
+(= (plnTruthAbduction (stv $as $ac)
+                      (stv $bs $bc)
+                      (stv $cs $cc)
+                      (stv $acs $acc)
+                      (stv $bcs $bcc))
+   (if (and (> $cs 0.0)
+            (and (plnConditionalConsistent $as $cs $acs)
+                 (plnConditionalConsistent $bs $cs $bcs)))
+       (plnTruthDeduction
+         (stv $as $ac) (stv $cs $cc) (stv $bs $bc)
+         (stv $acs $acc)
+         (stv (/ (* $bcs $bs) $cs) (min $bc (min $cc $bcc))))
+       (stv 1.0 0.0)))
+
 (= (plnTruthModusPonens (stv $f1 $c1) (stv $f2 $c2))
    (stv (+ (* $f1 $f2) (* 0.02 (- 1.0 $f1)))
         (* $c1 $c2)))
@@ -85,6 +115,26 @@
          (Sentence ($term $t2) $e2))
         (if (plnStampDisjoint $e1 $e2)
             (plnProposal revision $first $second)
+            (empty)))
+       (((Sentence ((Implication $a $b) $t1) $e1)
+         (Sentence ((Implication $a $c) $t2) $e2))
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal induction $first $second)
+            (empty)))
+       (((Sentence ((Inheritance $a $b) $t1) $e1)
+         (Sentence ((Inheritance $a $c) $t2) $e2))
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal induction $first $second)
+            (empty)))
+       (((Sentence ((Implication $a $c) $t1) $e1)
+         (Sentence ((Implication $b $c) $t2) $e2))
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal abduction $first $second)
+            (empty)))
+       (((Sentence ((Inheritance $a $c) $t1) $e1)
+         (Sentence ((Inheritance $b $c) $t2) $e2))
+        (if (plnStampDisjoint $e1 $e2)
+            (plnProposal abduction $first $second)
             (empty)))
        (((Sentence ($a $t1) $e1)
          (Sentence ((Implication $a $b) $t2) $e2))
@@ -133,6 +183,50 @@
         (Sentence ($term $t2) $e2)))
    (if (plnStampDisjoint $e1 $e2)
        (Sentence ($term (plnTruthRevision $t1 $t2))
+                 (plnStampUnion $e1 $e2))
+       (empty)))
+
+(= (plnApplyOne
+      (plnProposal induction
+        (Sentence ((Implication $a $b) $t1) $e1)
+        (Sentence ((Implication $a $c) $t2) $e2)))
+   (if (plnStampDisjoint $e1 $e2)
+       (Sentence ((Implication $b $c)
+                  (plnTruthInduction
+                    (plnTermStv $a) (plnTermStv $b) (plnTermStv $c) $t1 $t2))
+                 (plnStampUnion $e1 $e2))
+       (empty)))
+
+(= (plnApplyOne
+      (plnProposal induction
+        (Sentence ((Inheritance $a $b) $t1) $e1)
+        (Sentence ((Inheritance $a $c) $t2) $e2)))
+   (if (plnStampDisjoint $e1 $e2)
+       (Sentence ((Inheritance $b $c)
+                  (plnTruthInduction
+                    (plnTermStv $a) (plnTermStv $b) (plnTermStv $c) $t1 $t2))
+                 (plnStampUnion $e1 $e2))
+       (empty)))
+
+(= (plnApplyOne
+      (plnProposal abduction
+        (Sentence ((Implication $a $c) $t1) $e1)
+        (Sentence ((Implication $b $c) $t2) $e2)))
+   (if (plnStampDisjoint $e1 $e2)
+       (Sentence ((Implication $a $b)
+                  (plnTruthAbduction
+                    (plnTermStv $a) (plnTermStv $b) (plnTermStv $c) $t1 $t2))
+                 (plnStampUnion $e1 $e2))
+       (empty)))
+
+(= (plnApplyOne
+      (plnProposal abduction
+        (Sentence ((Inheritance $a $c) $t1) $e1)
+        (Sentence ((Inheritance $b $c) $t2) $e2)))
+   (if (plnStampDisjoint $e1 $e2)
+       (Sentence ((Inheritance $a $b)
+                  (plnTruthAbduction
+                    (plnTermStv $a) (plnTermStv $b) (plnTermStv $c) $t1 $t2))
                  (plnStampUnion $e1 $e2))
        (empty)))
 

@@ -75,5 +75,5 @@
                (plnPropose (inferenceMapBeliefs))
                (inferenceMapQuery) (inferenceMapBeliefs))
              0)))
-       2)
+       6)
 !(test (inferenceLowInformationGain revision 1.0 0.0) 0.0)
