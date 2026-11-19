@@ -289,8 +289,10 @@
                      (if (== $outcome (get-state &last-operation-outcome))
                          OutcomeDuplicate (OutcomeRejected ConflictingReplay))
                      (progn (change-state! &last-operation-outcome $outcome)
+                         (eval (recordExecutionTrace (quote $outcome)))
                          (eval (optionalHostReasoner Observation (quote $outcome))) OutcomeAccepted)))
                 ($_ (progn (change-state! &last-operation-outcome $outcome)
+                         (eval (recordExecutionTrace (quote $outcome)))
                          (eval (optionalHostReasoner Observation (quote $outcome))) OutcomeAccepted))))))))
 
 ;; Recovery is persistent host bookkeeping, distinct from one-shot feedback.

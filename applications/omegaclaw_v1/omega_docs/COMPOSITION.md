@@ -53,8 +53,41 @@ error on `omegaclawScoreForBundle`.
 `composition.metta` owns the application import order: shared core, configuration
 and state adapters, pure factual schema/readers, modes, context facade, signal
 production/appraisal, homeostasis/lifecycle, candidate generation, decision
-scoring, persistence, and bridge. It does not
+scoring, bounded trace records, persistence, and bridge. It does not
 import the optional proposal adapter or inference engines.
+
+### Retained diagnostic events
+
+`trace.metta` owns a volatile newest-first window exposed by `metaMoTraceEvents`;
+`lastCycleTrace` reads the latest retained selection. Events have the shape
+`(MetaMoTraceEvent STAGE IDENTITY CYCLE-REFERENCE FIELDS)`. They are diagnostics
+and grant no execution authority. Initialization clears this window.
+
+- `CycleSelection` is captured after homeostasis and before signal cleanup.
+  It retains the published snapshot reference where available, motivational and
+  self-model values before/after the cycle, factual signals, appraisals, mode
+  observation, admitted/rejected candidates, policy and selected decision.
+- `Execution` is appended only for an accepted outcome callback. Its identity
+  preserves the original operation context and ticket; its result remains
+  ungraded. Rejected callbacks and duplicate delivery add no event.
+- `Assessment` is appended when the explicit reasoner assessment path retains a
+  grade. It uses the retained outcome identity and original receipt decision,
+  including when newer cycles have already run. It neither edits the selection
+  or execution event nor invokes comparison or learning again.
+
+For example, `traceEventField (lastCycleTrace) state-before` returns its retained
+`TraceValue`. An observed empty value remains `(TraceValue ())`; missing evidence
+uses `TraceUnavailable` with a reason. The legacy path uses a separately tagged
+cycle/frame identity rather than inventing a host session or dispatch ticket.
+
+The window holds at most 32 events and each event at most 16 fields. Field data
+up to 2048 serialized characters stays structured; larger fields become bounded
+`TraceSummary` text with a SHA-256 digest and original length. Oversized identities
+are omitted rather than truncated into a potentially incorrect correlation key.
+Oldest events are evicted. This window is neither durable audit storage nor
+readable trace output; formatting and configurable printing remain separate work.
+The Python support module only checks sizes and hashes text. Trace capture does
+not start optional reasoners, call providers, rerun selection or consume feedback.
 
 `factual_signals.metta` contains representation validators and pure typed snapshot
 readers without allocating state. It loads before mode/scheduling triggers, while

@@ -3,6 +3,7 @@
 ;; Coordinator assessments are explicit comparisons without source/native learning.
 ;; Example: (assessReasonerProposalOutcome EVENT EXECUTION-EVIDENCE).
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_comparators))
+!(import! &self (library MetaMo applications/omegaclaw_v1/trace))
 (: ExpectedOperationResultType Type)
 (: ExpectedOperationResult (-> Expression ExpectedOperationResultType))
 (: ReasonerPredictionObservationType Type)
@@ -299,7 +300,11 @@
 ;; Example: (appendHostReasonerAssessment VALIDATED-ROW) returns that row.
 (= (appendHostReasonerAssessment $row)
     (progn (change-state! &host-reasoner-assessments
-        (cons-atom $row (hostReasonerAssessments))) $row)
+        (cons-atom $row (hostReasonerAssessments)))
+        (case (hostReasonerReceiptFor (index-atom $row 1)) (
+            ((HostReasonerReceipt $_ $_ (OperationOutcome $decision $_ $_ $_))
+                (recordAssessmentTrace $row $decision))
+            ($_ True))) $row)
 )
 
 (: HostReasonerLearningType Type)

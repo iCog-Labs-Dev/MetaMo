@@ -43,6 +43,8 @@
 ;; Only the entry point above performs host bookkeeping and snapshot capture.
 (= (motivationContextBlockForBundle $bundle)
    (let* (
+      ($traceBefore (motivosToMetamoState))
+      ($traceSelfBefore (getSelfModel))
       ($_ (optionalHostReasoner CycleBegin (get-state &operation-context)))
       ($_ (eval (refreshSignals $bundle)))
       ($modeBefore (modeTransitionStateForCurrent (constitutionalMode)))
@@ -120,6 +122,7 @@
       ;; Single cycle owner of homeostatic correction, after self-model feedback.
       ($_ (runHomeostasis))
       ($_ (maybeSaveMotivationalState))
+      ($_ (captureCycleTrace $bundle $traceBefore $traceSelfBefore))
       ($_ (collapse (clearSignals)))
    )
       $policyOutput))
@@ -241,6 +244,7 @@
    (case (selfModelDefaults) (
       ((SelfModelDefaults $_defaults)
    (let* (
+      ($_ (resetMetaMoTrace))
       ($_ (setConstitutionalMode (constitutionalModeDefault)))
       ($_ (clearSpace &goal-space))
       ($_ (collapse

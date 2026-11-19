@@ -69,6 +69,16 @@
 !(test (frameRuntimeResults (activeFrameBundle)) "")
 !(test (get-state &last-results-seen) "")
 !(test (getSignals) ())
+;; A completed cycle retains its before/after data even though signals were cleared.
+!(test (size-atom (metaMoTraceEvents)) 1)
+!(test (index-atom (lastCycleTrace) 1) CycleSelection)
+!(test (index-atom (lastCycleTrace) 2) (TraceCycleRef (TraceLegacyContext 1 (get-state &bridge-first-frame))))
+!(test (traceEventField (lastCycleTrace) state-before) (TraceValue (get-state &bridge-before-state)))
+!(test (traceEventField (lastCycleTrace) state-after) (TraceValue (motivosToMetamoState)))
+!(test (traceEventField (lastCycleTrace) self-after) (TraceValue (getSelfModel)))
+!(test (!= (traceEventField (lastCycleTrace) signals) (TraceValue ())) True)
+!(test (traceEventField (lastCycleTrace) decision-ref) (TraceUnavailable NoHostDecision))
+!(test (traceEventField (lastCycleTrace) result) (TraceUnavailable NotRecorded))
 
 ;; Real ingestion of a second frame produces a nonempty provider relation.
 !(ctx-ingest-user-message "Summarize the second task")
@@ -120,3 +130,37 @@
 !(test (get-state &failure-streak) 0)
 !(test (getSignals) ())
 !(test (py-call (offline_guard.optional_modules_absent)) 1)
+
+;; Bounded diagnostic storage never interprets retained payload expressions.
+!(bind! &trace-test-effects (new-state 0))
+;; Example: only an accidental evaluation of quoted trace input would increment this counter.
+(= (traceTestPayload) (change-state! &trace-test-effects (+ (get-state &trace-test-effects) 1)))
+!(test (traceField payload (quote (traceTestPayload))) (quote (TraceField payload (TraceValue (traceTestPayload)))))
+!(test (get-state &trace-test-effects) 0)
+!(test (recordMetaMoTrace Payload (quote (payload 1)) (quote (cycle 1))
+   ((traceField payload (quote (traceTestPayload))))) True)
+!(test (get-state &trace-test-effects) 0)
+!(test (traceEventField (car-atom (metaMoTraceEvents)) payload) (quote (TraceValue (traceTestPayload))))
+!(test (traceField empty ()) (TraceField empty (TraceValue ())))
+
+;; Example: repeat a bounded test item to exercise truncation and eviction, not host execution.
+(= (traceTestRepeat $count $item)
+   (if (<= $count 0) () (cons-atom $item (traceTestRepeat (- $count 1) $item))))
+!(bind! &trace-test-large (new-state (traceField large (traceTestRepeat 500 diagnostic-payload))))
+!(test (case (get-state &trace-test-large) (
+   ((TraceField large (TraceSummary $text)) (<= (string_length $text) 2048)) ($_ False))) True)
+!(bind! &trace-test-before-oversized (new-state (metaMoTraceEvents)))
+!(test (recordMetaMoTrace Oversized (traceTestRepeat 500 oversized-identity) (quote (cycle 1)) ()) False)
+!(test (metaMoTraceEvents) (get-state &trace-test-before-oversized))
+!(test (recordMetaMoTrace Bounded (quote (test fields)) (quote (test cycle))
+   (traceTestRepeat 20 (traceField small (quote (observed 1))))) True)
+!(test (size-atom (index-atom (car-atom (metaMoTraceEvents)) 4)) 16)
+;; Example: 33 unique diagnostic events evict the oldest while retaining at most 32.
+(= (traceTestFill $count)
+   (if (<= $count 0) True
+      (progn (recordMetaMoTrace Bounded (TraceLegacyContext $count ()) (TraceLegacyContext $count ()) ())
+         (traceTestFill (- $count 1)))))
+!(test (traceTestFill 33) True)
+!(test (size-atom (metaMoTraceEvents)) 32)
+!(test (filter-atom (metaMoTraceEvents) $event (== (index-atom $event 2) (TraceLegacyContext 33 ()))) ())
+!(test (lastCycleTrace) (TraceUnavailable NoCycle))
