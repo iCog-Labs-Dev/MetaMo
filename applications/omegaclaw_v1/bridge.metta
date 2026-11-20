@@ -45,6 +45,7 @@
    (let* (
       ($traceBefore (motivosToMetamoState))
       ($traceSelfBefore (getSelfModel))
+      ($_ (resetCycleSelectionTrace))
       ($_ (optionalHostReasoner CycleBegin (get-state &operation-context)))
       ($_ (eval (refreshSignals $bundle)))
       ($modeBefore (modeTransitionStateForCurrent (constitutionalMode)))
@@ -83,6 +84,7 @@
       ;; Scheduling precedence is separate from admission, numeric score,
       ;; constitutional posture, and ContextFrames Fast/Slow execution mode.
       ($scheduledActions (scheduleAdmittedActions (getSignals) $candidatePool))
+      ($_ (captureSchedulingTrace $candidatePool $scheduledActions))
       ($_ (optionalHostReasoner PrepareInfluence (quote ($bundle $scheduledActions))))
       ($sysStates
          (cons-atom (subsystemState omegaclaw $currentMetaMoState) ()))

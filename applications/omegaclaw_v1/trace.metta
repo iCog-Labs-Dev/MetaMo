@@ -14,6 +14,22 @@
 (: TraceContribution (-> Symbol Symbol Number TraceContributionType))
 (: TraceStateNamesType Type)
 (: TraceStateNames (-> Expression Expression TraceStateNamesType))
+(: TraceModeExplanationType Type)
+(: TraceModeExplanation (-> Expression Expression Expression Expression Expression Expression TraceModeExplanationType))
+(: TraceModeRuleType Type)
+(: TraceModeRule (-> Expression Symbol Expression TraceModeRuleType))
+(: TraceModeTriggerType Type)
+(: TraceModeTrigger (-> Symbol Expression TraceModeTriggerType))
+(: TraceSchedulingType Type)
+(: TraceScheduling (-> Number Expression TraceSchedulingType))
+(: TraceCandidateType Type)
+(: TraceCandidate (-> Symbol Symbol Number Symbol TraceCandidateType))
+(: TraceNativeScoreType Type)
+(: TraceNativeScore (-> Symbol Number TraceNativeScoreType))
+(: TraceSelectionType Type)
+(: TraceSelection (-> Symbol Symbol Expression TraceSelectionType))
+(: TraceSelectionExplanationType Type)
+(: TraceSelectionExplanation (-> Expression Expression TraceSelectionExplanationType))
 (: TraceLegacyContextType Type)
 (: TraceLegacyContext (-> Number Expression TraceLegacyContextType))
 (: TraceCycleRefType Type)
@@ -23,6 +39,15 @@
 (: MetaMoTraceEventType Type)
 (: MetaMoTraceEvent (-> Symbol Expression Expression Expression MetaMoTraceEventType))
 !(bind! &metamo-trace-events (new-state ()))
+!(bind! &trace-native-scores (new-state ()))
+!(bind! &trace-selection (new-state ()))
+!(bind! &trace-scheduling (new-state ()))
+
+;; Clear per-cycle work without changing selection, counters or the retained history.
+;; Example: the next bridge cycle cannot inherit a preceding score table.
+(= (resetCycleSelectionTrace)
+   (progn (change-state! &trace-native-scores ()) (change-state! &trace-selection ())
+      (change-state! &trace-scheduling ()) True))
 
 ;; Read newest-first diagnostics independently of the live feedback slots.
 ;; Example: (metaMoTraceEvents) retains a selection after its callback arrives.
@@ -30,13 +55,49 @@
 
 ;; Reset diagnostics only; no motivational, host or reasoner state is touched.
 ;; Example: initialization starts a fresh volatile trace window.
-(= (resetMetaMoTrace) (change-state! &metamo-trace-events ()))
+(= (resetMetaMoTrace)
+   (progn (change-state! &metamo-trace-events ()) (resetCycleSelectionTrace)))
 
 ;; One bounded prefix rule avoids overlapping empty/nonempty alternatives.
 ;; Example: (tracePrefix 2 (a b c)) returns (a b).
 (= (tracePrefix $limit $items)
    (if (or (<= $limit 0) (== $items ())) ()
       (cons-atom (car-atom $items) (tracePrefix (- $limit 1) (cdr-atom $items)))))
+
+;; Observe only scores already calculated by the native decision traversal.
+;; Example: later bimonad probes cannot overwrite the first decision's numbers.
+(= (recordTraceNativeScore $candidate $score)
+   (if (or (!= (get-state &trace-selection) ()) (>= (size-atom (get-state &trace-native-scores)) 32)) True
+      (change-state! &trace-native-scores
+         (append (get-state &trace-native-scores) ((TraceNativeScore $candidate $score))))))
+
+;; Freeze the native and actual winners before the safety counter changes.
+;; Example: differing winners indicate an advisory choice, not a higher native score.
+(= (retainTraceSelection $native $chosen)
+   (if (!= (get-state &trace-selection) ()) True
+      (change-state! &trace-selection
+         (TraceSelection (actionId $native) (actionId $chosen) (get-state &trace-native-scores)))))
+
+;; Copy admitted classes and the actual scheduling survivors using the cycle's inputs.
+;; Example: a lower-class candidate is deferred, not recorded as policy-rejected.
+(= (captureSchedulingTrace $pool $scheduled)
+   (change-state! &trace-scheduling
+      (TraceScheduling (size-atom $pool)
+         (map-atom (tracePrefix 32 $pool) $action
+            (let $class (schedulingPriorityForCandidate (getSignals) (actionId $action))
+               (TraceCandidate (actionId $action) $class (schedulingPriorityRank $class)
+                  (tpContains $scheduled $action)))))))
+
+;; Copy only matched predicates; full provenance remains in the original mode observation.
+;; Example: retain the exact ratio threshold used or the host's frame-present condition.
+(= (traceModeTriggers (TriggerEvidence $signals $context))
+   (append
+      (map-atom (filter-atom $signals $row
+         (== (index-atom $row (- (size-atom $row) 1)) (matched True))) $evidence
+         (TraceModeTrigger (index-atom (index-atom $evidence 1) 1)
+            (index-atom (index-atom $evidence 2) 1)))
+      (map-atom (filter-atom $context $row (== (index-atom $row 2) True)) $evidence
+         (TraceModeTrigger (index-atom $evidence 1) IsTrue))))
 
 ;; Preserve structured data up to 2048 characters; larger fields keep a digest.
 ;; Example: an observed empty signal list is (TraceValue ()), not missing evidence.
@@ -46,13 +107,24 @@
          (quote (TraceField $name (TraceValue $value)))
          (TraceField $name (TraceSummary (py-call (trace_support.summarize $text)))))))
 
+;; Project retained mode evidence without rerunning rules or timing evaluation.
+;; Example: an unchanged posture can still have a requested transition held by timers.
+(= (traceModeExplanationField $observation)
+   (case $observation (
+      ((ModeObservation $_ $_ $_ $before $after (ModeEvaluation $winner $target $rules $timing))
+       (traceField mode-explanation (TraceModeExplanation $before $after $winner $target
+         (map-atom $rules $row (let (ModeRuleEvidence $rule $active $evidence) $row
+            (TraceModeRule $rule $active (traceModeTriggers $evidence))))
+         $timing)))
+      ($_ (TraceField mode-explanation (TraceUnavailable NoModeObservation))))))
+
 ;; Missing fields remain explicit rather than becoming zero, False or an empty fact list.
 ;; Example: (traceEventField EVENT publication) may return (TraceUnavailable NoPublication).
 (= (traceEventField $event $name)
    (let $rows (filter-atom (index-atom $event 4) $row (== (index-atom $row 1) $name))
       (if (== $rows ()) (TraceUnavailable NotRecorded) (index-atom (car-atom $rows) 2))))
 
-;; Bound history to 32 events and 16 fields each; identities remain exact or are omitted.
+;; Bound history to 32 events and 20 fields each; identities remain exact or are omitted.
 ;; Duplicate stage/identity deliveries never overwrite the first retained event.
 ;; Example: an execution callback appends an event instead of editing its selection.
 (= (recordMetaMoTrace $stage $identity $cycle $fields)
@@ -60,7 +132,7 @@
       (let $prior (filter-atom (metaMoTraceEvents) $event
          (tpAllTrue ((== (index-atom $event 1) $stage) (== (index-atom $event 2) $identity))))
          (if (!= $prior ()) True
-            (let $bounded (tracePrefix 16 $fields)
+            (let $bounded (tracePrefix 20 $fields)
                (change-state! &metamo-trace-events
                   (cons-atom (quote (MetaMoTraceEvent $stage $identity $cycle $bounded))
                      (tracePrefix 31 (metaMoTraceEvents)))))))))
@@ -114,7 +186,14 @@
              (collapse (match &self (GoalSpec $name $_)
                 (match &self (GoalIndex $name $index) (GoalIndex $name $index))))
              (collapse (match &self (ModulatorSpec $name $_)
-                (match &self (ModulatorIndex $name $index) (ModulatorIndex $name $index))))))))))
+                (match &self (ModulatorIndex $name $index) (ModulatorIndex $name $index))))))
+          (traceModeExplanationField (get-state &last-mode-observation))
+          (traceField scheduling (get-state &trace-scheduling))
+          (traceField selection (TraceSelectionExplanation (get-state &last-motivation-decision)
+             (get-state &trace-selection)))
+          (if (== (frameBundleCurrentId $bundle) ())
+             (TraceField frame-mode (TraceUnavailable NoCurrentFrame))
+             (traceField frame-mode (frameBundleCurrentMode $bundle)))))))
 
 ;; Pure formatting reads only the supplied retained event, including its original labels.
 ;; Example: (formatCycleSummary (lastCycleTrace)) returns bounded text without printing.

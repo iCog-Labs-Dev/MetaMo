@@ -27,6 +27,25 @@ class TraceSupportTests(unittest.TestCase):
                 [["GoalIndex", "gInd_over", 0]], [["ModulatorIndex", "caution", 0]]]],
             "self-before": ["TraceValue", [["self-metric", "urgency", 0.5]]],
             "self-after": ["TraceValue", [["self-metric", "urgency", 0.75]]],
+            "mode-explanation": ["TraceValue", ["TraceModeExplanation",
+                ["ModeTransitionState", "Engaged", 1, "none", 0, 0],
+                ["ModeTransitionState", "Rumination", 0, "none", 0, 0],
+                ["ModeTransitionRule", "recovery", "Rumination", 30], "Rumination",
+                [["TraceModeRule", ["ModeTransitionRule", "recovery", "Rumination", 30], True,
+                  [["TraceModeTrigger", "repeated-failure", "IsTrue"]]]],
+                ["ModeTimingEvidence", ["current", "Engaged", ["ModeTiming", 1, 0, 0]],
+                 ["target", "Rumination", ["ModeTiming", 1, 0, 0]],
+                 ["urgent-bypass", True, True], ["checks", 1, True, True, True]]]],
+            "frame-mode": ["TraceValue", "Slow"],
+            "scheduling": ["TraceValue", ["TraceScheduling", 2,
+                [["TraceCandidate", "respond", "Interactive", 5, True],
+                 ["TraceCandidate", "learn", "Engaged", 3, "false"]]]],
+            "rejected": ["TraceValue", [["CandidateRejection", "execute-skill", "PermissionDenied"]]],
+            "selection": ["TraceValue", ["TraceSelectionExplanation",
+                ["decision", "respond", "execute", "execute", 0.9],
+                ["TraceSelection", "respond", "respond", [["TraceNativeScore", "respond", 0.6]]]]],
+            "decision": ["TraceValue", ["OperationDecision", ["OperationContext", "session-a", 7, "frame-a"],
+                "respond", ["read-file", "/tmp/input file"], ["DispatchTicket", "original-ticket"]]],
         }
 
     # Example: the formatter receives an ordinary retained tree, without a live interpreter.
@@ -74,6 +93,34 @@ class TraceSupportTests(unittest.TestCase):
         self.assertLessEqual(len(text), 12000)
         self.assertTrue(text.endswith("[cycle summary truncated at 12000 characters]"))
 
+    def test_modes_admission_precedence_scores_and_retained_operation_are_distinct(self):
+        text = trace.format_cycle(self.event())
+        for expected in ("Constitutional posture: Engaged -> Rumination (transitioned)",
+                         "ContextFrames frame mode (Fast/Slow): Slow",
+                         "transition priority=30", "Matched triggers: repeated-failure IsTrue",
+                         "entry confirmed=true", "urgent bypass=true",
+                         "Admitted respond: scheduling class=Interactive, rank=5; competes",
+                         "Admitted learn: scheduling class=Engaged, rank=3; deferred",
+                         "admission preserved", "Rejected execute-skill: PermissionDenied",
+                         "Operation directive: execute; action mode: execute",
+                         "Decision-time native score respond: 0.6", "Published score after state update: 0.9",
+                         'Selected concrete operation: (read-file "/tmp/input file")',
+                         "Retained dispatch ticket: (DispatchTicket original-ticket)"):
+            self.assertIn(expected, text)
+
+    def test_pending_mode_and_no_scored_selection_are_explicit(self):
+        mode = self.fields["mode-explanation"][1]
+        mode[2][1] = "Engaged"
+        mode[6][3] = ["urgent-bypass", False, False]
+        mode[6][4] = ["checks", 1, False, False, True]
+        self.fields["selection"][1][2] = []
+        self.fields["decision"] = ["TraceValue", []]
+        text = trace.format_cycle(self.event())
+        self.assertIn("Engaged -> Engaged (retained)", text)
+        self.assertIn("Transition pending:", text)
+        self.assertIn("Decision-time native scores: unavailable", text)
+        self.assertIn("Selected concrete operation: none retained", text)
+
     def test_normal_cycle_prints_retained_values_after_cleanup(self):
         result = subprocess.run([sys.executable, str(REPO / "scripts/run-omegaclaw.py"),
             str(APP / "tests/bridge_cycle_test.metta")], capture_output=True, text=True, timeout=60)
@@ -84,7 +131,10 @@ class TraceSupportTests(unittest.TestCase):
         for label in ("MetaMo cycle summary (selection)", "Session: unavailable (legacy) | Cycle: 1 | Frame:",
                       "Factual signals:", "failure: false", "Appraisal contributions",
                       "user-waiting -> importance: +0.18", "failure -> progress: -0.24",
-                      "Motivational state changes:", "(delta "):
+                      "Motivational state changes:", "(delta ", "Constitutional posture:",
+                      "frame-present IsTrue", "Engaged -> Rumination (transitioned)",
+                      "ContextFrames frame mode (Fast/Slow): Fast", "scheduling class=Interactive",
+                      "Operation directive: execute", "Decision-time native score respond:"):
             self.assertIn(label, output)
 
 

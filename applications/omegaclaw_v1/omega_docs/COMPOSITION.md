@@ -80,7 +80,7 @@ For example, `traceEventField (lastCycleTrace) state-before` returns its retaine
 uses `TraceUnavailable` with a reason. The legacy path uses a separately tagged
 cycle/frame identity rather than inventing a host session or dispatch ticket.
 
-The window holds at most 32 events and each event at most 16 fields. Field data
+The window holds at most 32 events and each event at most 20 fields. Field data
 up to 2048 serialized characters stays structured; larger fields become bounded
 `TraceSummary` text with a SHA-256 digest and original length. Oversized identities
 are omitted rather than truncated into a potentially incorrect correlation key.
@@ -111,8 +111,30 @@ an earlier cycle. Missing/rejected data is labelled unavailable; oversized data 
 labelled summarized. An observed empty list or unchanged state prints `none`.
 Output is capped at 12000 characters with an explicit truncation marker.
 
-Printing is explicit at this stage. Configurable automatic runtime emission,
-mode/selection explanations and later-event rendering remain separate work.
+The summary separates constitutional posture, ContextFrames Fast/Slow mode,
+scheduling class and operation directive. Compact mode evidence retains the
+winning transition rule, matched predicates with their original thresholds and
+entry/hold/cooldown checks. Pending transitions identify the unsatisfied timers.
+Transition rule priorities are labelled separately from scheduling ranks.
+If a session change clears mode evidence during preparation, the field stays
+explicitly unavailable and diagnostic capture does not interrupt native operation.
+
+The scheduling view retains up to 32 admitted entries in their original order,
+their effective class/rank and whether they reached the highest admitted class.
+Lower classes keep their admission and are labelled deferred. Recorded policy
+rejections retain their original reasons; unavailable candidates are not invented
+as rejected entries. Rejected work has no numeric score assigned by the display.
+
+The native traversal copies up to 32 scores as they are calculated, then freezes
+the first decision's native and post-hook winners before safety-counter updates.
+Later bimonad probes cannot replace those numbers. Printing never invokes a scorer.
+Decision-time native scores and the published score after state update are labelled
+separately. If a selection hook changed the winner, this is explicit; adjusted
+decision scores remain unavailable in this view. The retained candidate/directive,
+concrete command and original ticket describe selection, not execution success.
+
+Printing is explicit at this stage. Configurable automatic runtime emission and
+later-event rendering remain separate work.
 
 `factual_signals.metta` contains representation validators and pure typed snapshot
 readers without allocating state. It loads before mode/scheduling triggers, while

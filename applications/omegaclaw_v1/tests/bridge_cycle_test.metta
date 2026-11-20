@@ -79,6 +79,8 @@
 !(test (!= (traceEventField (lastCycleTrace) signals) (TraceValue ())) True)
 !(test (traceEventField (lastCycleTrace) decision-ref) (TraceUnavailable NoHostDecision))
 !(test (traceEventField (lastCycleTrace) result) (TraceUnavailable NotRecorded))
+!(test (traceModeExplanationField NoModeObservation)
+   (TraceField mode-explanation (TraceUnavailable NoModeObservation)))
 ;; Formatting and explicit printing use only retained data after live signal cleanup.
 !(bind! &bridge-first-trace (new-state (lastCycleTrace)))
 !(bind! &bridge-first-summary (new-state (formatCycleSummary (lastCycleTrace))))
@@ -166,8 +168,8 @@
 !(test (recordMetaMoTrace Oversized (traceTestRepeat 500 oversized-identity) (quote (cycle 1)) ()) False)
 !(test (metaMoTraceEvents) (get-state &trace-test-before-oversized))
 !(test (recordMetaMoTrace Bounded (quote (test fields)) (quote (test cycle))
-   (traceTestRepeat 20 (traceField small (quote (observed 1))))) True)
-!(test (size-atom (index-atom (car-atom (metaMoTraceEvents)) 4)) 16)
+   (traceTestRepeat 24 (traceField small (quote (observed 1))))) True)
+!(test (size-atom (index-atom (car-atom (metaMoTraceEvents)) 4)) 20)
 ;; Example: 33 unique diagnostic events evict the oldest while retaining at most 32.
 (= (traceTestFill $count)
    (if (<= $count 0) True

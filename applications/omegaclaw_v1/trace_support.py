@@ -1,5 +1,6 @@
 """Pure bounds, summaries and readable rendering of retained diagnostic records."""
 import hashlib
+import json
 
 
 def fits(text, limit=2048):
@@ -74,6 +75,101 @@ def _section(title, rows):
     return title + ":\n" + "\n".join("  " + row for row in (rows or ["none"]))
 
 
+# Example: render a retained command as data, quoting paths with spaces without executing it.
+def _data_text(value):
+    if isinstance(value, list):
+        return "(" + " ".join(_data_text(item) for item in value) + ")"
+    if isinstance(value, str) and any(char.isspace() or char == '"' for char in value):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value).lower() if isinstance(value, bool) else str(value)
+
+
+# Example: native MeTTa true symbols and Python True have the same display meaning.
+def _true(value):
+    return value in (True, "true", "True")
+
+
+# Example: Rumination is a posture; Slow remains a separately labelled frame mode.
+def _mode_rows(fields):
+    value = _value(fields, "mode-explanation")
+    frame = _value(fields, "frame-mode")
+    rows = ["ContextFrames frame mode (Fast/Slow): " + (str(frame) if frame is not None else _missing(fields, "frame-mode"))]
+    if value is None:
+        return ["Constitutional posture: " + _missing(fields, "mode-explanation")] + rows
+    _, before, after, winner, target, rules, timing = value
+    change = "transitioned" if before[1] != after[1] else "retained"
+    rows.insert(0, f"Constitutional posture: {before[1]} -> {after[1]} ({change})")
+    rows.append(f"Requested posture: {target}; winning rule: {_data_text(winner)}")
+    for rule in rules:
+        rows.append(f"Transition rule {rule[1][1]}: matched={str(rule[2]).lower()}, transition priority={rule[1][3]}")
+        if len(rule) > 3 and rule[3]:
+            rows.append("Matched triggers: " + ", ".join(f"{item[1]} {_data_text(item[2])}" for item in rule[3]))
+    _, count, confirmed, held, cooled = timing[4]
+    urgent = timing[3][2]
+    rows.append(f"Timing: consecutive entries={count}, entry confirmed={str(confirmed).lower()}, "
+                f"minimum hold met={str(held).lower()}, cooldown clear={str(cooled).lower()}, urgent bypass={str(urgent).lower()}")
+    if before[1] != target and before[1] == after[1]:
+        blocked = []
+        if not _true(confirmed):
+            blocked.append("entry confirmation")
+        if not _true(urgent):
+            blocked.extend(label for label, ready in (("minimum hold", held), ("cooldown", cooled)) if not _true(ready))
+        rows.append("Transition pending: waiting for " + ", ".join(blocked))
+    return rows
+
+
+# Example: policy denial and lower scheduling rank remain different explanations.
+def _candidate_rows(fields):
+    scheduling = _value(fields, "scheduling")
+    rows = ["Scheduling precedence applies before numeric scores; native ties keep retained candidate order."]
+    if not scheduling:
+        rows.append("Admission/class details: " + _missing(fields, "scheduling"))
+    else:
+        for _, candidate, priority, rank, eligible in scheduling[2]:
+            status = ("competes in highest admitted class" if _true(eligible)
+                      else "deferred by scheduling precedence; admission preserved")
+            if rank <= 0:
+                status = "no declared scheduling class; admission preserved"
+            rows.append(f"Admitted {candidate}: scheduling class={priority}, rank={rank}; {status}")
+        if scheduling[1] > len(scheduling[2]):
+            rows.append(f"Scheduling rows truncated: showing {len(scheduling[2])} of {scheduling[1]} admitted entries.")
+        if scheduling[1] == 0:
+            rows.append("Admitted candidates: none")
+    rejected = _value(fields, "rejected")
+    if rejected is None:
+        rows.append("Rejection details: " + _missing(fields, "rejected"))
+    else:
+        rows.extend(f"Rejected {row[1]}: {_data_text(row[2])}" for row in rejected)
+        if not rejected:
+            rows.append("Policy rejections: none recorded")
+    return rows
+
+
+# Example: decision-time native scores are not relabelled as the later published score.
+def _selection_rows(fields):
+    selection = _value(fields, "selection")
+    if not selection:
+        return [_missing(fields, "selection")]
+    _, decision, details = selection
+    _, candidate, action_mode, directive, score = decision
+    rows = [f"Selected candidate: {candidate}", f"Operation directive: {directive}; action mode: {action_mode}",
+            f"Published score after state update: {score:.6g}"]
+    if details:
+        rows.append(f"Decision-time native winner: {details[1]}; winner after selection hook: {details[2]}")
+        rows.extend(f"Decision-time native score {row[1]}: {row[2]:.6g}" for row in details[3])
+        if details[1] != details[2]:
+            rows.append("Selection hook changed the native winner; adjusted decision scores are not retained here.")
+    else:
+        rows.append("Decision-time native scores: unavailable (no scored selection retained)")
+    operation = _value(fields, "decision")
+    if operation:
+        rows.append("Selected concrete operation: " + _data_text(operation[3]))
+        rows.append("Retained dispatch ticket: " + _data_text(operation[4]))
+    else:
+        rows.append("Selected concrete operation: " + (_missing(fields, "decision") if operation is None else "none retained"))
+    return rows
+
+
 # Example: format_cycle(retained_selection) produces text without changing the supplied tree.
 def format_cycle(event):
     heading = "=== MetaMo cycle summary (selection) ==="
@@ -86,6 +182,9 @@ def format_cycle(event):
     contribution_rows = ([_missing(fields, "contributions")] if contributions is None else
                          [f"{row[1]} -> {row[2]}: {(row[3] or 0):+.6g}" for row in contributions])
     text = "\n".join((heading, _identity(event[2]),
+        _section("Modes", _mode_rows(fields)),
+        _section("Admission and scheduling", _candidate_rows(fields)),
+        _section("Selection and scores", _selection_rows(fields)),
         _section("Factual signals", signal_rows),
         _section("Appraisal contributions (before dimension clamping)", contribution_rows),
         _section("Motivational state changes", _state_changes(fields))))

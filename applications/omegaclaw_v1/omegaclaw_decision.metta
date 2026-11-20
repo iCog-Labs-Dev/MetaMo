@@ -156,9 +156,10 @@
    (let* (
       (($head $tail) (decons-atom $remaining))
       ($score (omegaclawScoreForBundle $bundle $state $head)))
+      (let $_ (eval (recordTraceNativeScore (actionId $head) $score))
       (if (> $score $bestScore)
           (findBestActionForBundle $bundle $state $tail $head $score)
-          (findBestActionForBundle $bundle $state $tail $bestAction $bestScore))))
+          (findBestActionForBundle $bundle $state $tail $bestAction $bestScore)))))
 
 
 ;; omegaclawDecide: select the best action and update the anti-saturation counter.
@@ -205,10 +206,12 @@
            (let* (
               (($head $tail) (decons-atom $candidates))
               ($firstScore (omegaclawScoreForBundle $bundle $state $head))
+              ($_ (eval (recordTraceNativeScore (actionId $head) $firstScore)))
               ($nativeAction
                  (findBestActionForBundle
                     $bundle $state $tail $head $firstScore))
               ($bestAction (omegaclawAdvisedChoice $bundle $state $candidates $nativeAction))
+              ($_ (eval (retainTraceSelection $nativeAction $bestAction)))
               ($candName (actionId $bestAction))
               ($isSafety (isSafetyCandidate $candName))
               ($_ (if $isSafety

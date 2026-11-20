@@ -246,3 +246,27 @@
 !(test (schedulingPriorityPreempts Sleep Rumination) False)
 !(test (collapse (schedulingTestWinner Fast Open ((schedulingTestAction self-improve 0.0) (schedulingTestAction none 1.0)))) (self-improve))
 !(test (collapse (schedulingTestWinner Fast Open ((schedulingTestAction none 1.0) (schedulingTestAction self-improve 0.0)))) (self-improve))
+
+;; Retain actual scores and tie order; a lower class never reaches the numeric traversal.
+!(resetCycleSelectionTrace)
+!(clearSignals)
+!(setConstitutionalMode Engaged)
+!(change-state! &consecutive-safety-wins 0)
+!(bind! &trace-scheduling-pool (new-state
+   ((schedulingTestAction respond 0.1) (schedulingTestAction ask-clarification 0.1)
+    (schedulingTestAction learn 1.0))))
+!(captureSchedulingTrace (get-state &trace-scheduling-pool)
+   (scheduleAdmittedActions (getSignals) (get-state &trace-scheduling-pool)))
+!(test (get-state &trace-scheduling)
+   (TraceScheduling 3 ((TraceCandidate respond Interactive 5 True)
+      (TraceCandidate ask-clarification Interactive 5 True) (TraceCandidate learn Engaged 3 False))))
+!(test (actionId (decisionAction (omegaclawDecideForBundle (schedulingTestBundle Fast Open)
+   (schedulingTestState) (get-state &trace-scheduling-pool)))) respond)
+!(test (let (TraceSelection respond respond
+   ((TraceNativeScore respond $first) (TraceNativeScore ask-clarification $second)))
+   (get-state &trace-selection) (== $first $second)) True)
+!(bind! &trace-first-selection (new-state (get-state &trace-selection)))
+;; Later decision probes cannot replace the first traversal with newly calculated scores.
+!(test (actionId (decisionAction (omegaclawDecideForBundle (schedulingTestBundle Fast Open)
+   (schedulingTestState) ((schedulingTestAction ask-clarification 1.0))))) ask-clarification)
+!(test (get-state &trace-selection) (get-state &trace-first-selection))
