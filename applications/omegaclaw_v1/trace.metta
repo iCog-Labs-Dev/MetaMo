@@ -8,6 +8,12 @@
 (: TraceSummary (-> String TraceSummaryType))
 (: TraceFieldType Type)
 (: TraceField (-> Symbol Expression TraceFieldType))
+(: TraceSignalType Type)
+(: TraceSignal (-> Symbol Expression TraceSignalType))
+(: TraceContributionType Type)
+(: TraceContribution (-> Symbol Symbol Number TraceContributionType))
+(: TraceStateNamesType Type)
+(: TraceStateNames (-> Expression Expression TraceStateNamesType))
 (: TraceLegacyContextType Type)
 (: TraceLegacyContext (-> Number Expression TraceLegacyContextType))
 (: TraceCycleRefType Type)
@@ -75,6 +81,8 @@
       ($publication (case (frameRuntimeSignalObservations $bundle) (
          ((SignalObservationView $ref $_ $_) (traceField publication (quote $ref)))
          ($_ (TraceField publication (TraceUnavailable NoPublication))))))
+      ($signalValues (traceField signal-values (map-atom (getSignals) $fact
+         (let (FactualSignal (kind $kind) (value $value) $_) $fact (TraceSignal $kind $value)))))
    )
       (recordMetaMoTrace CycleSelection $cycle $cycle
          ($publication
@@ -92,7 +100,35 @@
              ((OperationDecision $origin $_ $_ $ticket)
               (traceField decision-ref (TraceDecisionRef $origin $ticket)))
              ($_ (TraceField decision-ref (TraceUnavailable NoHostDecision)))))
-          (traceField decision (get-state &selected-operation-decision))))))
+          (traceField decision (get-state &selected-operation-decision))
+          (case (signalRefreshStatus) (
+             ((SignalRefreshReady $_) $signalValues)
+             (LegacySignalCycle $signalValues)
+             ($_ (TraceField signal-values (TraceUnavailable SignalRefreshRejected)))))
+          (if (== (appraisalStatus) AppraisalReady)
+             (traceField contributions (map-atom (lastAppraisalContributions) $row
+                (let (AppraisalContribution (kind $kind) (dimension $dim) $_ $_
+                   (contribution $value) $_) $row (TraceContribution $kind $dim $value))))
+             (TraceField contributions (TraceUnavailable AppraisalRejected)))
+          (traceField state-names (TraceStateNames
+             (collapse (match &self (GoalSpec $name $_)
+                (match &self (GoalIndex $name $index) (GoalIndex $name $index))))
+             (collapse (match &self (ModulatorSpec $name $_)
+                (match &self (ModulatorIndex $name $index) (ModulatorIndex $name $index))))))))))
+
+;; Pure formatting reads only the supplied retained event, including its original labels.
+;; Example: (formatCycleSummary (lastCycleTrace)) returns bounded text without printing.
+(= (formatCycleSummary $event)
+   (py-call (trace_support.format_cycle (quote $event))))
+
+;; Explicit printing does not rerun a cycle, appraisal, provider or callback.
+;; Example: (printCycleSummary (lastCycleTrace)) prints one labelled selection summary.
+(= (printCycleSummary $event)
+   (progn (println! (formatCycleSummary $event)) True))
+
+;; Print the latest retained selection even if later execution or assessment events exist.
+;; Example: (printLastCycleSummary) reports unavailable when no cycle has been captured.
+(= (printLastCycleSummary) (printCycleSummary (lastCycleTrace)))
 
 ;; A validated callback has its own exact decision/ticket identity and ungraded result.
 ;; Example: a late grade cannot change this execution event or its originating cycle.

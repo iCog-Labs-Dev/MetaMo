@@ -84,10 +84,35 @@ The window holds at most 32 events and each event at most 16 fields. Field data
 up to 2048 serialized characters stays structured; larger fields become bounded
 `TraceSummary` text with a SHA-256 digest and original length. Oversized identities
 are omitted rather than truncated into a potentially incorrect correlation key.
-Oldest events are evicted. This window is neither durable audit storage nor
-readable trace output; formatting and configurable printing remain separate work.
-The Python support module only checks sizes and hashes text. Trace capture does
+Oldest events are evicted. This window is not durable audit storage.
+The Python support module checks sizes, hashes text and formats retained data. Trace capture does
 not start optional reasoners, call providers, rerun selection or consume feedback.
+
+### Reading a cycle summary
+
+`formatCycleSummary EVENT` returns text from a retained `CycleSelection` event.
+`printCycleSummary EVENT` prints it; `printLastCycleSummary` selects the latest
+retained cycle even when execution or assessment events arrived afterward:
+
+```metta
+!(printLastCycleSummary)
+```
+
+The labelled summary shows session, cycle and frame identity, typed factual values
+with quantity/estimate units, signed per-signal appraisal contributions before
+dimension clamping, and named goal/modulator/self-model changes with before,
+after and delta values. It describes selection; execution is a separate event.
+Legacy runs explicitly report the absence of a host session identity.
+
+Compact signal values and appraisal contributions are captured alongside their
+original evidence, and state names/indices are retained with the vectors. Rendering
+never reads current signals, registry labels or motivational state to reconstruct
+an earlier cycle. Missing/rejected data is labelled unavailable; oversized data is
+labelled summarized. An observed empty list or unchanged state prints `none`.
+Output is capped at 12000 characters with an explicit truncation marker.
+
+Printing is explicit at this stage. Configurable automatic runtime emission,
+mode/selection explanations and later-event rendering remain separate work.
 
 `factual_signals.metta` contains representation validators and pure typed snapshot
 readers without allocating state. It loads before mode/scheduling triggers, while

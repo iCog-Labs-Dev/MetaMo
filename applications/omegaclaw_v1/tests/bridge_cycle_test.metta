@@ -79,6 +79,17 @@
 !(test (!= (traceEventField (lastCycleTrace) signals) (TraceValue ())) True)
 !(test (traceEventField (lastCycleTrace) decision-ref) (TraceUnavailable NoHostDecision))
 !(test (traceEventField (lastCycleTrace) result) (TraceUnavailable NotRecorded))
+;; Formatting and explicit printing use only retained data after live signal cleanup.
+!(bind! &bridge-first-trace (new-state (lastCycleTrace)))
+!(bind! &bridge-first-summary (new-state (formatCycleSummary (lastCycleTrace))))
+!(test (<= (string_length (get-state &bridge-first-summary)) 12000) True)
+!(bind! &bridge-before-print (new-state
+   ((motivosToMetamoState) (getSelfModel) (getSignals) (lastAppraisalContributions)
+    (get-state &cycle-count) (get-state &last-meta-mo-policy-output) (metaMoTraceEvents))))
+!(test (printLastCycleSummary) True)
+!(test ((motivosToMetamoState) (getSelfModel) (getSignals) (lastAppraisalContributions)
+   (get-state &cycle-count) (get-state &last-meta-mo-policy-output) (metaMoTraceEvents))
+   (get-state &bridge-before-print))
 
 ;; Real ingestion of a second frame produces a nonempty provider relation.
 !(ctx-ingest-user-message "Summarize the second task")
@@ -93,6 +104,7 @@
 !(test (frameBundleRelations (activeFrameBundle))
    (frameStateBoundRelations (cfv2-get-relation (get-state &cfv2-current-frame-id))))
 !(test (get-state &cycle-count) 2)
+!(test (== (formatCycleSummary (get-state &bridge-first-trace)) (get-state &bridge-first-summary)) True)
 
 ;; A host error reaches real appraisal while the fresh user message still
 ;; requires a response. Execution continuation is a separate integration task.
@@ -106,6 +118,7 @@
 !(test (get-state &cycle-count) 3)
 !(test (get-state &failure-count) 1)
 !(test (get-state &failure-streak) 1)
+!(test (printLastCycleSummary) True)
 !(test (get-state &bridge-memory-queries) 1)
 !(test (!= (get-state &bridge-memory-payload) "") True)
 !(test (get-state &motivation-save-countdown) (persistenceInterval))
@@ -164,3 +177,4 @@
 !(test (size-atom (metaMoTraceEvents)) 32)
 !(test (filter-atom (metaMoTraceEvents) $event (== (index-atom $event 2) (TraceLegacyContext 33 ()))) ())
 !(test (lastCycleTrace) (TraceUnavailable NoCycle))
+!(test (printLastCycleSummary) True)
