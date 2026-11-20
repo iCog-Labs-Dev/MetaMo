@@ -46,6 +46,8 @@ class TraceSupportTests(unittest.TestCase):
                 ["TraceSelection", "respond", "respond", [["TraceNativeScore", "respond", 0.6]]]]],
             "decision": ["TraceValue", ["OperationDecision", ["OperationContext", "session-a", 7, "frame-a"],
                 "respond", ["read-file", "/tmp/input file"], ["DispatchTicket", "original-ticket"]]],
+            "decision-ref": ["TraceValue", ["TraceDecisionRef", ["OperationContext", "session-a", 7, "frame-a"],
+                ["DispatchTicket", "original-ticket"]]],
         }
 
     # Example: the formatter receives an ordinary retained tree, without a live interpreter.
@@ -120,6 +122,92 @@ class TraceSupportTests(unittest.TestCase):
         self.assertIn("Transition pending:", text)
         self.assertIn("Decision-time native scores: unavailable", text)
         self.assertIn("Selected concrete operation: none retained", text)
+
+    # Example: construct observer fixtures without invoking any operational service.
+    def observation(self, stage, identity, values):
+        return ["MetaMoTraceEvent", stage, identity, self.event()[2],
+                [["TraceField", key, ["TraceValue", value]] for key, value in values.items()]]
+
+    def test_dispatch_and_budget_observations_correlate_by_original_ticket(self):
+        ticket = ["DispatchTicket", "original-ticket"]
+        result = ["DispatchResult", "Executed", "Feasible", "observed file"]
+        execution = self.observation("Execution", self.fields["decision-ref"][1], {"status": "Success", "result": result})
+        account = ["BudgetAccountId", "host", "Global", "commands", "units"]
+        budget = self.observation("BudgetSettlement", ["TraceBudgetRef", ticket, "BudgetSettled"], {
+            "settlement": ["BudgetSettled", ticket, [["AccountCost", account, 1]]],
+            "actual-costs": [["AccountCost", account, 1]], "dispatch-result": result,
+            "accounts-before": [["BudgetAccount", account, 10, 2, 1, "Open", 3]],
+            "accounts-after": [["BudgetAccount", account, 10, 3, 0, "Open", 4]]})
+        history = [execution, budget]
+        original = copy.deepcopy(history)
+        text = trace.format_cycle(self.event(), history)
+        self.assertIn("Accepted host callback status: Success", text)
+        self.assertIn("Invocation returned: \"observed file\"", text)
+        self.assertIn("spent 2 -> 3, reserved 1 -> 0, available 7", text)
+        wrong = copy.deepcopy(history)
+        wrong[0][2][2][1] = "another-ticket"
+        wrong[1][2][1][1] = "another-ticket"
+        unobserved = trace.format_cycle(self.event(), wrong)
+        self.assertIn("pending observation", unobserved)
+        self.assertNotIn("spent 2 -> 3", unobserved)
+        self.assertEqual(history, original)
+
+    def test_uncertain_dispatch_keeps_unknown_usage_and_reservation(self):
+        ticket = ["DispatchTicket", "original-ticket"]
+        result = ["DispatchResult", "Unobserved", "ExecutionUncertain", "none"]
+        execution = self.observation("Execution", self.fields["decision-ref"][1], {"status": "Unobserved", "result": result})
+        budget = self.observation("BudgetSettlement", ["TraceBudgetRef", ticket, "BudgetAccountingPending"], {
+            "settlement": ["BudgetAccountingPending", ticket, "UsageUnknown"], "actual-costs": "Unknown",
+            "accounts-before": [], "accounts-after": [], "dispatch-result": result})
+        text = trace.format_cycle(self.event(), [execution, budget])
+        self.assertIn("Result unavailable: execution is uncertain", text)
+        self.assertIn("Usage: pending reconciliation; reservation remains held", text)
+        self.assertNotIn("Observed actual costs: 0", text)
+
+    def test_rejected_alternative_does_not_borrow_primary_grade(self):
+        primary = ["TraceProposalRef", "invocation-a", "proposal-a"]
+        alternative = ["TraceProposalRef", "invocation-a", "proposal-b"]
+        primary_key = '(TraceProposalRef "invocation-a" "proposal-a")'
+        alternative_key = '(TraceProposalRef "invocation-a" "proposal-b")'
+        values = {"source": "llm", "candidate": "respond", "target": "current-frame", "confidence": 0.8,
+                  "claim": ["LLMClaim", "claim"], "support": ["LLMSupport", "support"],
+                  "evidence": ["EvidenceReferences", ["observation-1"]], "prediction": ["ExpectedOperationResult", "observed"]}
+        proposal = self.observation("ReasonerProposal", primary, dict(values, **{"proposal-key": primary_key}))
+        rejected = self.observation("ReasonerProposal", alternative, dict(values, **{"proposal-key": alternative_key}))
+        admission = self.observation("ReasonerAdmission", "invocation-a", {"decisions": [
+            ["TraceProposalAdmission", "proposal-a", "Accepted", "Feasible", primary_key],
+            ["TraceProposalAdmission", "proposal-b", "Rejected", "CandidateUnavailable", alternative_key]]})
+        grade = self.observation("Assessment", ["ReasonerOutcomeRef", "session-a", "original-ticket"], {
+            "proposal-ref": primary, "proposal-key": primary_key,
+            "comparison": ["ReasonerPredictionComparison", "Confirmed", 1.0]})
+        text = trace.format_cycle(self.event(), [grade, admission, rejected, proposal])
+        self.assertEqual(text.count("observed Confirmed; grade=1.0"), 1)
+        self.assertIn("(Rejected CandidateUnavailable)", text)
+        self.assertIn("unavailable (no assessment retained for this proposal); ungraded", text)
+        self.assertIn("prediction: (ExpectedOperationResult observed)", text)
+        # Symbol and string IDs can look identical after conversion to Python.
+        rejected[2] = copy.deepcopy(primary)
+        key_field = next(row for row in rejected[4] if row[1] == "proposal-key")
+        key_field[2] = ["TraceValue", '(TraceProposalRef "invocation-a" proposal-a)']
+        alias_text = trace.format_cycle(self.event(), [grade, rejected, proposal])
+        self.assertEqual(alias_text.count("Outcome grade: observed Confirmed; grade=1.0"), 1)
+        self.assertIn("unavailable (no assessment retained for this proposal); ungraded", alias_text)
+
+    def test_pending_and_applied_updates_keep_origin_and_application_context(self):
+        outcome = ["ReasonerOutcomeRef", "session-a", "original-ticket"]
+        later = ["OperationContext", "session-a", 8, "frame-a"]
+        changes = [["TraceParameterChange", ["AppraisalWeight", "progress-made", "opportunity", "BooleanIndicator"], 0.12, 0.14]]
+        pending = self.observation("ParameterUpdate", ["TraceParameterRef", outcome, "Pending"], {
+            "status": "Pending", "queued-at": self.event()[2][1], "status-at": [], "changes": changes})
+        self.assertIn("Application pending", trace.format_cycle(self.event(), [pending]))
+        self.assertIn("Proposed change", trace.format_cycle(self.event(), [pending]))
+        applied = self.observation("ParameterUpdate", ["TraceParameterRef", outcome, "Applied"], {
+            "status": "Applied", "queued-at": self.event()[2][1], "status-at": later,
+            "changes": changes, "learner": ["HostReasonerParameterLearner", "adapter-a", "config-a", "v1", "derive"]})
+        text = trace.format_cycle(self.event(), [applied, pending])
+        self.assertIn("Applied change", text)
+        self.assertIn("session-a 8 frame-a", text)
+        self.assertNotIn("Application pending", text)
 
     def test_normal_cycle_prints_retained_values_after_cleanup(self):
         result = subprocess.run([sys.executable, str(REPO / "scripts/run-omegaclaw.py"),

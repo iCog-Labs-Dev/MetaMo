@@ -1,4 +1,5 @@
 ;; Optional application adaptation. Derivation belongs to an explicitly configured learner.
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_trace))
 (: HostReasonerParameterLearnerType Type)
 (: HostReasonerParameterLearner (-> String String String Symbol HostReasonerParameterLearnerType))
 (: HostReasonerParameterChangeType Type)
@@ -197,7 +198,8 @@
 ;; Example: appending a validated batch returns exactly that immutable batch.
 (= (appendHostReasonerParameterBatch $batch)
     (progn (change-state! &host-reasoner-parameter-batches
-        (cons-atom $batch (hostReasonerParameterBatches))) $batch))
+        (cons-atom $batch (hostReasonerParameterBatches)))
+        (collapse (catch (recordHostReasonerParameterTrace $batch))) $batch))
 
 ;; Only the current native cycle before mode evaluation can apply pending changes.
 ;; Example: calling again later in the same cycle cannot revise an in-flight decision.
@@ -248,8 +250,11 @@
 ;; Example: an applied batch remains auditable and cannot be applied on the following cycle.
 (= (setHostReasonerParameterBatchStatus $batch $status $context)
     (let (HostReasonerParameterBatch $id $learner $queued $edits $_ $_) $batch
+        (let $updated (quote (HostReasonerParameterBatch $id $learner $queued $edits $status $context))
         (progn (change-state! &host-reasoner-parameter-batches
             (map-atom (hostReasonerParameterBatches) $old
                 (if (== $old $batch)
-                    (HostReasonerParameterBatch $id $learner $queued $edits $status $context) $old))) True))
+                    $updated $old)))
+            (if (tpContains (hostReasonerParameterBatches) $updated)
+                (collapse (catch (recordHostReasonerParameterTrace $updated))) True) True)))
 )

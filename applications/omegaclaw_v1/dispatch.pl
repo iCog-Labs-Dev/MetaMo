@@ -438,13 +438,20 @@ mm_budget_observed_costs(_,_, 'Unknown').
 mm_budget_settle(Ticket, Operation, Command, Result, Settlement) :-
     (oc_dispatch_result(Ticket,Command,Recorded), Recorded == Result,
      mm_budget_operation(Operation,Command,Costs),
-     eval(['get-state','&budget-account-state'],['BudgetAccounts',_,Records]),
+     eval(['get-state','&budget-account-state'],['BudgetAccounts',Before,Records]),
      eval([baFindReservation,[quote,Records],[quote,Ticket]],Reservation),
      eval([baOriginalReservation,[quote,Reservation]],
           ['BudgetReservation',Ticket,['BudgetOperation',Command,Operation],Costs,_])
      -> mm_budget_observed_costs(Result,Costs,Actual),
-        eval([settleOperationBudget,[quote,Ticket],[quote,Actual]],Settlement)
+        eval([settleOperationBudget,[quote,Ticket],[quote,Actual]],Settlement),
+        mm_budget_trace(Ticket,Costs,Actual,Settlement,Before,Result)
      ; Settlement=['BudgetAccountingRejected','MismatchedOutcome']).
+
+% Example: diagnostics copy the locked settlement snapshot and cannot fail accounting.
+mm_budget_trace(Ticket,Costs,Actual,Settlement,Before,Result) :-
+    catch(ignore((eval(['get-state','&budget-account-state'],['BudgetAccounts',After,_]),
+        eval([recordBudgetTrace,[quote,Ticket],[quote,Costs],[quote,Actual],
+              [quote,Settlement],[quote,Before],[quote,After],[quote,Result]],_))),_,true).
 
 initMetaMoDispatch(true) :-
     mm_maintenance_init,

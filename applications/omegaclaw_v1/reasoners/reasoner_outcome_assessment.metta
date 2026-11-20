@@ -303,7 +303,9 @@
         (cons-atom $row (hostReasonerAssessments)))
         (case (hostReasonerReceiptFor (index-atom $row 1)) (
             ((HostReasonerReceipt $_ $_ (OperationOutcome $decision $_ $_ $_))
-                (recordAssessmentTrace $row $decision))
+                (collapse (catch (recordAssessmentTrace $row $decision
+                    (mrcValue (mrcValue (index-atom $row 2) 2) 1)
+                    (getProposalId (mrcValue (index-atom $row 2) 4))))))
             ($_ True))) $row)
 )
 

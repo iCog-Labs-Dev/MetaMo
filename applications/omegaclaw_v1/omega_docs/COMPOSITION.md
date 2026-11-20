@@ -90,7 +90,8 @@ not start optional reasoners, call providers, rerun selection or consume feedbac
 
 ### Reading a cycle summary
 
-`formatCycleSummary EVENT` returns text from a retained `CycleSelection` event.
+`formatCycleSummary EVENT` returns text from a retained `CycleSelection` event
+and its correlated events in the current bounded trace window.
 `printCycleSummary EVENT` prints it; `printLastCycleSummary` selects the latest
 retained cycle even when execution or assessment events arrived afterward:
 
@@ -133,8 +134,44 @@ separately. If a selection hook changed the winner, this is explicit; adjusted
 decision scores remain unavailable in this view. The retained candidate/directive,
 concrete command and original ticket describe selection, not execution success.
 
-Printing is explicit at this stage. Configurable automatic runtime emission and
-later-event rendering remain separate work.
+### Dispatch, budget and optional reasoner observations
+
+The rendered view joins later observations by retained cycle, ticket and proposal
+identities. A new callback or grade can enrich an older cycle's displayed summary;
+the original selection and execution records stay immutable. Printing never reads
+live accounting/engine state or invokes collectors, comparators or learners.
+
+`BudgetSettlement` events copy the touched accounts before/after settlement inside
+the host's locked accounting callback. They retain planned/actual account costs,
+the Core result and the original ticket. Output shows spent/reserved balances and
+remaining availability separately for each scope. Unknown usage remains pending
+with its reservation held; an absent accounting event is unavailable, not a zero
+charge. Accounting diagnostics cannot fail the host settlement. Core ledger
+observations are labelled separately if no accepted host callback is retained.
+
+The optional `reasoners/host_reasoner_trace.metta` copies intake status and
+adapter/configuration/phase identity, individual proposals and their original
+predictions, admission results and parameter-batch statuses at existing retention
+points. Claims, engine-specific support and evidence remain typed data with the
+existing field bounds. Native operation loads no reasoner module for printing.
+Empty/unavailable/timed-out intake does not manufacture a prediction or grade.
+
+Grades are separate `Assessment` events joined to their exact invocation/proposal
+reference. Canonical serialized keys preserve symbol/string ID distinctions
+across Python rendering. A rejected alternative does not borrow the primary's grade; missing
+assessment stays explicitly ungraded. Displaying a grade does not update source
+reliability or deliver engine feedback. Proposal admission alone makes no claim
+that a reasoner caused the selection.
+
+`ParameterUpdate` events distinguish Pending, Applied and stale statuses. Queued
+changes remain proposed until an Applied status is observed. The latest retained
+status is shown with its original grade/batch identity, queued context and status
+context, so later application is not relabelled as part of the earlier cycle.
+Observer failures cannot change the producer's admission, assessment or learning
+return value. The 32-event diagnostic window can evict older details; it is not a
+replacement for the host/coordinator audit ledgers.
+
+Printing remains explicit. Configurable automatic runtime emission is separate work.
 
 `factual_signals.metta` contains representation validators and pure typed snapshot
 readers without allocating state. It loads before mode/scheduling triggers, while

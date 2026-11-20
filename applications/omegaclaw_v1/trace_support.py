@@ -170,12 +170,179 @@ def _selection_rows(fields):
     return rows
 
 
-# Example: format_cycle(retained_selection) produces text without changing the supplied tree.
-def format_cycle(event):
+# Example: fields are read from an immutable retained event, never a live service.
+def _fields(event):
+    return {row[1]: row[2] for row in event[4]}
+
+
+# Example: a late parameter application can link to both its source grade and status cycle.
+def _related_events(event, history):
+    cycle = event[2]
+    reference = _value(_fields(event), "decision-ref")
+    ticket = reference[2] if reference else None
+    grades = [row[2] for row in history if row[1] == "Assessment" and row[3] == cycle]
+    related = []
+    for row in history:
+        stage = row[1]
+        if stage == "CycleSelection":
+            continue
+        if stage == "BudgetSettlement":
+            matches = ticket is not None and row[2][1] == ticket
+        elif stage == "Execution":
+            matches = reference is not None and row[2] == reference
+        elif stage == "ParameterUpdate":
+            matches = (row[3] == cycle or row[2][1] in grades
+                       or _value(_fields(row), "status-at") == cycle[1])
+        else:
+            matches = row[3] == cycle
+        if matches:
+            related.append(row)
+    return related
+
+
+# Example: uncertain invocation is printed as unobserved rather than a successful none result.
+def _dispatch_rows(fields, events):
+    callbacks = [row for row in events if row[1] == "Execution"]
+    if callbacks:
+        observed = _fields(callbacks[0])
+        result = _value(observed, "result")
+        rows = ["Accepted host callback status: " + str(_value(observed, "status"))]
+    else:
+        rows = ["Accepted host callback: pending observation (no callback retained)"]
+        if not _value(fields, "decision-ref"):
+            rows = ["Accepted host callback: unavailable (no retained host decision)"]
+        ledgers = [row for row in events if row[1] == "BudgetSettlement"]
+        result = _value(_fields(ledgers[0]), "dispatch-result") if ledgers else None
+        if result:
+            rows.append("Core dispatch ledger observed separately from the host callback")
+    if not result:
+        return rows
+    rows.append(f"Dispatch result: {result[1]}; reason: {_data_text(result[2])}")
+    if result[1] == "Executed":
+        rows.append("Invocation returned: " + _data_text(result[3]))
+    elif result[1] == "Unobserved":
+        rows.append("Result unavailable: execution is uncertain")
+    return rows
+
+
+# Example: settlement snapshots distinguish released funds from unknown usage still reserved.
+def _budget_rows(events):
+    budgets = [row for row in events if row[1] == "BudgetSettlement"]
+    if not budgets:
+        return ["unavailable (no accounting observation retained)"]
+    fields = _fields(budgets[0])
+    result, actual = (_value(fields, name) for name in ("settlement", "actual-costs"))
+    rows = ["Observed settlement: " + (_data_text(result) if result else _missing(fields, "settlement"))]
+    rows.append("Usage: pending reconciliation; reservation remains held" if actual == "Unknown"
+                else "Observed actual costs: " + (_data_text(actual) if actual is not None else _missing(fields, "actual-costs")))
+    before, after = (_value(fields, name) for name in ("accounts-before", "accounts-after"))
+    if before is None or after is None:
+        return rows + ["Balance changes: unavailable"]
+    previous = {_data_text(row[1]): row for row in before}
+    for account in after:
+        prior = previous.get(_data_text(account[1]))
+        if prior is None:
+            continue
+        _, namespace, scope, resource, unit = account[1]
+        available = max(0, account[2] - account[3] - account[4])
+        rows.append(f"{namespace}/{_data_text(scope)} {resource}/{unit}: "
+                    f"spent {prior[3]} -> {account[3]}, reserved {prior[4]} -> {account[4]}, "
+                    f"available {available}, status {account[5]}")
+    return rows
+
+
+# Example: an absent or summarized payload stays visibly different from an observed value.
+def _display(fields, name):
+    value = _value(fields, name)
+    return _data_text(value) if value is not None else _missing(fields, name)
+
+
+# Example: a retained comparison is a grade; proposal confidence is displayed separately.
+def _comparison(fields):
+    value = _value(fields, "comparison")
+    if value is None:
+        return _missing(fields, "comparison")
+    return f"observed {value[1]}; grade={_data_text(value[2])}"
+
+
+# Example: only the grade carrying this exact invocation/proposal reference is displayed.
+def _reasoner_rows(events):
+    intakes = [row for row in events if row[1] == "ReasonerIntake"]
+    proposals = [row for row in events if row[1] == "ReasonerProposal"]
+    grades = [row for row in events if row[1] == "Assessment"]
+    rows = []
+    for intake in reversed(intakes):
+        fields = _fields(intake)
+        rows.append(f"Invocation {_data_text(intake[2])}: adapter {_display(fields, 'adapter')}, "
+                    f"configuration {_display(fields, 'configuration')}, phase {_display(fields, 'phase')}; "
+                    f"observed intake status {_display(fields, 'status')}")
+    admissions = {item[4]: item[2:4]
+                  for row in events if row[1] == "ReasonerAdmission"
+                  for item in (_value(_fields(row), "decisions") or []) if len(item) > 4}
+    displayed = []
+    for proposal in reversed(proposals):
+        fields = _fields(proposal)
+        reference = proposal[2]
+        key = _value(fields, "proposal-key")
+        if key is not None:
+            displayed.append(key)
+        rows.append(f"Proposal {key or _data_text(reference)}: source {_display(fields, 'source')}, "
+                    f"candidate {_display(fields, 'candidate')}, target {_display(fields, 'target')}, "
+                    f"confidence {_display(fields, 'confidence')}")
+        for name in ("claim", "support", "evidence", "prediction"):
+            rows.append(f"  {name}: {_display(fields, name)}")
+        decision = admissions.get(key)
+        intake_admissions = [row for row in events if row[1] == "ReasonerAdmission" and row[2] == reference[1]]
+        missing = (_missing(_fields(intake_admissions[0]), "decisions")
+                   if intake_admissions and _value(_fields(intake_admissions[0]), "decisions") is None
+                   else "unavailable (no retained admission for this proposal)")
+        rows.append("  Admission: " + (_data_text(decision) if decision else missing))
+        matching = [row for row in grades if key is not None and _value(_fields(row), "proposal-key") == key]
+        rows.append("  Outcome grade: " + (_comparison(_fields(matching[0])) if matching
+                    else "unavailable (no assessment retained for this proposal); ungraded"))
+    for grade in grades:
+        if _value(_fields(grade), "proposal-key") not in displayed:
+            rows.append(f"Outcome grade {_data_text(grade[2])}: {_comparison(_fields(grade))}")
+    if proposals:
+        rows.append("Proposal admission alone does not establish selection influence.")
+    if not rows:
+        return ["unavailable (no retained reasoner collection or assessment)"]
+    return rows
+
+
+# Example: queued edits remain Pending until an observed final batch status is retained.
+def _parameter_rows(events):
+    latest = {}
+    for event in events:
+        if event[1] == "ParameterUpdate":
+            latest.setdefault(_data_text(event[2][1]), event)
+    if not latest:
+        return ["unavailable (no parameter-update batch retained)"]
+    rows = []
+    for identity, event in latest.items():
+        fields = _fields(event)
+        status = _value(fields, "status")
+        rows.append(f"Batch {identity}: {status}; queued at {_display(fields, 'queued-at')}")
+        if status == "Pending":
+            rows.append("Application pending; registry changes are not yet observed")
+        else:
+            rows.append(f"Status recorded at {_display(fields, 'status-at')}; learner {_display(fields, 'learner')}")
+        changes = _value(fields, "changes")
+        if changes is None:
+            rows.append("Changes: " + _missing(fields, "changes"))
+        else:
+            label = "Applied" if status == "Applied" else "Proposed"
+            rows.extend(f"  {label} change {_data_text(row[1])}: {row[2]:.6g} -> {row[3]:.6g}" for row in changes)
+    return rows
+
+
+# Example: later evidence enriches the view without editing its original selection record.
+def format_cycle(event, history=()):
     heading = "=== MetaMo cycle summary (selection) ==="
     if not event or event[0] != "MetaMoTraceEvent" or event[1] != "CycleSelection":
         return heading + "\nCycle: unavailable (no retained cycle selection)"
     fields = {row[1]: row[2] for row in event[4]}
+    events = _related_events(event, history)
     signals, contributions = (_value(fields, name) for name in ("signal-values", "contributions"))
     signal_rows = ([_missing(fields, "signal-values")] if signals is None else
                    [f"{row[1]}: {_fact(row[2])}" for row in signals])
@@ -185,6 +352,10 @@ def format_cycle(event):
         _section("Modes", _mode_rows(fields)),
         _section("Admission and scheduling", _candidate_rows(fields)),
         _section("Selection and scores", _selection_rows(fields)),
+        _section("Host dispatch observations", _dispatch_rows(fields, events)),
+        _section("Budget settlement effects", _budget_rows(events)),
+        _section("Reasoner proposals, predictions and grades", _reasoner_rows(events)),
+        _section("Parameter updates", _parameter_rows(events)),
         _section("Factual signals", signal_rows),
         _section("Appraisal contributions (before dimension clamping)", contribution_rows),
         _section("Motivational state changes", _state_changes(fields))))

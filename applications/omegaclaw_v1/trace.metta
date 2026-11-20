@@ -36,6 +36,10 @@
 (: TraceCycleRef (-> Expression TraceCycleRefType))
 (: TraceDecisionRefType Type)
 (: TraceDecisionRef (-> Expression Expression TraceDecisionRefType))
+(: TraceProposalRefType Type)
+(: TraceProposalRef (-> Expression Expression TraceProposalRefType))
+(: TraceBudgetRefType Type)
+(: TraceBudgetRef (-> Expression Symbol TraceBudgetRefType))
 (: MetaMoTraceEventType Type)
 (: MetaMoTraceEvent (-> Symbol Expression Expression Expression MetaMoTraceEventType))
 !(bind! &metamo-trace-events (new-state ()))
@@ -198,7 +202,8 @@
 ;; Pure formatting reads only the supplied retained event, including its original labels.
 ;; Example: (formatCycleSummary (lastCycleTrace)) returns bounded text without printing.
 (= (formatCycleSummary $event)
-   (py-call (trace_support.format_cycle (quote $event))))
+   (let $history (metaMoTraceEvents)
+      (py-call (trace_support.format_cycle (quote $event) (quote $history)))))
 
 ;; Explicit printing does not rerun a cycle, appraisal, provider or callback.
 ;; Example: (printCycleSummary (lastCycleTrace)) prints one labelled selection summary.
@@ -217,11 +222,28 @@
          ((traceField status (quote $status)) (traceField result (quote $result))
           (TraceField assessment (TraceUnavailable NotAssessed))))))
 
+;; Copy settlement balances inside the host accounting callback, never during printing.
+;; Example: unknown usage retains its reservation instead of reporting zero consumption.
+(= (recordBudgetTrace $ticket $costs $actual $settlement $before $after $result)
+   (let* (
+      ($ids (map-atom $costs $cost (index-atom $cost 1)))
+      ($cycle (case (get-state &selected-operation-decision) (
+         ((OperationDecision $context $_ $_ $ticket) (TraceCycleRef $context))
+         ($_ (TraceUnavailable NoSelectedDecision)))))
+   )
+      (recordMetaMoTrace BudgetSettlement (TraceBudgetRef $ticket (car-atom $settlement)) $cycle
+         ((traceField reserved-costs (quote $costs)) (traceField actual-costs (quote $actual))
+          (traceField settlement (quote $settlement)) (traceField dispatch-result (quote $result))
+          (traceField accounts-before (filter-atom $before $row (tpContains $ids (index-atom $row 1))))
+          (traceField accounts-after (filter-atom $after $row (tpContains $ids (index-atom $row 1))))))))
+
 ;; Copy an already retained grade and its original receipt decision, without comparing again.
 ;; Example: grading an earlier outcome after another cycle still links to its old ticket.
-(= (recordAssessmentTrace $assessment $decision)
+(= (recordAssessmentTrace $assessment $decision $invocation $proposal)
    (let (OperationDecision $context $_ $_ $ticket) $decision
       (recordMetaMoTrace Assessment (index-atom $assessment 1) (TraceCycleRef $context)
          ((traceField decision-ref (TraceDecisionRef $context $ticket))
+          (traceField proposal-ref (TraceProposalRef $invocation $proposal))
+          (traceField proposal-key (repr (quote (TraceProposalRef $invocation $proposal))))
           (traceField comparison (index-atom $assessment 4))
           (traceField comparator (index-atom $assessment 3))))))

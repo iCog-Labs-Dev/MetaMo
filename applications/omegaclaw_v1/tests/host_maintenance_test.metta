@@ -367,6 +367,10 @@
 !(test (boundaryCycle bounded-timeout) 1)
 !(test (fullLoopDispatch maintenance-timeout (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Unobserved ExecutionUncertain none))
+!(test (let $rows (filter-atom (metaMoTraceEvents) $row
+    (== (index-atom $row 2) (TraceBudgetRef (selectedHostTicket) BudgetAccountingPending)))
+    (traceEventField (car-atom $rows) actual-costs)) (TraceValue Unknown))
+!(test (printLastCycleSummary) True)
 !(test (maintenanceFixtureProcessed) 2)
 !(test (boundaryCycle after-timeout) 1)
 !(test (selectedHostCommand) ())

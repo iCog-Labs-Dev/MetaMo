@@ -6,6 +6,7 @@
     (reasonerRuntimeIdentity reasonerRuntimeCall reasonerRuntimeCollect reasonerRuntimeProvider reasonerRuntimeCurrent reasonerRuntimeSelectionCurrent reasonerRuntimeReceipt))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_admission))
 !(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_controls))
+!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_trace))
 (: HostReasonerRuntimeType Type)
 (: HostReasonerRuntime (-> String Symbol Symbol Expression Number HostReasonerRuntimeType))
 (: HostReasonerRuntimeBindingType Type)
@@ -131,10 +132,12 @@
 ;; Example: notification failures still leave the retained decision available.
 (= (retainHostReasonerCycle $row)
     (if (hostReasonerAuditFits $row)
-        (change-state! &host-reasoner-cycles
+        (progn (change-state! &host-reasoner-cycles
             (cons-atom (quote $row) (filter-atom (hostReasonerCycles) $old
                 (not (and (== (index-atom $old 1) (index-atom $row 1))
                     (== (mrcValue (index-atom $old 2) 10) (mrcValue (index-atom $row 2) 10)))))))
+            (if (tpAllTrue ((== (index-atom $row 5) ()) (== (index-atom $row 6) ())))
+                (collapse (catch (recordHostReasonerCycleTrace $row))) True) True)
         (ReasonerRuntimeError AuditLimit))
 )
 

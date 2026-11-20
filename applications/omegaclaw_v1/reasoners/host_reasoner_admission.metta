@@ -127,6 +127,7 @@
                                  (>= (reasonerProposalDataRemaining (quote $batch) 32 (* 2 (mrcValue $limits 2))) 0))
                             (progn
                                 (change-state! &host-reasoner-admissions (cons-atom $batch (hostReasonerAdmissions)))
+                                (collapse (catch (eval (recordHostReasonerAdmissionsTrace (quote $batch)))))
                                 $native) $native)))
                     ($_ $native)
                 ))))
