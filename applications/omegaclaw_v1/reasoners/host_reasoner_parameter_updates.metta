@@ -112,6 +112,12 @@
 ;; Resolve grades by immutable identity; preview/reliability/native feedback are separate.
 ;; Example: (deriveHostReasonerParameterUpdates OUTCOME-REF) queues only with learning enabled.
 (= (deriveHostReasonerParameterUpdates $id)
+    (let $result (deriveHostReasonerParameterUpdatesRetained $id)
+        (progn (flushMetaMoTrace) $result)))
+
+;; Queue changes before emitting diagnostics, outside the queue's host lock.
+;; Example: replay returns its retained batch and does not invoke the learner again.
+(= (deriveHostReasonerParameterUpdatesRetained $id)
     (let $assessments (filter-atom (hostReasonerAssessments) $row (== (index-atom $row 1) $id))
         (case $assessments (
             (($assessment) (let* (

@@ -227,7 +227,7 @@ def binding(command, frame_id, allowed_files, destination=None):
 def build_config(value):
     """Build typed data only. No policy is inferred from model text or defaults."""
     keys(value, ("version", "frame_id", "allowed_files", "global", "frame", "commands"),
-         optional=("destination", "completion_criterion", "idle_maintenance"))
+         optional=("destination", "completion_criterion", "idle_maintenance", "trace_printing"))
     if type(value["version"]) is not int or value["version"] != 1:
         raise ConfigError("unsupported host configuration version")
     # Optional for existing read-only configurations, but never default a
@@ -236,6 +236,7 @@ def build_config(value):
     if "destination" in value:
         destination_metadata(value["destination"])
     completion_policy(value)
+    trace_printing_config(value)
     if "idle_maintenance" in value:
         build_idle_config(value, "validation-session")
     frame_id = identifier(value["frame_id"])
@@ -248,6 +249,22 @@ def build_config(value):
     if len(set(encoded_commands)) != len(encoded_commands):
         raise ConfigError("duplicate command binding")
     return encode(record("HostDispatchConfig", global_scope, frame_scope, bindings))
+
+
+# Example: trace_printing={"enabled": True, "max_chars": 6000} grants no command permissions.
+def trace_printing_config(value):
+    settings = value.get("trace_printing", {})
+    keys(settings, (), optional=("enabled", "max_chars"))
+    enabled = settings.get("enabled", False)
+    limit = settings.get("max_chars", 12000)
+    if type(enabled) is not bool or type(limit) is not int or not 256 <= limit <= 12000:
+        raise ConfigError("trace_printing requires a boolean enabled and integer max_chars in 256..12000")
+    return encode(record("TracePrintConfig", Symbol("True" if enabled else "False"), limit))
+
+
+# Example: startup without a profile explicitly disables automatic trace printing.
+def startup_trace_printing():
+    return trace_printing_config(_startup_config or {})
 
 
 # Example: idle grants name the real operation session and never a placeholder frame.

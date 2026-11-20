@@ -99,6 +99,28 @@ retained cycle even when execution or assessment events arrived afterward:
 !(printLastCycleSummary)
 ```
 
+Automatic printing is disabled by default. Enable it in the host startup JSON:
+
+```json
+"trace_printing": {"enabled": true, "max_chars": 6000}
+```
+
+`max_chars` is an integer from 256 to 12000; the default is 12000. Each emission
+batch, including correlated cycle summaries, stays within this character limit
+and labels truncation. Cycles flush after signal cleanup from the already retained
+snapshot. Dispatch callbacks, explicit assessment and parameter derivation flush
+after their retention work completes, outside host dispatch/parameter locks.
+Later evidence renders the original cycle again with its retained identities;
+empty flushes and duplicate callbacks produce no additional summary.
+
+Programmatic callers can use `(configureTracePrinting (TracePrintConfig True 6000))`
+and `(flushMetaMoTrace)`. Recording queues at most 32 event references when enabled;
+it performs no console I/O. Disabling printing clears the queue but preserves
+`metaMoTraceEvents`, `lastCycleTrace` and `formatCycleSummary`. Initialization clears
+the history and queue while retaining the configured emission setting. Automatic
+output replaces the bridge's unconditional raw context/dispatch dumps, uses only
+admitted summaries and evidence references, and never fetches missing evidence.
+
 The labelled summary shows session, cycle and frame identity, typed factual values
 with quantity/estimate units, signed per-signal appraisal contributions before
 dimension clamping, and named goal/modulator/self-model changes with before,

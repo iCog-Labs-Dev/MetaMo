@@ -40,6 +40,7 @@
 (= (initializeHostStartup)
    (progn
       (py-call (host_dispatch_config.configure_startup))
+      (configureTracePrinting (sread (py-call (host_dispatch_config.startup_trace_printing))))
       (case (initializeHostReasoner) (
          (True
             (progn

@@ -235,6 +235,12 @@
 ;; Assess only the exact pre-dispatch primary against its captured execution receipt.
 ;; Example: rejected/unselected alternatives remain ungraded without independent evidence.
 (= (assessHostReasonerProposalOutcome $envelope $id)
+    (let $result (assessHostReasonerProposalOutcomeRetained $envelope $id)
+        (progn (flushMetaMoTrace) $result)))
+
+;; Finish emission only after retained assessment has released its dispatch lock.
+;; Example: disabled assessment returns its original deferred result without comparison.
+(= (assessHostReasonerProposalOutcomeRetained $envelope $id)
     (case (catch (hostReasonerStageEnabledFor (mrcValue (mrcValue $envelope 2) 2) assessment)) (
         (True (assessEnabledHostReasonerProposalOutcome $envelope $id))
         ($_ (ReasonerAssessmentDeferred AssessmentDisabled))))

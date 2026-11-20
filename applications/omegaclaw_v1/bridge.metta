@@ -126,6 +126,7 @@
       ($_ (maybeSaveMotivationalState))
       ($_ (captureCycleTrace $bundle $traceBefore $traceSelfBefore))
       ($_ (collapse (clearSignals)))
+      ($_ (flushMetaMoTrace))
    )
       $policyOutput))
 
@@ -180,12 +181,6 @@
    (let* (
       ($policyOutput (motivationContextBlock))
       ($bundle (activeFrameBundle))
-      ($_ (println! (MOTIVATION-CONTEXT-BLOCK: $policyOutput)))
-      ($_ (println! (MetaMoDispatchTrace
-             (context (get-state &operation-context))
-             (selected (get-state &selected-operation-decision))
-             (rejections (candidateRejections))
-             (mode (lastModeObservation)))))
       ($selectedCandidate (policyOutputOperation $policyOutput))
       ($operationMapping (operationDirectiveForCandidate $selectedCandidate))
       (($policyMode $directive)

@@ -93,6 +93,19 @@
    (get-state &cycle-count) (get-state &last-meta-mo-policy-output) (metaMoTraceEvents))
    (get-state &bridge-before-print))
 
+;; Emission settings preserve structured history and reject invalid bounds unchanged.
+!(bind! &trace-config-history (new-state (metaMoTraceEvents)))
+!(test (configureTracePrinting (TracePrintConfig True 256)) True)
+!(test (configureTracePrinting (TracePrintConfig True 255)) (TracePrintRejected InvalidConfiguration))
+!(test (get-state &trace-print-config) (TracePrintConfig True 256))
+!(test (recordMetaMoTrace Emission emission-key (TraceLegacyContext 99 ()) ()) True)
+!(test (get-state &trace-print-pending) ((TraceEventRef Emission emission-key)))
+!(test (recordMetaMoTrace Emission emission-key (TraceLegacyContext 99 ()) ()) True)
+!(test (get-state &trace-print-pending) ((TraceEventRef Emission emission-key)))
+!(test (configureTracePrinting (TracePrintConfig False 12000)) True)
+!(test (get-state &trace-print-pending) ())
+!(test (size-atom (metaMoTraceEvents)) (+ (size-atom (get-state &trace-config-history)) 1))
+
 ;; Real ingestion of a second frame produces a nonempty provider relation.
 !(ctx-ingest-user-message "Summarize the second task")
 !(cfv2-load-frame (get-state &cfv2-last-admitted-frame-id))

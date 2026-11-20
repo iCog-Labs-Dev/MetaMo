@@ -14,7 +14,7 @@ REPLY = 'Hi! I\'m ready. You said "hello".\nHow can I help?'
 # Example: install() supplies explicit send policy, with no fixed send command.
 def install(scenario):
     global _scenario, _messages, _drain_irc
-    _scenario = scenario
+    _scenario = 'answer' if scenario == 'trace' else scenario
     message = 'hello, read /secret' if scenario == 'unsupported' else 'hello'
     _messages = iter(('Nahom: ' + message, '', ''))
     import host_config_fixture as files
@@ -24,6 +24,8 @@ def install(scenario):
     config = json.loads(path.read_text())
     config['frame_id'] = 'current-frame'
     config['commands'] = []
+    if scenario == 'trace':
+        config['trace_printing'] = {'enabled': True, 'max_chars': 6000}
     if scenario == 'denied':
         config['frame']['egress'] = []
     path.write_text(json.dumps(config))

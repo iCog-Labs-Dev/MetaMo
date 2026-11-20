@@ -1,6 +1,7 @@
 {
   "version": 1,
   "frame_id": "current-frame",
+  "trace_printing": {"enabled": false, "max_chars": 12000},
   "allowed_files": ["/absolute/path/to/input.txt"],
   "global": {
     "skills": ["read-file", "show-current-frame"],

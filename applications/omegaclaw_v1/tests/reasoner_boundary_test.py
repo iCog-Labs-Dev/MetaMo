@@ -1196,8 +1196,12 @@ class ReasonerBoundaryTests(unittest.TestCase):
         return source
 
     def test_parameter_learning_is_queued_once_and_applied_at_the_next_native_cycle(self):
-        source = self.parameter_setup() + r"""
+        source = self.parameter_setup().replace(
+            '!(bind! &parameter-grade',
+            '!(test (configureTracePrinting (TracePrintConfig True 6000)) True)\n!(bind! &parameter-grade') + r"""
+!(test (get-state &trace-print-pending) ())
 !(bind! &parameter-batch (new-state (deriveHostReasonerParameterUpdates (get-state &routed-id))))
+!(test (get-state &trace-print-pending) ())
 !(test (index-atom (get-state &parameter-batch) 0) HostReasonerParameterBatch)
 !(test (index-atom (get-state &parameter-batch) 1) (get-state &routed-id))
 !(test (index-atom (index-atom (get-state &parameter-batch) 2) 3) "calibrated-fixture-v1")
@@ -1217,6 +1221,7 @@ class ReasonerBoundaryTests(unittest.TestCase):
 !(test (reasonerSourceReliability llm) (get-state &routed-reliability))
 !(test (size-atom (get-state &probe-notifications)) 2)
 !(test (boundaryCycle apply-parameters) 1)
+!(test (get-state &trace-print-pending) ())
 !(test (index-atom (car-atom (hostReasonerParameterBatches)) 5) Applied)
 !(test (index-atom (car-atom (hostReasonerParameterBatches)) 6) (get-state &operation-context))
 !(test (let $rows (filter-atom (metaMoTraceEvents) $row (== (index-atom $row 1) ParameterUpdate))

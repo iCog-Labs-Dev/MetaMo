@@ -40,12 +40,30 @@
 (: TraceProposalRef (-> Expression Expression TraceProposalRefType))
 (: TraceBudgetRefType Type)
 (: TraceBudgetRef (-> Expression Symbol TraceBudgetRefType))
+(: TracePrintConfigType Type)
+(: TracePrintConfig (-> Symbol Number TracePrintConfigType))
+(: TracePrintRejectedType Type)
+(: TracePrintRejected (-> Symbol TracePrintRejectedType))
+(: TraceEventRefType Type)
+(: TraceEventRef (-> Symbol Expression TraceEventRefType))
 (: MetaMoTraceEventType Type)
 (: MetaMoTraceEvent (-> Symbol Expression Expression Expression MetaMoTraceEventType))
 !(bind! &metamo-trace-events (new-state ()))
 !(bind! &trace-native-scores (new-state ()))
 !(bind! &trace-selection (new-state ()))
 !(bind! &trace-scheduling (new-state ()))
+!(bind! &trace-print-config (new-state (TracePrintConfig False 12000)))
+!(bind! &trace-print-pending (new-state ()))
+
+;; Trusted emission controls never disable structured recording or grant a model skill.
+;; Example: (configureTracePrinting (TracePrintConfig True 6000)) enables bounded output.
+(= (configureTracePrinting $config)
+   (case $config (
+      ((TracePrintConfig $enabled $limit)
+       (if (tpAllTrue ((tpContains (True False) $enabled) (fsCount $limit) (fsNumberIn $limit 256 12000)))
+          (progn (change-state! &trace-print-config $config) (change-state! &trace-print-pending ()) True)
+          (TracePrintRejected InvalidConfiguration)))
+      ($_ (TracePrintRejected InvalidConfiguration)))))
 
 ;; Clear per-cycle work without changing selection, counters or the retained history.
 ;; Example: the next bridge cycle cannot inherit a preceding score table.
@@ -60,13 +78,42 @@
 ;; Reset diagnostics only; no motivational, host or reasoner state is touched.
 ;; Example: initialization starts a fresh volatile trace window.
 (= (resetMetaMoTrace)
-   (progn (change-state! &metamo-trace-events ()) (resetCycleSelectionTrace)))
+   (progn (change-state! &metamo-trace-events ()) (change-state! &trace-print-pending ())
+      (resetCycleSelectionTrace)))
 
 ;; One bounded prefix rule avoids overlapping empty/nonempty alternatives.
 ;; Example: (tracePrefix 2 (a b c)) returns (a b).
 (= (tracePrefix $limit $items)
    (if (or (<= $limit 0) (== $items ())) ()
       (cons-atom (car-atom $items) (tracePrefix (- $limit 1) (cdr-atom $items)))))
+
+;; Queue references only; recording under a host lock never performs console I/O.
+;; Example: a budget event and accepted callback can be rendered together after dispatch.
+(= (queueTracePrinting $stage $identity)
+   (case (get-state &trace-print-config) (
+      ((TracePrintConfig True $_)
+       (let $ref (quote (TraceEventRef $stage $identity))
+          (if (tpContains (get-state &trace-print-pending) $ref) True
+             (change-state! &trace-print-pending (tracePrefix 32
+                (cons-atom $ref (get-state &trace-print-pending)))))))
+      ($_ True))))
+
+;; Consume one bounded emission batch using retained observations, newest cycles first.
+;; Example: repeated flushes with no new events print nothing and consume no feedback.
+(= (emitPendingMetaMoTrace)
+   (let* (
+      ((TracePrintConfig $enabled $limit) (get-state &trace-print-config))
+      ($pending (get-state &trace-print-pending))
+      ($history (metaMoTraceEvents))
+      ($_ (change-state! &trace-print-pending ()))
+   )
+      (if (and (== $enabled True) (!= $pending ()))
+         (let $text (py-call (trace_support.render_pending (quote $history) (quote $pending) $limit))
+            (if (== (py-call (trace_support.is_empty $text)) 1) True (progn (println! $text) True))) True)))
+
+;; Emission failure cannot change a cycle, dispatch, assessment or learner result.
+;; Example: safe runtime boundaries call this after releasing their host locks.
+(= (flushMetaMoTrace) (progn (collapse (catch (emitPendingMetaMoTrace))) True))
 
 ;; Observe only scores already calculated by the native decision traversal.
 ;; Example: later bimonad probes cannot overwrite the first decision's numbers.
@@ -137,9 +184,10 @@
          (tpAllTrue ((== (index-atom $event 1) $stage) (== (index-atom $event 2) $identity))))
          (if (!= $prior ()) True
             (let $bounded (tracePrefix 20 $fields)
-               (change-state! &metamo-trace-events
+               (progn (change-state! &metamo-trace-events
                   (cons-atom (quote (MetaMoTraceEvent $stage $identity $cycle $bounded))
-                     (tracePrefix 31 (metaMoTraceEvents)))))))))
+                     (tracePrefix 31 (metaMoTraceEvents))))
+                  (queueTracePrinting $stage $identity) True))))))
 
 ;; Find the latest completed selection without interpreting any retained payload.
 ;; Example: (lastCycleTrace) is unchanged when an execution or grade arrives later.
@@ -208,7 +256,8 @@
 ;; Explicit printing does not rerun a cycle, appraisal, provider or callback.
 ;; Example: (printCycleSummary (lastCycleTrace)) prints one labelled selection summary.
 (= (printCycleSummary $event)
-   (progn (println! (formatCycleSummary $event)) True))
+   (let (TracePrintConfig $_ $limit) (get-state &trace-print-config)
+      (progn (println! (py-call (trace_support.limit_output (formatCycleSummary $event) $limit))) True)))
 
 ;; Print the latest retained selection even if later execution or assessment events exist.
 ;; Example: (printLastCycleSummary) reports unavailable when no cycle has been captured.

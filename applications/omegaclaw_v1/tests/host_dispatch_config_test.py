@@ -308,7 +308,7 @@ class HostDispatchConfigTests(unittest.TestCase):
         self.assertEqual(dict(row[3][1:])["candidate"], "search-knowledge")
 
     def test_no_implicit_fields_or_unknown_versions(self):
-        for field in self.value:
+        for field in ('version', 'frame_id', 'allowed_files', 'global', 'frame', 'commands'):
             value = copy.deepcopy(self.value)
             del value[field]
             with self.subTest(field=field), self.assertRaises(config.ConfigError):
@@ -317,6 +317,29 @@ class HostDispatchConfigTests(unittest.TestCase):
             value = dict(self.value, version=version)
             with self.subTest(version=version), self.assertRaises(config.ConfigError):
                 config.build_config(value)
+
+    def test_trace_printing_is_optional_and_does_not_change_authority(self):
+        native = dict(self.value)
+        native.pop('trace_printing', None)
+        enabled = dict(native, trace_printing={'enabled': True, 'max_chars': 6000})
+        self.assertEqual(config.trace_printing_config(native), '(TracePrintConfig False 12000)')
+        self.assertEqual(config.trace_printing_config(enabled), '(TracePrintConfig True 6000)')
+        self.assertEqual(config.build_config(native), config.build_config(enabled))
+        path = self.root / 'trace.json'
+        path.write_text(json.dumps(enabled))
+        config.configure_startup(str(path))
+        self.assertEqual(config.startup_trace_printing(), '(TracePrintConfig True 6000)')
+        with patch.dict('os.environ', {}, clear=True):
+            config.configure_startup()
+        self.assertEqual(config.startup_trace_printing(), '(TracePrintConfig False 12000)')
+
+    def test_trace_printing_rejects_unbounded_or_ambiguous_settings(self):
+        invalid = [None, [], True, {'unknown': True}]
+        invalid += [{'enabled': value} for value in (1, 'true', None)]
+        invalid += [{'max_chars': value} for value in (True, 255, 12001, 6000.0, '6000')]
+        for settings in invalid:
+            with self.subTest(settings=settings), self.assertRaises(config.ConfigError):
+                config.build_config(dict(self.value, trace_printing=settings))
 
     def test_command_cannot_supply_its_own_requirements(self):
         for key in ("candidate", "target", "permissions", "egress", "costs"):

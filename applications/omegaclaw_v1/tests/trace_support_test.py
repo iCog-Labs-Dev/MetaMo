@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 APP = Path(__file__).resolve().parents[1]
@@ -224,6 +225,48 @@ class TraceSupportTests(unittest.TestCase):
                       "ContextFrames frame mode (Fast/Slow): Fast", "scheduling class=Interactive",
                       "Operation directive: execute", "Decision-time native score respond:"):
             self.assertIn(label, output)
+
+    def test_pending_references_emit_once_per_cycle_with_a_whole_batch_limit(self):
+        cycle = self.event()
+        execution = self.observation('Execution', self.fields['decision-ref'][1], {'status': 'Success'})
+        pending = [['TraceEventRef', row[1], row[2]] for row in (execution, cycle)]
+        history = [execution, cycle]
+        original = copy.deepcopy(history)
+        text = trace.render_pending(history, pending)
+        self.assertEqual(text.count('MetaMo cycle summary (selection)'), 1)
+        self.assertIn('Accepted host callback status: Success', text)
+        self.assertEqual(trace.render_pending(history, []), '')
+        self.assertEqual(trace.render_pending(history, [['TraceEventRef', 'Execution', 'wrong']]), '')
+        limited = trace.render_pending(history, pending, 256)
+        self.assertEqual(len(limited), 256)
+        self.assertTrue(limited.endswith('[trace output truncated at 256 characters]'))
+        self.assertEqual(history, original)
+
+    def test_startup_controls_normal_cycle_and_callback_printing(self):
+        for scenario in ('answer', 'trace'):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                entry = Path(directory) / 'trace_runtime.metta'
+                fixture = APP / 'tests/fixtures/conversational_response_loop.metta'
+                entry.write_text(f'(= (conversationScenario) "{scenario}")\n'
+                                 f'!(import! &self {fixture})\n'
+                                 '!(test (!= (metaMoTraceEvents) ()) True)\n'
+                                 '!(test (get-state &trace-print-pending) ())\n'
+                                 '!(flushMetaMoTrace)\n')
+                result = subprocess.run([sys.executable, str(REPO / 'scripts/run-omegaclaw.py'),
+                                         str(entry)], capture_output=True, text=True, timeout=90)
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, output)
+                self.assertNotIn('❌', output)
+                self.assertNotIn('ERROR:', output)
+                self.assertEqual(output.count('✅'), 6, output)
+                self.assertNotIn('MOTIVATION-CONTEXT-BLOCK', output)
+                self.assertNotIn('MetaMoDispatchTrace', output)
+                if scenario == 'trace':
+                    self.assertIn('MetaMo cycle summary (selection)', output)
+                    self.assertIn('Accepted host callback status: Success', output)
+                    self.assertIn('Budget settlement effects', output)
+                else:
+                    self.assertNotIn('MetaMo cycle summary (selection)', output)
 
 
 if __name__ == "__main__":

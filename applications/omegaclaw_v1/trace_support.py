@@ -336,6 +336,31 @@ def _parameter_rows(events):
     return rows
 
 
+# Example: cap a whole flush, including multiple correlated cycle summaries.
+def limit_output(text, max_chars=12000):
+    max_chars = int(max_chars)
+    marker = f"\n[trace output truncated at {max_chars} characters]"
+    return text if len(text) <= max_chars else text[:max_chars - len(marker)] + marker
+
+
+# Example: return an integer flag across the MeTTa/Python boundary without truth coercion.
+def is_empty(text):
+    return int(not text)
+
+
+# Example: records queued inside locks are rendered only at a later safe boundary.
+def render_pending(history, pending, max_chars=12000):
+    keys = [(row[1], row[2]) for row in pending]
+    texts = []
+    for cycle in (row for row in history if row[1] == "CycleSelection"):
+        related = _related_events(cycle, history)
+        if (cycle[1], cycle[2]) in keys or any((row[1], row[2]) in keys for row in related):
+            texts.append(format_cycle(cycle, history))
+            if sum(map(len, texts)) >= max_chars:
+                break
+    return limit_output("\n\n".join(texts), max_chars)
+
+
 # Example: later evidence enriches the view without editing its original selection record.
 def format_cycle(event, history=()):
     heading = "=== MetaMo cycle summary (selection) ==="

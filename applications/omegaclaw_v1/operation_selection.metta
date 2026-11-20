@@ -397,4 +397,4 @@
               (ingestOperationOutcome
                  (OperationOutcome $decision (attempted-command $selectedCommand)
                     (operationOutcomeStatus $command $result) $result)) True)))
-      (progn (eval (completeHostConversation)) $result)))
+      (progn (eval (completeHostConversation)) (eval (flushMetaMoTrace)) $result)))
