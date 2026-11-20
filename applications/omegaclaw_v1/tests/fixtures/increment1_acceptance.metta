@@ -46,6 +46,47 @@
 !(import! &self irc_routing_fixture.py)
 !(import! &self irc_submission_fixture.py)
 !(import! &self increment1_acceptance.py)
+
+;; Identity advice counts actual selection traversal without changing scores or choice.
+;; Example: a print-only interval must leave acceptance-selection-calls unchanged.
+!(bind! &acceptance-selection-calls (new-state 0))
+(= (acceptanceSelectionProbe $stage $payload)
+   (progn
+      (change-state! &acceptance-selection-calls (+ (get-state &acceptance-selection-calls) 1))
+      (if (== $stage Score) (index-atom $payload 2) (index-atom $payload 3))))
+!(change-state! &selection-advice-hook acceptanceSelectionProbe)
+
+;; Snapshot policy, pending feedback, budgets, retained evidence and actual effect counts.
+;; Example: acceptanceCheckPrinting compares this before and after both emission APIs.
+(= (acceptancePrintingState)
+   ((motivosToMetamoState) (getSelfModel) (getSignals) (lastAppraisalContributions)
+    (lastModeObservation) (get-state &cycle-count) (get-state &consecutive-safety-wins)
+    (get-state &last-meta-mo-policy-output) (get-state &selected-operation-decision)
+    (get-state &operation-context) (get-state &operation-admitted-actions)
+    (get-state &budget-account-state) (get-state &operation-feedback)
+    (get-state &last-operation-outcome) (get-state &applied-operation-decision)
+    (get-state &operation-failure-streak) (get-state &host-recovery)
+    (get-state &answered-operation-key) (metaMoTraceEvents)
+    (get-state &acceptance-selection-calls)
+    (py-call (increment1_acceptance.calls)) (py-call (increment1_acceptance.effects))
+    (py-call (increment1_acceptance.reads))))
+
+;; Repeat explicit/queued printing without applying outcomes, reselecting or dispatching.
+;; Example: an uncertain callback remains pending until the ordinary apply path runs.
+(= (acceptanceCheckPrinting)
+   (let $before (acceptancePrintingState)
+      (progn
+         (py-call (increment1_acceptance.begin_printing_probe))
+         (formatCycleSummary (lastCycleTrace))
+         (printLastCycleSummary)
+         (configureTracePrinting (TracePrintConfig True 12000))
+         (queueTracePrinting CycleSelection (index-atom (lastCycleTrace) 2))
+         (flushMetaMoTrace)
+         (flushMetaMoTrace)
+         (configureTracePrinting (TracePrintConfig False 12000))
+         (let $untouched (py-call (increment1_acceptance.finish_printing_probe))
+            (tpAllTrue ((== $untouched 1) (== (acceptancePrintingState) $before)))))))
+
 !(change-state! &send-test-channel (acceptanceChannel))
 !(test (py-call (increment1_acceptance.start (acceptanceChannel))) 1)
 !(bind! &read-bundle (new-state (prepareTaskStateForMetaMo)))
@@ -56,6 +97,8 @@
 !(test (py-call (increment1_acceptance.reads)) 1)
 !(test (sread (py-call (increment1_acceptance.queue))) (ResponsePreparationQueued))
 !(test (policyOutputOperation (motivationContextBlock)) respond)
+!(test (> (get-state &acceptance-selection-calls) 0) True)
+!(test (acceptanceCheckPrinting) True)
 !(test (selectedHostCommand) (quote (send "File says: observed local file content")))
 !(bind! &reply-ticket (new-state (selectedHostTicket)))
 !(bind! &reply-command (new-state (selectedHostCommand)))
@@ -73,6 +116,7 @@
 !(test (py-call (increment1_acceptance.effects)) 1)
 ;; F1.A8: execute the idle decision, and inspect both real dispatch and channel effects.
 !(test (policyOutputOperation (motivationContextBlock)) none)
+!(test (acceptanceCheckPrinting) True)
 !(test (selectedHostCommand) ())
 !(test (coreLoopDispatchCommand (coreLoopDispatchBegin) (selectedHostCommand))
    (DispatchResult Blocked MissingDecision none))
@@ -106,6 +150,7 @@
 !(py-call (prepared_response_fixture.new_input))
 !(sread (py-call (increment1_acceptance.queue)))
 !(test (!= (policyOutputOperation (motivationContextBlock)) respond) True)
+!(test (acceptanceCheckPrinting) True)
 !(test (hostOperationGate (activeFrameBundle) respond (captureCandidateOperations (activeFrameBundle)))
    (GateDecision Rejected EgressDenied))
 !(test (!= (selectedHostCommand) (quote (send "File says: observed local file content"))) True)
@@ -132,6 +177,7 @@
 !(py-call (increment1_acceptance.clear_marker))
 !(py-call (increment1_acceptance.fail_send))
 !(test (coreLoopDispatchCommand (get-state &uncertain-ticket) (get-state &uncertain-command)) (acceptanceUncertain))
+!(test (acceptanceCheckPrinting) True)
 !(py-call (increment1_acceptance.restore_send))
 !(applyOperationOutcome configured-frame)
 !(test (get-state &operation-feedback) (OperationFeedback Unobserved 0))

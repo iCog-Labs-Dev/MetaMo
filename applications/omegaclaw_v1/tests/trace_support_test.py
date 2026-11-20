@@ -225,6 +225,37 @@ class TraceSupportTests(unittest.TestCase):
                       "ContextFrames frame mode (Fast/Slow): Fast", "scheduling class=Interactive",
                       "Operation directive: execute", "Decision-time native score respond:"):
             self.assertIn(label, output)
+        self.assertIn('Constitutional posture: Rumination -> Sleep (transitioned)', output)
+        self.assertIn('Selected candidate: none', output)
+
+    def test_real_acceptance_prints_selection_denial_no_action_and_uncertain_callback(self):
+        result = subprocess.run([sys.executable, str(REPO / 'scripts/run-omegaclaw.py'),
+            str(APP / 'tests/increment1_local_acceptance_test.metta')],
+            capture_output=True, text=True, timeout=60)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertNotIn('❌', output)
+        self.assertNotIn('ERROR:', output)
+        # Explicit printing and one queued flush per scenario; the second flush is empty.
+        summaries = output.split('=== MetaMo cycle summary (selection) ===')[1:]
+        self.assertEqual(len(summaries), 8, output)
+        for selection in summaries[:2]:
+            self.assertIn('Selected candidate: respond', selection)
+            self.assertIn('Selected concrete operation: (send ', selection)
+            self.assertIn('pending observation', selection)
+        for idle in summaries[2:4]:
+            self.assertIn('Selected candidate: none', idle)
+            self.assertIn('Admitted candidates: none', idle)
+            self.assertIn('Selected concrete operation: ()', idle)
+            self.assertIn('Retained dispatch ticket: (DispatchUnavailable MissingDecision)', idle)
+        for denied in summaries[4:6]:
+            self.assertIn('Rejected respond: EgressDenied', denied)
+            self.assertIn('Selected candidate: none', denied)
+        for uncertain in summaries[6:]:
+            self.assertIn('Accepted host callback status: Unobserved', uncertain)
+            self.assertIn('Result unavailable: execution is uncertain', uncertain)
+            self.assertIn('Usage: pending reconciliation; reservation remains held', uncertain)
+            self.assertNotIn('Observed actual costs: 0', uncertain)
 
     def test_pending_references_emit_once_per_cycle_with_a_whole_batch_limit(self):
         cycle = self.event()

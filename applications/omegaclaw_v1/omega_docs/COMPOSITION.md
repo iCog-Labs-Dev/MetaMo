@@ -263,12 +263,25 @@ are unchanged. No deduplication or blanket result collapsing was added.
 
 ## Checking imports and initialization
 
+`tests/trace_support_test.py` checks readable retained output and runs the bridge,
+normal polling loop, and local acceptance path. Coverage includes real selection,
+egress denial, no action, Rumination/Sleep transitions and uncertain execution with
+held budget reservations. The shared local/IRC acceptance fixture compares state,
+pending feedback, tickets, budgets and evidence before/after explicit printing and
+queued emission. A neutral selection probe counts traversals; temporary spies
+watch provider and send-handler entry points during printing. Existing provider,
+send and read counts must also remain unchanged. Providers and channel transports
+are doubles; admission, selection, dispatch, accounting and outcome application
+use the real runtime. The optional reasoner boundary test separately preserves
+collection counts, adapter notifications, receipts, assessments and reliability.
+
 From the MetaMo repository root:
 
 ```bash
 python3 scripts/run-tests.py --root applications/omegaclaw_v1 --import-report-dir /tmp/omegaclaw-imports
 python3 scripts/import-resolution-test.py
 python3 applications/omegaclaw_v1/tests/reasoner_boundary_test.py
+python3 applications/omegaclaw_v1/tests/trace_support_test.py
 python3 scripts/run-omegaclaw.py applications/omegaclaw_v1/run.metta --audit --report /tmp/omegaclaw-run-imports.json
 ```
 

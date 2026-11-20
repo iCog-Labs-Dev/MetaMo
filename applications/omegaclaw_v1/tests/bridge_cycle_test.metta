@@ -152,6 +152,7 @@
 !(test (policyOutputOperation (car-atom (get-state &bridge-idle-results))) none)
 !(test (policyOutputMode (car-atom (get-state &bridge-idle-results))) Sleep)
 !(test (idleAutonomyActive) True)
+!(test (printLastCycleSummary) True)
 !(test (get-state &cycle-count) 4)
 !(test (get-state &failure-count) 1)
 !(test (get-state &success-count) 0)

@@ -1,9 +1,36 @@
 """Acceptance-only provider/socket doubles; real reads, preparation and dispatch."""
 import json
+from contextlib import ExitStack
 from pathlib import Path
+import sys
+from unittest.mock import patch
 
 _channel = None
 _calls = 0
+_printing_stack = None
+_printing_spies = []
+
+
+# Example: watch actual provider/channel entry points only during a print-only interval.
+def begin_printing_probe():
+    global _printing_stack, _printing_spies
+    import lib_llm_ext
+    channel = sys.modules['irc' if _channel == 'irc' else 'local_channel']
+    targets = [(lib_llm_ext, name) for name in
+               ('callProvider', 'executionConfirmationScore', 'extractSemantics')]
+    targets.append((channel, 'send_message'))
+    _printing_stack = ExitStack()
+    _printing_spies = [_printing_stack.enter_context(patch.object(module, name, wraps=getattr(module, name)))
+                       for module, name in targets]
+    return 1
+
+
+# Example: an attempted call fails the assertion even if printing catches its exception.
+def finish_printing_probe():
+    try:
+        return int(all(spy.call_count == 0 for spy in _printing_spies))
+    finally:
+        _printing_stack.close()
 
 
 def start(channel):
