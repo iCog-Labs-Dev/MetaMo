@@ -8,6 +8,14 @@
 
 !(test (py-call (task_requirements.run_scenario "uncertain")) 1)
 
+!(test (py-call (task_requirements.run_scenario "clarification")) 1)
+
+!(test (py-call (task_requirements.run_scenario "clarification_external")) 1)
+
+!(test (py-call (task_requirements.run_scenario "clarification_denied")) 1)
+
+!(test (py-call (task_requirements.run_scenario "clarification_uncertain")) 1)
+
 !(test (py-call (task_requirements.run_scenario "invalid")) 1)
 
 !(test (py-call (task_requirements.run_scenario "external")) 1)

@@ -46,5 +46,5 @@
 
 !(test (initOperationSession) True)
 
-!(test (get-state &host-task-requirements) ())
+!(test ((get-state &host-task-requirements) (get-state &host-clarification-question)) (() ()))
 !(py-call (host_config_fixture.cleanup))

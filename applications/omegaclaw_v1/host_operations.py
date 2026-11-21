@@ -297,6 +297,8 @@ def _queue_automatic_response():
     result = _refresh_requirements(current, request)
     if result is None:
         return '(ResponseNoAction StaleInput)'
+    if result['reason'] == 'Uncertain':
+        return _prepare_requirement_clarification(current, request, destination)
     if result['status'] != 'Conversational':
         return '(ResponseNoAction ' + result['reason'] + ')'
     attempt = _answer_key(current['Owner'], request, [], destination)
@@ -305,6 +307,37 @@ def _queue_automatic_response():
     _automatic_attempt = attempt
     return queue_response_preparation(current['Provider'], request, [], destination,
                                       requirements='ConversationNoTools', expected_owner=current['Owner'])
+
+
+# Example: uncertain intent produces one bounded question through normal send admission.
+def _prepare_requirement_clarification(current, request, destination):
+    import janus
+    from host_dispatch_config import binding, encode, record
+    global _automatic_attempt
+    attempt = _answer_key(current['Owner'], request, [], destination)
+    if attempt == _automatic_attempt:
+        return
+    _automatic_attempt = attempt
+    proof = janus.query_once('mm_response_clarification_source(Owner, Source)',
+                            {'Owner': current['Owner']})
+    if not proof.get('truth', False):
+        return
+    captured = janus.query_once(
+        'mm_response_capture(Owner, Contract, Context, ContextSource, Snapshot, Epoch, Answered)',
+        {'Owner': current['Owner'], 'Contract': proof['Source']})
+    if not captured.get('truth', False):
+        return
+    prepared = encode(record('ResponsePrepared',
+        'Could you clarify what you want me to do? Please describe the task or give an example.'))
+    template = encode(binding({'skill': 'send', 'candidate': 'ask-clarification',
+                               'arguments': ['placeholder']}, 'placeholder-frame', [], destination))
+    return janus.query_once(
+        'mm_response_publish(Owner, Contract, ContextSource, Snapshot, Epoch, '
+        'PreparedSource, Template, Readiness, AnswerKey)',
+        {'Owner': current['Owner'], 'Contract': proof['Source'], 'Epoch': captured['Epoch'],
+         'Snapshot': captured['Snapshot'], 'ContextSource': captured['ContextSource'],
+         'PreparedSource': prepared, 'Template': template, 'Readiness': 'RequirementClarification',
+         'AnswerKey': attempt})
 
 
 def send_observation_channel(destination):

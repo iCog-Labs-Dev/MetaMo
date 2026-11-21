@@ -88,6 +88,18 @@ Oldest events are evicted. This window is not durable audit storage.
 The Python support module checks sizes, hashes text and formats retained data. Trace capture does
 not start optional reasoners, call providers, rerun selection or consume feedback.
 
+### Clarifying uncertain requests
+
+When the host requirements assessment is `Uncertain` with no established tool
+work, the host prepares one fixed clarification through `ask-clarification` and
+the normal send admission/dispatch path. This question does not mark the task
+answer-ready or complete. Idle cycles neither ask again nor call a provider again.
+After a successful send, the next ordinary message from the same authorized owner
+is routed as a follow-up to that task and assessed afresh. The retained question
+input/context and actual dispatch receipt must match; denied, stale or uncertain
+sends cannot open this follow-up path. Explicit replacement/cancellation and
+existing tool requirements retain their normal behavior.
+
 ### Reading a cycle summary
 
 `formatCycleSummary EVENT` returns text from a retained `CycleSelection` event

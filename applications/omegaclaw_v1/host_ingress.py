@@ -97,9 +97,11 @@ def ingest(message, transport=None):
     result = janus.query_once('''with_mutex(omegaclaw_dispatch, (
         sread(MessageSource, _Message), sread(KindSource, _Kind),
         sread(TransportSource, _Transport),
+        (_Kind == 'NewTask', mm_response_clarification_pending
+         -> _RoutedKind='FollowUp' ; _RoutedKind=_Kind),
         eval(['get-state','&operation-context'], ['OperationContext',_Session,_,_]),
         eval(['get-state','&host-transport-input'], _PreviousTransport),
-        (memberchk(_Kind, ['NewTask','Replace']), mm_dispatch_busy
+        (memberchk(_RoutedKind, ['NewTask','Replace']), mm_dispatch_busy
          -> _Decision=['HostInput','Held','OutstandingInvocation']
          ; _Transport=['TransportInput',"irc",_Sender,_],
            commitmentSnapshot(['CommitmentSnapshot',_,_OwnerFrame,_,'Open',_]),
@@ -109,13 +111,13 @@ def ingest(message, transport=None):
            string_lower(_PreviousSender, _NormalizedPreviousSender),
            _NormalizedSender \\== _NormalizedPreviousSender
          -> _Decision=['HostInput','Held','SenderMismatch']
-         ; eval([hostIngressDecision, [quote,_Kind]], _Decision)),
+         ; eval([hostIngressDecision, [quote,_RoutedKind]], _Decision)),
         eval([hostIngressApply, [quote,_Decision], [quote,_Message]], _Result),
         (_Result = ['HostInput',_Status|_], \+ memberchk(_Status, ['Held','CorrectionRecorded'])
-         -> (_Kind == 'NewTask'
+         -> (_RoutedKind == 'NewTask'
              -> eval(['get-state','&cfv2-last-admitted-frame-id'], _Frame)
              ; eval(['get-state','&cfv2-current-frame-id'], _Frame)),
-            _Input=['HostResponseInput',_Frame,_Kind,_Message],
+            _Input=['HostResponseInput',_Frame,_RoutedKind,_Message],
             _TransportInput=['HostTransportInput',_Session,_Frame,_Transport,_Message],
             eval(['get-state','&host-response-input'], _Previous),
             (_Previous == _Input, _PreviousTransport == _TransportInput -> true

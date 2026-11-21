@@ -18,6 +18,10 @@
 !(bind! &host-transport-input (new-state ()))
 ;; Host assessment is advisory eligibility, never send readiness or execution authority.
 !(bind! &host-task-requirements (new-state ()))
+;; Correlate a clarification answer with the exact input and question's dispatch context.
+(: RequirementClarificationOwnerType Type)
+(: RequirementClarificationOwner (-> Expression Expression RequirementClarificationOwnerType))
+!(bind! &host-clarification-question (new-state ()))
 ;; The selected key belongs to the retained decision. Only validated, consumed
 ;; respond success publishes the last accepted answer; it is not task completion.
 !(bind! &selected-answer-key (new-state ()))
@@ -38,6 +42,14 @@
    (case (get-state &prepared-host-operation) (
       ((PreparedHostOperation $_ $_ $prepared $_ $_ $_ $_ $_)
        (if (== $command $prepared) (change-state! &prepared-host-operation ()) False))
+      ($_ False))))
+
+;; A prepared uncertainty question selects the existing clarification candidate only.
+;; Example: responseCandidateAvailable cannot relabel this question as a final answer.
+(= (preparedRequirementClarification)
+   (case (get-state &prepared-host-operation) (
+      ((PreparedHostOperation $_ $_ $_ $_ $_ RequirementClarification $_ $_)
+       (!= (preparedHostBinding) ()))
       ($_ False))))
 
 ;; Host-supplied required reads are checked before preparation. Readiness is
@@ -97,6 +109,7 @@
           (change-state! &host-response-input ())
           (change-state! &host-transport-input ())
           (change-state! &host-task-requirements ())
+          (change-state! &host-clarification-question ())
           (change-state! &selected-answer-key ())
           (change-state! &answered-operation-key ())
           (change-state! &applied-operation-decision ())

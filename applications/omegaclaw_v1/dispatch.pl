@@ -233,7 +233,27 @@ mm_response_conversation(Owner, Requirements) :-
     memberchk(Reason,['BoundedGreeting','ValidatedProposal']),
     string(Request), string_length(Request,Length), Length > 0, Length =< 4096.
 
-% Example: an exact retained contract is rechecked both before and after inference.
+% Example: uncertainty permits a question, never a task answer or external work.
+mm_response_clarification(Owner, Requirements) :-
+    Owner=[_,Frame,Commitment,_,Frame,_,_],
+    mm_dispatch_task_owner(Commitment), mm_dispatch_owner(Commitment),
+    \+ mm_dispatch_busy,
+    eval(['get-state','&host-continuation'], []),
+    eval(['get-state','&host-task-requirements'], Requirements),
+    Requirements=['HostTaskRequirements',Owner,[],['RequiredWork',[]],
+                  ['RequirementAssessment','NoAction','Uncertain'],_].
+
+% Example: the next ordinary input answers only a successfully sent, current-owner question.
+mm_response_clarification_pending :-
+    mm_response_context(_,Owner), mm_response_clarification(Owner,_),
+    eval(['get-state','&host-clarification-question'],
+         ['RequirementClarificationOwner',QuestionOwner,Context]), QuestionOwner == Owner,
+    eval(['get-state','&last-operation-outcome'],
+         ['OperationOutcome',['OperationDecision',Context,
+            'ask-clarification',Command,Ticket],['attempted-command',Command],'Success',Result]),
+    oc_dispatch_result(Ticket,Command,Recorded), Recorded == Result.
+
+% Example: an exact retained contract is rechecked before capture and publication.
 mm_response_contract('', _) :- !.
 mm_response_contract(Source, Owner) :-
     sread(Source, Expected), mm_response_proof(Expected, Owner).
@@ -242,6 +262,9 @@ mm_response_contract(Source, Owner) :-
 mm_response_proof(Expected, Owner) :-
     Expected=['ContinuationEvidence'|_], !,
     mm_response_continuation(Owner, Current, _, _, _), Current == Expected.
+mm_response_proof(Expected, Owner) :-
+    Expected=['HostTaskRequirements',_,_,_,['RequirementAssessment','NoAction','Uncertain'],_], !,
+    mm_response_clarification(Owner, Current), Current == Expected.
 mm_response_proof(Expected, Owner) :-
     mm_response_conversation(Owner, Current), Current == Expected.
 
@@ -300,6 +323,12 @@ mm_response_conversation_source(ExpectedOwner, RequestSource, Requirements, Sour
         last(Requirements,['AssessedRequest',Assessed]), Assessed == Request,
         swrite(Requirements,Source))).
 
+% Example: a question uses the retained uncertain assessment as its publication contract.
+mm_response_clarification_source(ExpectedOwner, Source) :-
+    with_mutex(omegaclaw_dispatch, (
+        sread(ExpectedOwner, Expected), mm_response_context(_,Owner), Owner == Expected,
+        mm_response_clarification(Owner,Requirements), swrite(Requirements,Source))).
+
 % Example: capture precedes provider calls and retains the full dispatch snapshot.
 mm_response_capture(ExpectedOwner, Contract, Context, ContextSource, Snapshot, Epoch, Answered) :-
     with_mutex(omegaclaw_dispatch, (
@@ -317,6 +346,8 @@ mm_response_readiness('ConversationNoTools', Contract, Owner, Task,
     Contract \== '', mm_response_contract(Contract,Owner).
 mm_response_readiness('ReadEvidence', Contract, Owner, Task, ['ReadEvidenceReady',Task]) :-
     mm_response_contract(Contract,Owner).
+mm_response_readiness('RequirementClarification', Contract, Owner, _, 'RequirementClarification') :-
+    Contract \== '', mm_response_contract(Contract,Owner).
 mm_response_readiness('', '', _, _, 'NoReadReadiness').
 
 % Example: validated response text is wrapped by the existing fixed send catalog.
@@ -345,7 +376,12 @@ mm_response_publish(ExpectedOwner, Contract, ContextSource, Snapshot, Epoch,
         sread(ContextSource,ExpectedContext), Context == ExpectedContext,
         sread(PreparedSource,Prepared),
         mm_response_value(Prepared,Template,Readiness,Contract,Context,Owner,Key,Raw,Value),
-        oc_dispatch_mutate(eval(['change-state!','&prepared-host-operation',[quote,Value]],_)))).
+        oc_dispatch_mutate((
+            eval(['change-state!','&prepared-host-operation',[quote,Value]],_),
+            (Readiness == 'RequirementClarification'
+             -> eval(['change-state!','&host-clarification-question',
+                      [quote,['RequirementClarificationOwner',Owner,Context]]],_)
+             ; true))))).
 
 % Example: Core updates next-wake-at after capture and before command generation.
 % This scheduling timestamp grants no authority. Preserve every other field,

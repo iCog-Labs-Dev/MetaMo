@@ -82,10 +82,12 @@
    (if (hasErrors) (== $name self-improve) (autonomyPhaseAllows $name)))
 
 (= (responseCandidateAvailable $bundle $name)
+   (if (== (eval (preparedRequirementClarification)) True)
+       (== $name ask-clarification)
    (if (or (directUserResponseNeededForBundle $bundle)
            (resultQuestionNeedsResponseForBundle $bundle))
        (== $name respond)
-       (taskResultCandidateAvailable $bundle $name)))
+       (taskResultCandidateAvailable $bundle $name))))
 
 (= (taskResultCandidateAvailable $bundle $name)
    (if (taskResultReadyForBundle $bundle)

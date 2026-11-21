@@ -34,6 +34,7 @@ _COMPLETION_CASES = {'completion': 'conversation', 'acknowledgement': 'conversat
     'completion_denied': 'denied', 'completion_mixed': 'mixed',
     'completion_stale': 'before_dispatch'}
 _SCENARIOS = set(_COMPLETION_CASES) | set(_REQUESTS) | {
+    'clarification', 'clarification_external', 'clarification_denied', 'clarification_uncertain',
     'uncertain', 'invalid', 'external', 'failure', 'followup', 'replacement', 'session',
     'policy', 'route', 'prepared_followup', 'prepared_replacement', 'prepared_session',
     'prepared_policy', 'prepared_route', 'prepared_requirements', 'prepared_no_action',
@@ -87,7 +88,7 @@ def install(scenario):
     scenario = _COMPLETION_CASES.get(scenario, scenario)
     _scenario, _calls, _preparations, _changed = scenario, 0, 0, False
     _changed_request_calls = 0
-    conversation.install('denied' if scenario == 'denied' else 'unsupported')
+    conversation.install('denied' if scenario in ('denied', 'clarification_denied') else 'unsupported')
     if _completion_scenario:
         import os
         from pathlib import Path
@@ -98,9 +99,13 @@ def install(scenario):
         path.write_text(json.dumps(config))
     _request = _REQUESTS.get(scenario, 'Explain recursion')
     conversation._messages = iter(('Nahom: ' + _request, '', ''))
+    if scenario.startswith('clarification'):
+        _request = 'flex your skills'
+        answer = 'read /secret' if scenario == 'clarification_external' else 'Explain recursion'
+        conversation._messages = iter(('Nahom: ' + _request, '', 'Nahom: ' + answer, '', ''))
     if _completion_scenario == 'completion_second':
         conversation._messages = iter(('Nahom: ' + _request, '', 'Nahom: Explain recursion again', '', ''))
-    if scenario == 'uncertain_delivery':
+    if scenario in ('uncertain_delivery', 'clarification_uncertain'):
         import irc_routing_fixture
         irc_routing_fixture._sockets[-1].sendall.side_effect = OSError('uncertain write')
     lib_llm_ext.callProvider = provider
@@ -141,6 +146,16 @@ def provider(name, prompt, max_tokens, *args):
     if max_tokens != 512:
         raise AssertionError('Host commands must not require model reproduction')
     data = json.loads(prompt.split(':-:-:-:', 1)[1])
+    if _scenario.startswith('clarification'):
+        _calls += 1
+        assert _calls <= 2, 'idle cycles retried clarification classification'
+        if _calls == 1:
+            assert data == {'request': 'flex your skills', 'existing_requirements': []}
+            return '{"kind":"Uncertain","needs":[]}'
+        _request = 'flex your skills\n' + ('read /secret' if _scenario == 'clarification_external' else 'Explain recursion')
+        assert data == {'request': _request, 'existing_requirements': []}
+        return ('{"kind":"External","needs":["Files"]}' if _scenario == 'clarification_external'
+                else '{"kind":"Conversation","needs":[]}')
     if data['request'] != _request and 'read /secret' in data['request']:
         _changed_request_calls += 1
         assert _changed_request_calls == 1, 'idle cycles retried changed-request classification'
@@ -197,13 +212,15 @@ def prepare_answer(prompt):
 def verified():
     import janus
     import irc_routing_fixture
+    if _scenario.startswith('clarification'):
+        return verified_clarification()
     count = 2 if _completion_scenario == 'completion_second' else 1
     assert _calls == count, _calls
     prepared = _scenario in _ANSWERS or _scenario.startswith('prepared_') or _scenario in (
         'before_dispatch', 'denied', 'uncertain_delivery')
     assert _preparations == int(prepared) * count, (_scenario, _preparations)
     success = _scenario in _ANSWERS
-    assert irc_routing_fixture.writes() == int(success or _scenario == 'uncertain_delivery') * count
+    assert irc_routing_fixture.writes() == int(success or _scenario in ('uncertain_delivery', 'uncertain')) * count
     assert janus.query_once("\\+ oc_dispatch_result(_,['read-file',_],_)")['truth']
     if _completion_scenario in ('completion', 'completion_second'):
         completed = janus.query_once("findall(_Id,mm_commitment(_Id,_,_,'Completed',_),Ids)")['Ids']
@@ -252,6 +269,39 @@ def verified():
         assert record[3:5] == [['RequiredWork', []],
                              ['RequirementAssessment', 'Conversational', 'ValidatedProposal']], record
         assert record[5] == ['AssessedRequest', _request], record
+    return 1
+
+
+# Example: the ordinary second message stays on the question's owner and is assessed afresh.
+def verified_clarification():
+    import janus
+    import irc_routing_fixture
+    allowed_reply = _scenario in ('clarification', 'clarification_external')
+    assert _calls == (2 if allowed_reply else 1), (_scenario, _calls)
+    assert _preparations == int(_scenario == 'clarification'), _preparations
+    assert irc_routing_fixture.writes() == (2 if _scenario == 'clarification' else
+                                           0 if _scenario == 'clarification_denied' else 1)
+    state = janus.query_once('''
+        findall(_Id,mm_commitment(_Id,_,_,'Open',_),Ids),
+        eval(['get-state','&host-task-requirements'],Requirements),
+        eval(['get-state','&host-response-input'],Input),
+        eval(['get-state','&last-host-input'],Ingress),
+        findall(_C,oc_dispatch_result(_,_C,_),Commands)
+    ''')
+    assert len(state['Ids']) == 1, state
+    assert all(command[0] == 'send' for command in state['Commands']), state
+    if allowed_reply:
+        assert state['Input'][2] == 'FollowUp', state
+        assert state['Requirements'][5] == ['AssessedRequest', _request], state
+    else:
+        assert state['Ingress'][:2] == ['HostInput', 'Held'], state
+    if _scenario == 'clarification_external':
+        assert state['Requirements'][3] == ['RequiredWork', ['Files']], state
+    if _scenario == 'clarification':
+        expected = [b'PRIVMSG #room :Could you clarify what you want me to do? Please describe the task or give an example.\r\n',
+                    b'PRIVMSG #room :Recursion solves a problem by calling itself on smaller instances.\r\n']
+        actual = [call.args[0] for call in irc_routing_fixture._sockets[-1].sendall.call_args_list]
+        assert actual == expected, actual
     return 1
 
 
