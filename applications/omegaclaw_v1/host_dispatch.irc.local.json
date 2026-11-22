@@ -2,7 +2,7 @@
   "version": 1,
   "trace_printing": {
     "enabled": true,
-    "max_chars": 12000
+    "max_chars": 2000
   },
   "completion_criterion": "TransportSubmission",
   "frame_id": "current-frame",

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "run_id": "format-example-not-executed",
+  "scenario": {
+    "schema_version": 1,
+    "scenario_id": "read-and-answer-format-example-v1",
+    "description": "Format example for a bounded native read; not an executed benchmark.",
+    "source_versions": {
+      "v1": "example-v1-revision",
+      "core": "example-core-revision"
+    },
+    "adapter": {
+      "id": "disabled",
+      "adapter_version": null,
+      "engine_version": null,
+      "configuration_version": "native-example-v1"
+    },
+    "configuration": {
+      "collection": false,
+      "influence": false,
+      "assessment": false,
+      "learning": false,
+      "influence_cap": 0,
+      "seed": null
+    },
+    "initial_state": {
+      "fixture": "tests/fixtures/boundary_loop.metta",
+      "reset": "boundaryStart",
+      "policy": "allowed",
+      "motivation": "registry-defaults",
+      "memory": "fresh",
+      "inputs": [
+        "Explain the project documentation"
+      ],
+      "observations": []
+    },
+    "resource_limits": {
+      "max_cycles": 4,
+      "max_elapsed_ms": 10000,
+      "intake_limits": "(ReasonerIntakeLimits (max-facts 128) (max-payload-nodes 4096) (max-proposals 16) (max-session-records 128) (max-engine-steps 100) (max-engine-queue 40) (max-provider-calls 0) (provider-cost (ReasonerProviderCostLimit (unit \"USD\") (amount 0))) (timeout-ms 1000))"
+    }
+  },
+  "status": "unavailable",
+  "error": "Format example only; no benchmark runner is connected.",
+  "elapsed_ms": 0,
+  "trace_references": [],
+  "measurements": {}
+}

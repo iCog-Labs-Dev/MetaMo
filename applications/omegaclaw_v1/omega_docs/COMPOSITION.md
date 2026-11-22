@@ -273,6 +273,44 @@ and under the same native compiler constrained to a 64 MiB stack. The existing
 inference, evidence, negative-premise, rejection, and reliability assertions
 are unchanged. No deduplication or blanket result collapsing was added.
 
+## Benchmark record formats
+
+`tools/reasoner_benchmark_formats.py` defines version-one scenario and result
+JSON records through `validate_scenario` and `validate_result`. These pure
+validators return the original record unchanged and perform no runtime imports,
+provider calls, fixture execution or file writes. Examples live in
+`tests/fixtures/reasoner_benchmark/`. They are illustrative, not measured runs;
+the example result explicitly reports that no runner is connected.
+
+| Scenario field | Meaning |
+| --- | --- |
+| `schema_version`, `scenario_id`, `description` | Format version and versioned scenario identity. |
+| `source_versions` | Exact v1/Core revisions, plus any other relevant source revisions. Replace example placeholders with resolved revisions. |
+| `adapter` | Registered adapter ID, adapter version, engine version and configuration version. `disabled` uses null adapter/engine versions. |
+| `configuration` | Independent collection, influence, assessment and learning flags; influence cap in 0..1; seed or null when unsupported. |
+| `initial_state` | Existing fixture path relative to v1, reset entry point, policy profile, motivational initialization, memory initialization, ordered inputs and serialized exogenous observations. Fixture/profile meanings are pinned by the source revisions. |
+| `resource_limits` | Positive cycle/time bounds and a serialized existing `ReasonerIntakeLimits` record for fact, proposal, engine, provider and retained-record bounds. |
+
+A result retains the full scenario, a unique `run_id`, status (`completed`,
+`failed`, `timed_out` or `unavailable`), error reason, elapsed milliseconds,
+`trace_references` and a measurements object. Completed means the run finished,
+not that its task succeeded or its predictions were correct. Failed runs can
+retain partial traces. Omit unmeasured metrics instead of recording zero; a
+missing grade must not become a failed prediction or a reliability update.
+
+Each trace reference contains `artifact`, `stage`, `identity` and `cycle_ref`.
+The last two retain exact native serialized trace keys, such as
+`TraceDecisionRef` and `TraceCycleRef`; preserve quoting and symbol/string
+distinctions. The artifact locates exported structured events, independently of
+truncated console output. Empty references mean no trace was retained. Export
+must happen before volatile history eviction when the runner is connected.
+
+This format validation checks JSON structure and basic configuration consistency.
+Existing runtime validators remain authoritative for native intake limits,
+observations, permissions and causal ownership. The records do not authorize
+fixture execution or certify trace artifacts. Process launching, execution,
+measurement and aggregate reporting are separate implementation steps.
+
 ## Checking imports and initialization
 
 `tests/trace_support_test.py` checks readable retained output and runs the bridge,
