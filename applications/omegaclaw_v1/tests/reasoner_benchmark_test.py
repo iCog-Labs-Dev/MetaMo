@@ -2,13 +2,22 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 import unittest
+from unittest.mock import patch
 
 APP = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('benchmark_formats', APP / 'tools/reasoner_benchmark_formats.py')
 formats = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(formats)
+sys.path.insert(0, str(APP / 'tools'))
+import benchmark_reasoners as runner
 
 
 class BenchmarkFormatTests(unittest.TestCase):
@@ -73,6 +82,122 @@ class BenchmarkFormatTests(unittest.TestCase):
             broken = dict(self.result, **{key: value})
             with self.subTest(key=key), self.assertRaises(ValueError):
                 formats.validate_result(broken)
+
+
+class BenchmarkRunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='benchmark-process-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.scenario = json.loads((APP / 'tests/fixtures/reasoner_benchmark/scenario.example.json').read_text())
+        self.scenario['resource_limits']['max_elapsed_ms'] = 15000
+
+    # Example: temporary drivers are test doubles for future executable benchmark scenarios.
+    def entry(self, text):
+        path = self.root / 'entry.metta'
+        path.write_text(text)
+        return path
+
+    def test_fresh_process_memory_and_outputs_with_real_native_dispatch(self):
+        probe = self.root / 'benchmark_probe.py'
+        probe.write_text('''import json, os
+from pathlib import Path
+def record():
+    import helper
+    memory = Path(os.environ['OMEGACLAW_BENCHMARK_MEMORY'])
+    marker = memory / 'previous-run'
+    assert not marker.exists()
+    marker.write_text('owned by this process')
+    history = Path(helper.history_path('must-not-use-shared-history'))
+    assert history.read_text() == ''
+    history.write_text('isolated history')
+    scenario = json.loads(Path(os.environ['OMEGACLAW_BENCHMARK_SCENARIO']).read_text())
+    output = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT'])
+    (output / 'probe.json').write_text(json.dumps(dict(pid=os.getpid(), cwd=os.getcwd(),
+        memory=str(memory), history=str(history), scenario=scenario['scenario_id'],
+        host_config=os.environ.get('OMEGACLAW_HOST_CONFIG'))))
+    return 1
+''')
+        entry = self.entry(f'''!(import! &self (library lib_import))
+!(import! &self (library MetaMo applications/omegaclaw_v1/tests/fixtures/boundary_loop))
+!(import! &self {probe})
+!(test (boundaryStart) 1)
+!(test (boundaryProvision "allowed") 1)
+!(test (boundaryCycle benchmark) 1)
+!(test (fullLoopDispatch benchmark (coreLoopDispatchBegin) (selectedHostCommand))
+    (DispatchResult Executed Feasible "observed local file content"))
+!(test (py-call (benchmark_probe.record)) 1)
+!(py-call (host_config_fixture.cleanup))
+''')
+        probes = []
+        for _ in range(2):
+            with patch.dict(os.environ, {'OMEGACLAW_HOST_CONFIG': '/must-not-inherit-live-config'}):
+                result, directory = runner.run_comparison(self.scenario, entry, output=self.root / 'runs')
+            self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+            self.assertEqual(result, json.loads((directory / 'result.json').read_text()))
+            probes.append(json.loads((directory / 'output/probe.json').read_text()))
+            self.assertTrue((directory / 'imports.json').is_file())
+            self.assertEqual(result['trace_references'], [])
+            self.assertEqual(result['measurements'], {})
+        self.assertNotEqual(probes[0]['pid'], probes[1]['pid'])
+        for field in ('cwd', 'memory', 'history'):
+            self.assertNotEqual(probes[0][field], probes[1][field])
+        self.assertTrue(all(probe['host_config'] is None for probe in probes))
+
+    def test_failed_assertion_and_missing_entry_retain_results_and_logs(self):
+        entry = self.entry('!(test 1 2)\n')
+        for source in (entry, self.root / 'missing.metta'):
+            result, directory = runner.run_comparison(self.scenario, source, output=self.root / 'runs')
+            self.assertEqual(result['status'], 'failed')
+            self.assertTrue(result['error'])
+            self.assertTrue((directory / 'stdout.log').is_file())
+            self.assertTrue((directory / 'stderr.log').is_file())
+            formats.validate_result(json.loads((directory / 'result.json').read_text()))
+
+    def test_unavailable_process_is_a_retained_result(self):
+        with patch.object(runner.subprocess, 'Popen', side_effect=OSError('launcher unavailable')):
+            result, directory = runner.run_comparison(self.scenario, self.root / 'entry.metta')
+        self.addCleanup(shutil.rmtree, directory)
+        self.assertEqual(result['status'], 'unavailable')
+        self.assertIn('launcher unavailable', (directory / 'stderr.log').read_text())
+        self.assertTrue((directory / 'result.json').is_file())
+
+    def test_timeout_stops_launcher_descendants_and_keeps_partial_output(self):
+        probe = self.root / 'timeout_probe.py'
+        marker = self.root / 'escaped-child'
+        probe.write_text(f'''import subprocess, sys, time
+def run():
+    print('before timeout', flush=True)
+    subprocess.Popen([sys.executable, '-c', {repr('import time; from pathlib import Path; time.sleep(2); Path(' + repr(str(marker)) + ').touch()')}])
+    time.sleep(30)
+    return 1
+''')
+        entry = self.entry(f'!(import! &self {probe})\n!(py-call (timeout_probe.run))\n')
+        self.scenario['resource_limits']['max_elapsed_ms'] = 1000
+        result, directory = runner.run_comparison(self.scenario, entry, output=self.root / 'runs')
+        self.assertEqual(result['status'], 'timed_out')
+        self.assertIn('before timeout', (directory / 'stdout.log').read_text())
+        time.sleep(2)
+        self.assertFalse(marker.exists(), 'descendant survived timeout')
+        formats.validate_result(json.loads((directory / 'result.json').read_text()))
+
+    def test_cli_continues_after_a_failed_comparison(self):
+        entry = self.entry('!(test 1 2)\n')
+        scenario = self.root / 'scenario.json'
+        scenario.write_text(json.dumps(self.scenario))
+        invalid = self.root / 'invalid.json'
+        invalid.write_text('{invalid-json')
+        output = self.root / 'runs'
+        process = subprocess.run([sys.executable, str(APP / 'tools/benchmark_reasoners.py'),
+            str(scenario), str(invalid), str(scenario), '--entry', str(entry), '--output', str(output)],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
+        records = [json.loads(path.read_text()) for path in output.glob('*/result.json')]
+        self.assertEqual(len(records), 2)
+        self.assertTrue(all(record['status'] == 'failed' for record in records))
+        self.assertNotEqual(records[0]['run_id'], records[1]['run_id'])
+        rejected = json.loads(next(output.glob('input-errors-*.json')).read_text())
+        self.assertEqual(rejected[0]['input'], str(invalid.resolve()))
 
 
 if __name__ == '__main__':

@@ -305,10 +305,53 @@ distinctions. The artifact locates exported structured events, independently of
 truncated console output. Empty references mean no trace was retained. Export
 must happen before volatile history eviction when the runner is connected.
 
+### Isolated comparison launching
+
+`tools/benchmark_reasoners.py` accepts one or more scenario JSON paths and a
+trusted executable MeTTa driver through `--entry`. Each comparison starts the
+common `scripts/run-omegaclaw.py` launcher in a fresh process group. The optional
+launcher `--runtime-dir` changes runtime cwd without changing compiler/package
+resolution; ordinary invocations keep the workspace cwd.
+
+For a process-boundary smoke check using the existing callback integration test:
+
+```bash
+python3 applications/omegaclaw_v1/tools/benchmark_reasoners.py \
+  applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/scenario.example.json \
+  --entry applications/omegaclaw_v1/tests/full_loop_callbacks_test.metta \
+  --output /tmp/reasoner-comparisons
+```
+
+Each retained temporary run directory contains `scenario.json`, `result.json`,
+`execution.json`, import-resolution data, stdout/stderr logs, fresh `memory/`,
+driver `output/` and a private `runtime/`. Chroma uses the private memory path;
+history reads/writes and cwd-relative episode history use the private runtime
+path. Inherited live host configuration is removed. The driver receives absolute
+`OMEGACLAW_BENCHMARK_SCENARIO`, `OMEGACLAW_BENCHMARK_MEMORY`,
+`OMEGACLAW_BENCHMARK_OUTPUT`, and `OMEGACLAW_BENCHMARK_RUN_ID` values. These
+locations are kept for inspection after success or failure; remove them manually
+when no longer needed.
+
+Nonzero exits, assertion/interpreter errors, unavailable launcher processes and
+wall-clock timeouts produce failure results with logs. Timeout is taken from
+`max_elapsed_ms`; remaining workers in the process group are stopped on every
+exit. Other valid comparisons continue after a failure. Malformed input documents
+are retained separately in uniquely named `input-errors-*.json` files, since they
+cannot form a valid scenario/result record. The CLI exits unsuccessfully if any
+run or input fails.
+
+The runner passes the declared scenario unchanged; a trusted driver must consume
+it and apply initialization, adapter configuration and cycle limits through normal
+runtime APIs. Automatic adapter-matrix execution is not yet connected. The smoke
+check above verifies process execution, not performance of its example scenario.
+`completed` reports clean process completion only. No task scores, grades or causal
+trace references are invented from console output; measurements/references stay
+empty until their actual collection is connected.
+
 This format validation checks JSON structure and basic configuration consistency.
 Existing runtime validators remain authoritative for native intake limits,
 observations, permissions and causal ownership. The records do not authorize
-fixture execution or certify trace artifacts. Process launching, execution,
+fixture execution or certify trace artifacts. Adapter-matrix execution,
 measurement and aggregate reporting are separate implementation steps.
 
 ## Checking imports and initialization
