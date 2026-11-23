@@ -73,25 +73,26 @@ _cycle_start = None
 
 
 # Example: start timing and capture the world before normal selection and dispatch.
-def begin_cycle(host):
+def begin_cycle(host, reliability):
     global _cycle_start
     import benchmark_world
-    _cycle_start = dict(started=time.perf_counter(), host=host, world=benchmark_world.inspect_file())
+    _cycle_start = dict(started=time.perf_counter(), host=host, world=benchmark_world.inspect_file(), reliability=reliability)
     return 1
 
 
 # Example: latency includes normal cycle/dispatch, while oracle inputs precede execution.
-def cycle_measurements(observation):
+def cycle_measurements(observation, reliability):
     import lib_llm_ext
     initial = _cycle_start or {}
     calls = {kind: lib_llm_ext.call_count(kind) for kind in ('confirmation', 'semantics')}
-    return dict(observation=observation, offline_classifier_calls=calls, host_before=initial.get('host'),
+    return dict(observation=observation, reliability_before=initial.get('reliability'), reliability_after=reliability,
+                offline_classifier_calls=calls, host_before=initial.get('host'),
                 world_before=initial.get('world'),
                 latency_ms=(time.perf_counter() - initial['started']) * 1000 if initial else None)
 
 
 # Example: each cycle retains its own selected operation and observed result, never another run's.
-def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cycle_ref, motivation, admission, observation):
+def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cycle_ref, motivation, admission, observation, reliability):
     scenario = _scenario()
     inputs = scenario['initial_state']['inputs']
     message = inputs[cycle - 1] if cycle <= len(inputs) else None
@@ -100,7 +101,7 @@ def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cy
         selection=selection, dispatch_result=result, outcome=outcome, feedback=feedback,
         factual_signals=signals, cycle_trace=trace, cycle_ref=cycle_ref, motivation=motivation)
     event.update(episode_position(cycle, scenario))
-    event.update(cycle_measurements(observation))
+    event.update(cycle_measurements(observation, reliability))
     path = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT']) / 'trajectory.jsonl'
     with path.open('a') as stream:
         stream.write(json.dumps(event) + '\n')
@@ -238,7 +239,8 @@ def _entry_imports(fixture, adapter):
     if enabled:
         lines.extend([
             '!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))',
-            '!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_influence))'])
+            '!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_influence))',
+            '!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/reasoner_proposals))'])
     driver = APP / 'tools/reasoner_benchmark_driver.metta'
     lines.append(f'!(import! &self {json.dumps(str(driver))})')
     if enabled and 'registration' in adapter:

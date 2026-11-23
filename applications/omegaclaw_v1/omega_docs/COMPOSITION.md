@@ -521,6 +521,15 @@ requires explicit configuration and native validation of retained predictive evi
 these offline fixture results are not a claim of general reasoner improvement.
 The exact-result adapter is a deterministic comparison double, not a trained engine.
 
+## Adapter interchangeability coverage
+
+The benchmark tests compare all cycles of the native/NARS/PLN matrix, including
+shadow, zero-cap advisory and independently configured learning flags. They check
+native candidate/command/result equivalence while preserving each run's original
+frame and ticket identities. Every observed callback must match its exact retained
+operation. `reliability_before` and `reliability_after` retain the selected source's
+actual weight; disabled runs have no enabled source (`[]`), not a zero weight.
+
 ## Checking imports and initialization
 
 `tests/trace_support_test.py` checks readable retained output and runs the bridge,

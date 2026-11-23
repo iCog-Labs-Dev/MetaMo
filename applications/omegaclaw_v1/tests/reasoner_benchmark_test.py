@@ -290,6 +290,7 @@ class BenchmarkMatrixTests(unittest.TestCase):
                 self.assertEqual(result['scenario']['initial_state'], original['initial_state'])
                 self.assertEqual(result['scenario']['resource_limits'], original['resource_limits'])
                 self.assertEqual(audit['dispatch_result'], baseline_result)
+                self.check_native_sequence(result, directory, self.read_selection_sequence(runs[0][1]))
                 self.assertEqual(result['measurements']['version'], runner.metrics.SCORER_VERSION)
                 self.assertTrue(audit['source_sha256'])
                 self.assertEqual(audit['capabilities']['feedback'], [])
@@ -309,6 +310,27 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.assertTrue(all(initial == comparable[0] for initial in comparable))
         self.assertEqual(len(combinations), 9)
 
+    # Example: compare concrete read behavior without rewriting retained run-specific identities.
+    def read_selection_sequence(self, directory):
+        rows = runner.metrics.read_trajectory(directory)
+        return [(row['observation'][1][2], row['observation'][1][3][:1], row['observation'][2]) for row in rows]
+
+    # Example: the normal callback must belong to the exact selected operation in every cycle.
+    def check_native_sequence(self, result, directory, expected):
+        self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+        self.assertEqual(self.read_selection_sequence(directory), expected)
+        rows = runner.metrics.read_trajectory(directory)
+        self.assertIn('NewTask', rows[0]['admission'])
+        for row in rows:
+            _, decision, observed, outcome, _, _ = row['observation']
+            self.assertEqual(outcome[1], decision)
+            self.assertEqual(outcome[4], observed)
+            if decision[3]:
+                self.assertEqual(decision[3], ['read-file', row['world_before']['path']])
+            self.assertEqual(row['reliability_before'], row['reliability_after'])
+            if result['scenario']['adapter']['id'] != 'disabled':
+                self.assertIn(type(row['reliability_before']), (int, float))
+
     def test_additional_registered_adapter_reports_actual_capabilities(self):
         variants = json.loads((APP / 'tests/fixtures/reasoner_benchmark/rule.matrix.json').read_text())
         result, directory = runner.run_matrix(self.scenario, variants, output=self.root)[0]
@@ -320,6 +342,8 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.assertTrue(audit['effective_controls']['learning'])
         self.assertGreater(audit['retained_proposals'], 0)
         self.assertFalse(audit['assessment_feedback_supported'])
+        rows = runner.metrics.read_trajectory(directory)
+        self.assertTrue(all(row['reliability_before'] == row['reliability_after'] == 0.75 for row in rows))
 
     # Example: synthetic adapter edits survive continuous episodes, never another configuration.
     def test_continuous_learning_is_retained_only_within_its_run(self):

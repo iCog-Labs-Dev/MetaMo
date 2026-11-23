@@ -86,9 +86,15 @@
 
 
 ;; Example: capture independent world/policy inputs before selection reserves any budget.
-(= (benchmarkBeginCycle)
-    (let $host (benchmarkInitialHost)
-        (py-call (reasoner_benchmark_matrix.begin_cycle (quote $host)))))
+(= (benchmarkBeginCycle $id)
+    (let* (($host (benchmarkInitialHost)) ($reliability (benchmarkReliability $id)))
+        (py-call (reasoner_benchmark_matrix.begin_cycle (quote $host) (quote $reliability)))))
+
+;; Example: disabled runs do not load a reasoner merely to inspect its reliability.
+(= (benchmarkReliability $id)
+    (if (== $id "disabled") ()
+        (let $source (mrcValue (hostReasonerRegistration) 4)
+            (eval (reasonerSourceReliability $source)))))
 
 ;; Example: structured callback evidence is retained alongside readable trace text.
 (= (benchmarkObserve $decision $result $outcome)
@@ -101,20 +107,20 @@
     (if (> $step $maximum) 1
         (let* (
             (1 (benchmarkBeforeCycle $step))
-            (1 (benchmarkBeginCycle))
+            (1 (benchmarkBeginCycle $id))
             (1 (boundaryCycle benchmark))
-            (1 (benchmarkDispatch $step))
+            (1 (benchmarkDispatch $step $id))
             (1 (benchmarkRetainEvidence $id)))
             (benchmarkSteps (+ $step 1) $maximum $id))))
 
 ;; Example: keep the exact selected operation and callback before the next cycle replaces them.
-(= (benchmarkDispatch $step)
+(= (benchmarkDispatch $step $id)
     (let* (
         ($chosen (get-state &selected-operation-decision))
         ($result (fullLoopDispatch benchmark (coreLoopDispatchBegin) (selectedHostCommand)))
         ($outcome (benchmarkOwnOutcome $chosen))
         ($observed (benchmarkObserve $chosen $result $outcome)))
-        (benchmarkRecordCycle $step $chosen $result $outcome $observed)))
+        (benchmarkRecordCycle $step $id $chosen $result $outcome $observed)))
 
 ;; Example: a stale callback cannot become the current decision's evidence.
 (= (benchmarkOwnOutcome $chosen)
@@ -124,15 +130,16 @@
         ($_ ()))))
 
 ;; Example: readable trace text and structured evidence share the retained cycle identity.
-(= (benchmarkRecordCycle $step $chosen $result $outcome $observed)
+(= (benchmarkRecordCycle $step $id $chosen $result $outcome $observed)
     (let* (
         ($signals (repr (lastFactualSignals)))
         ($trace (repr (lastCycleTrace)))
         ($ref (repr (index-atom (lastCycleTrace) 2)))
-        ($motivation (motivosToMetamoState)))
+        ($motivation (motivosToMetamoState))
+        ($reliability (benchmarkReliability $id)))
         (py-call (reasoner_benchmark_matrix.record_cycle $step (repr $chosen) (repr $result)
             (repr $outcome) (repr (get-state &operation-feedback)) $signals $trace $ref
-            (quote $motivation) (repr (get-state &last-host-input)) (quote $observed)))))
+            (quote $motivation) (repr (get-state &last-host-input)) (quote $observed) (quote $reliability)))))
 
 ;; Example: partial runs preserve their bounded proposal and receipt audit after every callback.
 (= (benchmarkRetainEvidence $id)
