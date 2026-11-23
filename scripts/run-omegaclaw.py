@@ -15,6 +15,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("entry", type=Path, help="MeTTa entry file, relative to the caller")
     parser.add_argument("--workspace", type=Path, default=REPO.parent)
+    parser.add_argument("--runtime-dir", type=Path,
+                        help="Isolated runtime working directory; source resolution still uses --workspace")
     parser.add_argument("--audit", action="store_true", help="Resolve imports without executing code")
     parser.add_argument("--report", type=Path, help="Write import edges and physical source paths as JSON")
     parser.add_argument("--host-config", type=Path,
@@ -31,14 +33,15 @@ def main() -> int:
         "--", str(workspace), str(REPO), str(entry),
         "audit" if args.audit else "run", report, "-s", *runtime_args,
     ]
-    # One cwd for host runtime resources, regardless of the invoking shell/test root.
+    # Preserve the normal runtime cwd unless an isolated run explicitly supplies one.
     environment = os.environ.copy()
     if args.host_config:
         config = args.host_config.expanduser().resolve()
         if not config.is_file():
             parser.error(f"Host configuration is missing: {config}")
         environment["OMEGACLAW_HOST_CONFIG"] = str(config)
-    return subprocess.call(command, cwd=workspace, env=environment)
+    return subprocess.call(command, cwd=args.runtime_dir.resolve() if args.runtime_dir else workspace,
+                           env=environment)
 
 
 if __name__ == "__main__":

@@ -391,14 +391,35 @@ Learning enabled is a requested/effective control, not proof of native learning:
 the current built-ins declare no feedback capability. Reports retain supported
 feedback stages separately and make no claim that a flag trained an engine.
 
-The generated driver uses fixture hooks `RESET(INPUT, POLICY)` and
+The MeTTa driver in `tools/reasoner_benchmark_driver.metta` uses fixture hooks
+`RESET(INPUT, POLICY)` and
 `benchmarkConfigureAdapter(ID)`, then existing cycle/dispatch calls. The supplied
-fixture implements these as `benchmarkSetup` and bounded engine-rule setup. Other
+fixture implements these as `benchmarkSetup` and bounded engine-rule setup.
+Python supplies scenario data and writes a small entry containing imports and one
+driver invocation; initialization, adapter controls and the cycle loop live in MeTTa. Other
 registered adapters need registration/configuration changes, not a new selector
 or dispatcher. Initial state observations are retained in `output/initial-state.json`.
-Only one input, fresh memory, registry initialization and two cycles are currently
-supported. Unsupported seeds, exogenous observations, carried memory or insufficient
-cycle bounds produce unavailable results rather than silently changing the scenario.
+`tests/fixtures/reasoner_benchmark/controlled.scenario.json` shows a runnable
+four-cycle scenario with scheduled inputs, file changes and seeded initialization.
+The offline fixture accepts partial motivational overrides (`goals`, `anti_goals`,
+`modulators`, `self`), host mode/status/priority/posture, explicit supported operations
+and global/frame resource allowances. Native restore and policy checks still apply.
+Ordered `inputs` use null for idle cycles. Scheduled `observations` declare a cycle
+and file contents, semantic classifier scores or confirmation scores. File changes
+operate on the run's temporary file; dispatch results come from the real handler.
+Classifier observations require a message in that cycle and retain native provenance.
+
+Each declared cycle runs normal selection and dispatch. `output/trajectory.jsonl`
+retains that run's inputs, observations, decisions, callbacks, factual signals,
+motivational state and causal trace identities. Divergent runs keep their own
+outcomes; a previous callback is never substituted for a different decision.
+The final callback may still await next-cycle consumption when the cycle bound ends.
+
+Optional seeds control Python, Python hashing and Prolog RNG. Engine seeding is
+reported unsupported rather than implied. Results retain observed Git revisions,
+loaded source hashes, effective native inference limits and initial host policies,
+bindings and budget accounts. Fresh memory is required; carried memory, opaque
+observation strings and unsupported fixture controls produce unavailable results.
 
 A matched result is completed only after the driver confirms episode completion,
 selected adapter, effective controls, engine/configuration versions and cap. Enabled

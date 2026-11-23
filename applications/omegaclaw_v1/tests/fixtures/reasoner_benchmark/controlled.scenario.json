@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "scenario_id": "controlled-read-v1",
+  "description": "Offline controlled state and scheduled file changes through normal selection and callbacks; classifiers and memory are doubles.",
+  "source_versions": {
+    "v1": "e8d7b646fb6a3fb8dd08c53a3127c4a4b01e6e12",
+    "core": "8cabe49da4010dd981150dec1b6b3f25b3153035"
+  },
+  "adapter": {
+    "id": "disabled",
+    "adapter_version": null,
+    "engine_version": null,
+    "configuration_version": "native-example-v1"
+  },
+  "configuration": {
+    "collection": false,
+    "influence": false,
+    "assessment": false,
+    "learning": false,
+    "influence_cap": 0,
+    "seed": 37
+  },
+  "initial_state": {
+    "fixture": "tests/fixtures/reasoner_benchmark/read_fixture.metta",
+    "reset": "benchmarkSetup",
+    "policy": "allowed",
+    "motivation": {
+      "goals": {
+        "help_user": 0.25
+      },
+      "modulators": {
+        "caution": 0.2
+      },
+      "self": {
+        "energy": 0.6
+      }
+    },
+    "memory": "fresh",
+    "inputs": [
+      "Inspect the file",
+      null,
+      "follow-up: inspect it again",
+      "follow-up: proceed"
+    ],
+    "observations": [
+      {
+        "cycle": 1,
+        "file_content": "first observation",
+        "semantics": {
+          "danger": 0.1
+        }
+      },
+      {
+        "cycle": 3,
+        "file_content": "later observation",
+        "confirmation": 0.1
+      },
+      {
+        "cycle": 4,
+        "confirmation": 0.9
+      }
+    ],
+    "host": {
+      "root_mode": "Slow",
+      "frame_mode": "Slow",
+      "priority": 0.7,
+      "posture": "Rumination"
+    },
+    "budgets": {
+      "global": 4,
+      "frame": 4
+    },
+    "operations": [
+      "read-file"
+    ],
+    "file_content": "initial world"
+  },
+  "resource_limits": {
+    "max_cycles": 4,
+    "max_elapsed_ms": 20000,
+    "intake_limits": "(ReasonerIntakeLimits (max-facts 128) (max-payload-nodes 4096) (max-proposals 16) (max-session-records 128) (max-engine-steps 100) (max-engine-queue 40) (max-provider-calls 0) (provider-cost (ReasonerProviderCostLimit (unit \"USD\") (amount 0))) (timeout-ms 1000))"
+  }
+}

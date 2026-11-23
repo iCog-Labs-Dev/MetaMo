@@ -33,16 +33,42 @@ def builtin_variants(base):
 
 
 # Example: capture native capability declarations rather than a hard-coded engine feature table.
-def record_initial(motivation, self_model, task, frame_mode):
+def record_initial(motivation, self_model, task, frame_mode, host, status, priority, posture, root_mode):
+    scenario = _scenario()
     path = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT']) / 'initial-state.json'
     path.write_text(json.dumps(dict(motivation=motivation, self_model=self_model,
-                                   task=task, frame_mode=frame_mode), indent=2))
+        task=task, frame_mode=frame_mode, host_snapshot=host, status=status,
+        priority=priority, posture=posture, root_mode=root_mode,
+        seed=dict(requested=scenario['configuration']['seed'],
+                  applied_to=['python', 'prolog'] if scenario['configuration']['seed'] is not None else [],
+                  python_hash=os.environ.get('PYTHONHASHSEED', 'unspecified'),
+                  engine='no independent seed API exposed by current adapters')), indent=2))
     return 1
+
+
+# Example: each cycle retains its own selected operation and observed result, never another run's.
+def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cycle_ref, motivation, admission):
+    scenario = _scenario()
+    inputs = scenario['initial_state']['inputs']
+    message = inputs[cycle - 1] if cycle <= len(inputs) else None
+    event = dict(cycle=cycle, input=message, admission=admission if message is not None else None,
+        exogenous=[row for row in scenario['initial_state']['observations'] if row['cycle'] == cycle],
+        selection=selection, dispatch_result=result, outcome=outcome, feedback=feedback,
+        factual_signals=signals, cycle_trace=trace, cycle_ref=cycle_ref, motivation=motivation)
+    path = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT']) / 'trajectory.jsonl'
+    with path.open('a') as stream:
+        stream.write(json.dumps(event) + '\n')
+    return 1
+
+
+# Example: fixed inputs are loaded from this subprocess's private scenario copy only.
+def _scenario():
+    return json.loads(Path(os.environ['OMEGACLAW_BENCHMARK_SCENARIO']).read_text())
 
 
 # Example: partial configuration reports survive a later rejected influence request.
 def record_configuration(selection, registration, runtime, controls, influence):
-    scenario = json.loads(Path(os.environ['OMEGACLAW_BENCHMARK_SCENARIO']).read_text())
+    scenario = _scenario()
     fields = dict(registration[1:]) if registration else {}
     capabilities = dict(fields['capabilities'][1:]) if fields else {
         'proposal-kinds': [], 'candidates': [], 'prediction-schemas': [], 'feedback': []}
@@ -51,17 +77,22 @@ def record_configuration(selection, registration, runtime, controls, influence):
     report = dict(complete=False, selection=selection, mode=mode(scenario['configuration']),
         requested=scenario['configuration'], effective_controls=effective, capabilities=capabilities,
         contract_version=fields.get('contract-version'), configuration_version=fields.get('configuration-version'),
-        engine_version=runtime[1] if runtime else None, influence_setting=influence,
+        engine_version=runtime[1] if runtime else None, intake_limits=fields.get('limits'), influence_setting=influence,
         assessment_feedback_supported='Assessment' in capabilities['feedback'])
     _report_path().write_text(json.dumps(report, indent=2))
     return 1
 
 
 # Example: clean interpreter exit without this final observation is not a completed matrix run.
-def finish(selection, result, cycles, admissions, influence):
+def finish(cycles, admissions, influence):
     path = _report_path()
     report = json.loads(path.read_text())
-    report.update(complete=True, selected_operation=selection, dispatch_result=result,
+    trajectory = path.with_name('trajectory.jsonl')
+    with trajectory.open() as stream:
+        first = json.loads(next(stream))
+        steps = 1 + sum(1 for _ in stream)
+    report.update(complete=True, selected_operation=first['selection'], dispatch_result=first['dispatch_result'],
+                  trajectory='output/trajectory.jsonl', executed_cycles=steps,
                   intake_cycles=len(cycles), retained_proposals=sum(len(row[3]) for row in admissions),
                   intake_statuses=[dict(row[3][1:])['status'] for row in cycles],
                   observed_outcomes=sum(bool(row[6]) for row in cycles),
@@ -75,94 +106,98 @@ def _report_path():
     return Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT']) / 'runtime-configuration.json'
 
 
-# Example: normalize native configuration Booleans at the generated entry boundary.
-def _require(expression):
-    return '(1 (benchmarkRequire ' + expression + '))'
-
-
-# Example: generate calls to existing fixture/runtime APIs, never a benchmark selector or dispatcher.
-def write_entry(scenario, directory):
+# Example: serialize validated scenario values as data consumed by the MeTTa driver.
+def run_configuration():
+    scenario = _scenario()
     initial, controls, adapter = (scenario[key] for key in ('initial_state', 'configuration', 'adapter'))
-    if (len(initial['inputs']) != 1 or initial['observations'] or initial['memory'] != 'fresh'
-            or initial['motivation'] != 'registry-defaults' or controls['seed'] is not None):
-        raise ValueError('This driver supports one input, fresh memory, registry defaults and no exogenous observations/seed')
-    if scenario['resource_limits']['max_cycles'] < 2:
+    host = initial.get('host', {})
+    host_values = [str(host[key]) if key in host else '()'
+                   for key in ('root_mode', 'frame_mode', 'status', 'priority', 'posture')]
+    flags = ' '.join(f'({key} {"True" if controls[key] else "False"})'
+                     for key in ('collection', 'influence', 'assessment', 'learning'))
+    values = [initial['reset'], json.dumps(initial['inputs'][0]), json.dumps(initial['policy']),
+              str(controls['seed']) if controls['seed'] is not None else '()',
+              str(scenario['resource_limits']['max_cycles']), json.dumps(adapter['id']),
+              '(HostReasonerControls ' + flags + ')', str(controls['influence_cap']),
+              '(BenchmarkHost ' + ' '.join(host_values) + ')']
+    return '(BenchmarkScenario ' + ' '.join(values) + ')'
+
+
+# Example: the native constructor and validators still interpret inference limit data.
+def intake_limits():
+    return _scenario()['resource_limits']['intake_limits']
+
+
+# Example: unsupported carried memory is rejected before generating an entry.
+def _validate_initial_state(initial):
+    has_task = bool(initial['inputs']) and isinstance(initial['inputs'][0], str)
+    motivation = initial['motivation']
+    supported_motivation = not isinstance(motivation, str) or motivation == 'registry-defaults'
+    if not (has_task and initial['memory'] == 'fresh' and supported_motivation):
+        raise ValueError('The read fixture needs an initial task, fresh memory and '
+                         'registry defaults or explicit motivational overrides')
+
+
+# Example: classifier scores require a message in the same scheduled cycle.
+def _validate_observation(event, inputs, maximum):
+    if not isinstance(event, dict) or event['cycle'] > maximum:
+        raise ValueError('Observations must be scheduled objects within max_cycles')
+    if 'semantics' not in event and 'confirmation' not in event:
+        return
+    if event['cycle'] > len(inputs) or inputs[event['cycle'] - 1] is None:
+        raise ValueError('Classifier observations require a user input at that cycle')
+
+
+# Example: duplicate external changes must be combined into one event per cycle.
+def _validate_schedule(initial, maximum):
+    if len(initial['inputs']) > maximum:
+        raise ValueError('Input schedule exceeds max_cycles')
+    for event in initial['observations']:
+        _validate_observation(event, initial['inputs'], maximum)
+    cycles = [event['cycle'] for event in initial['observations']]
+    if len(set(cycles)) != len(cycles):
+        raise ValueError('Combine exogenous changes into one observation per cycle')
+    if maximum < 2:
         raise ValueError('The read scenario needs two cycles: selection/dispatch, then feedback application')
+
+
+# Example: missing fixture or registration files retain their specific failure message.
+def _required_file(relative_path, label):
+    path = (APP / relative_path).resolve()
+    if not path.is_file():
+        raise ValueError(label + ' is unavailable: ' + str(path))
+    return path
+
+
+# Example: a fixture reset names a trusted function rather than executable source text.
+def _fixture(initial):
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', initial['reset']):
         raise ValueError('reset must name a trusted fixture function')
-    fixture = (APP / initial['fixture']).resolve()
-    if not fixture.is_file():
-        raise ValueError('Scenario fixture is unavailable: ' + str(fixture))
-    q = json.dumps
+    return _required_file(initial['fixture'], 'Scenario fixture')
+
+
+# Example: native APIs load before the driver; custom registrations load after it.
+def _entry_imports(fixture, adapter):
+    lines = ['!(import! &self (library lib_import))', f'!(import! &self {json.dumps(str(fixture))})']
     enabled = adapter['id'] != 'disabled'
-    lines = [f'!(import! &self (library lib_import))', f'!(import! &self {q(str(fixture))})',
-             f'!(import! &self {q(str(Path(__file__).resolve()))})',
-             f'(= (benchmarkIntakeLimits) (sread {q(scenario["resource_limits"]["intake_limits"])}))']
     if enabled:
-        lines.append('!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))')
-        lines.append('!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_influence))')
-        if 'registration' in adapter:
-            registration = (APP / adapter['registration']).resolve()
-            if not registration.is_file():
-                raise ValueError('Adapter registration is unavailable: ' + str(registration))
-            lines.append(f'!(import! &self {q(str(registration))})')
-    lines.append(_episode(scenario, enabled))
+        lines.extend([
+            '!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner))',
+            '!(import! &self (library MetaMo applications/omegaclaw_v1/reasoners/host_reasoner_influence))'])
+    driver = APP / 'tools/reasoner_benchmark_driver.metta'
+    lines.append(f'!(import! &self {json.dumps(str(driver))})')
+    if enabled and 'registration' in adapter:
+        registration = _required_file(adapter['registration'], 'Adapter registration')
+        lines.append(f'!(import! &self {json.dumps(str(registration))})')
+    return lines
+
+
+# Example: write_entry(scenario, run_dir) writes imports and one driver invocation.
+def write_entry(scenario, directory):
+    initial = scenario['initial_state']
+    _validate_initial_state(initial)
+    _validate_schedule(initial, scenario['resource_limits']['max_cycles'])
+    lines = _entry_imports(_fixture(initial), scenario['adapter'])
     entry = directory / 'comparison.metta'
-    entry.write_text('\n'.join(lines) + '\n')
+    entry.write_text('\n'.join(lines + ['!(benchmarkRun)']) + '\n')
     return entry
-
-
-# Example: failed native setup/configuration stops the episode and leaves a partial audit.
-def _episode(scenario, enabled):
-    initial, controls, adapter = (scenario[key] for key in ('initial_state', 'configuration', 'adapter'))
-    q = json.dumps
-    identity = q(adapter['id'])
-    setup = ''
-    if enabled:
-        if adapter['id'] in ('nars', 'pln'):
-            setup = _require(f'''(let* (
-                ((ReasonerAdapterRegistration $regAdapter $regVersion $regConfig $regSource $regCaps $regOldLimits)
-                    (builtinHostReasoner {adapter['id']}))
-                ($nativeLimits (benchmarkIntakeLimits)))
-                (registerHostReasoner
-                    (quote (ReasonerAdapterRegistration $regAdapter $regVersion $regConfig $regSource $regCaps (limits $nativeLimits)))
-                    (quote loadHostReasonerInference)))''')
-        setup += '\n' + '\n'.join(_require(expression) for expression in (
-            f'(selectHostReasoner {identity})', f'(benchmarkConfigureAdapter {identity})',
-            f'(== (mrcValue (index-atom (registeredHostReasoner {identity}) 1) 6) (benchmarkIntakeLimits))'))
-    control_record = '(HostReasonerControls ' + ' '.join(
-        f'({key} {"True" if controls[key] else "False"})' for key in ('collection', 'influence', 'assessment', 'learning')) + ')'
-    configure = ''
-    if enabled and controls['influence']:
-        configure += _require(f'(configureHostReasonerInfluence {identity} {controls["influence_cap"]} ())') + '\n'
-    if enabled:
-        configure += _require(f'(configureHostReasonerControls {identity} {control_record})')
-    registration = f'(index-atom (registeredHostReasoner {identity}) 1)' if enabled else '()'
-    runtime = f'(hostReasonerRuntimeBinding {identity})' if enabled else '()'
-    effective = f'(hostReasonerControlsFor {identity})' if enabled else '()'
-    setting = f'(hostReasonerInfluenceSettingFor {identity})' if enabled else '()'
-    report = f'''(let* (($r {registration}) ($rt {runtime}) ($c {effective}) ($i {setting}))
-        (py-call (reasoner_benchmark_matrix.record_configuration {identity} (quote $r) (quote $rt) (quote $c) (quote $i))))'''
-    return f'''(= (benchmarkRequire $value)
-        (if (== $value True) 1 (progn (println! (repr $value)) 0)))
-    (= (benchmarkReport) {report})
-    !(let* (
-        (1 ({initial['reset']} {q(initial['inputs'][0])} {q(initial['policy'])}))
-        ($_ (let* (($m (motivosToMetamoState)) ($s (getSelfModel)))
-            (py-call (reasoner_benchmark_matrix.record_initial (quote $m) (quote $s)
-                (get-state &active-task) (frameBundleCurrentMode (frameStateForMetaMo))))))
-        {setup}
-        (1 (benchmarkReport))
-        {configure}
-        (1 (benchmarkReport))
-        (1 (boundaryCycle benchmark))
-        ($selection (repr (get-state &selected-operation-decision)))
-        ($result (repr (fullLoopDispatch benchmark (coreLoopDispatchBegin) (selectedHostCommand))))
-        ($_ (change-state! &new-msg-flag False))
-        (1 (boundaryCycle benchmark-feedback))
-        ($cycles {"(hostReasonerCycles)" if enabled else "()"})
-        ($admissions {"(hostReasonerAdmissions)" if enabled else "()"})
-        ($influence {setting})
-    ) (progn
-        (py-call (reasoner_benchmark_matrix.finish $selection $result (quote $cycles) (quote $admissions) (quote $influence)))
-        (py-call (host_config_fixture.cleanup))))'''

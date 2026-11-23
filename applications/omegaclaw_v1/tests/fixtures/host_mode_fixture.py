@@ -21,12 +21,15 @@ def provision_idle(variant="allowed"):
     return 1
 
 
-def provision_variant(frame, variant):
+# Example: provision_variant(frame, "allowed", ["read-file"], {"frame": 2}) uses native gates.
+def provision_variant(frame, variant, operations=None, budgets=None):
     import copy
     import janus
     config = copy.deepcopy(_config)
     frame = host.Symbol(frame)
     config['frame_id'] = frame
+    for scope, amount in (budgets or {}).items():
+        config[scope]['budgets'][0]['available'] = amount
     if variant == 'permission-denied':
         config['frame']['permissions'] = []
     elif variant == 'budget-denied':
@@ -61,6 +64,13 @@ def provision_variant(frame, variant):
         other[2][-1] = host.Symbol('ask-clarification')
         other[3][1] = host.record('candidate', host.Symbol('ask-clarification'))
         rows.append(other)
+    if operations is not None:
+        catalog = {row['skill']: row for row in config['commands']}
+        rows = [host.binding(catalog[name], frame, config['allowed_files']) for name in operations]
+        for row in rows:
+            if row[1][0] == 'read-file':
+                row[2][-1] = host.Symbol('respond')
+                row[3][1] = host.record('candidate', host.Symbol('respond'))
     source = host.encode(host.record(
         'HostDispatchConfig', host.scope(config['global'], host.Symbol('Global')),
         host.scope(config['frame'], host.record('FrameTarget', frame)),

@@ -58,6 +58,17 @@ class BenchmarkFormatTests(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(ValueError):
                 formats.validate_scenario(case)
 
+    def test_invalid_initial_controls_and_observations_are_rejected(self):
+        for key, value in (('motivation', {'goals': {'help_user': True}}),
+                           ('host', {'frame_mode': 'Sleep'}), ('budgets', {'frame': -1}),
+                           ('operations', ['read-file', 'read-file']),
+                           ('observations', [{'cycle': 0, 'file_content': 'later'}]),
+                           ('observations', [{'cycle': 1, 'semantics': {'danger': 1.1}}])):
+            broken = copy.deepcopy(self.scenario)
+            broken['initial_state'][key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                formats.validate_scenario(broken)
+
     def test_failed_and_ungraded_results_remain_representable(self):
         for status in ('failed', 'timed_out', 'unavailable', 'completed'):
             self.result.update(status=status, error=None if status == 'completed' else 'observed run failure')
@@ -239,7 +250,9 @@ class BenchmarkMatrixTests(unittest.TestCase):
                     self.assertIn('propose-candidate', audit['capabilities']['proposal-kinds'])
                     if audit['mode'] == 'advisory':
                         self.assertEqual(audit['influence_setting'][2][3], 0)
-        self.assertTrue(all(initial == initials[0] for initial in initials))
+        # Preserve run-specific host IDs/paths, while comparing the shared starting values.
+        comparable = [{key: value for key, value in initial.items() if key != 'host_snapshot'} for initial in initials]
+        self.assertTrue(all(initial == comparable[0] for initial in comparable))
         self.assertEqual(len(combinations), 9)
 
     def test_additional_registered_adapter_reports_actual_capabilities(self):
@@ -283,6 +296,8 @@ class BenchmarkMatrixTests(unittest.TestCase):
         (self.root / 'output').mkdir()
         (self.root / 'output/runtime-configuration.json').write_text('{partial')
         (self.root / 'imports.json').write_text('[partial')
+        (self.root / 'output/trajectory.jsonl').write_text(
+            json.dumps({'cycle_ref': '(TraceCycleRef interrupted-session 1)'}) + '\n{partial')
         result = dict(schema_version=1, run_id='interrupted-run', scenario=self.scenario,
             status='timed_out', error='deadline expired', elapsed_ms=1,
             trace_references=[], measurements={})
@@ -290,14 +305,81 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.assertEqual(result['status'], 'timed_out')
         self.assertEqual(result['error'], 'deadline expired')
         self.assertIn('source_report_error', result['runtime_configuration'])
+        self.assertEqual(len(result['trace_references']), 1)
         formats.validate_result(result)
 
     def test_unsupported_scenario_and_invalid_matrix_are_not_silently_ignored(self):
-        self.scenario['configuration']['seed'] = 7
+        self.scenario['initial_state']['memory'] = 'carry-unconfigured-memory'
         result, _ = runner.run_matrix(self.scenario, [runner.matrix.builtin_variants(self.scenario)[0]], output=self.root)[0]
         self.assertEqual(result['status'], 'unavailable')
         with self.assertRaises(ValueError):
             runner.run_matrix(self.scenario, [{'adapter': {}}], output=self.root)
+
+    def test_controlled_initial_state_inputs_world_observations_and_seed(self):
+        self.scenario['configuration']['seed'] = 37
+        self.scenario['initial_state'].update(
+            host=dict(root_mode='Slow', frame_mode='Slow', status='Active', priority=0.7, posture='Rumination'),
+            motivation=dict(goals={'help_user': 0.25}, modulators={'caution': 0.2}, self={'energy': 0.6}),
+            budgets={'global': 4, 'frame': 4}, operations=['read-file'], file_content='initial world',
+            inputs=['Inspect the file', None, 'follow-up: inspect it again', 'follow-up: proceed'],
+            observations=[{'cycle': 1, 'file_content': 'first observation', 'semantics': {'danger': 0.1}},
+                          {'cycle': 3, 'file_content': 'later observation', 'confirmation': 0.1},
+                          {'cycle': 4, 'confirmation': 0.9}])
+        variants = runner.matrix.builtin_variants(self.scenario)[:2]
+        runs = runner.run_matrix(self.scenario, variants, output=self.root)
+        initials = []
+        for result, directory in runs:
+            self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+            initial = json.loads((directory / 'output/initial-state.json').read_text())
+            initials.append(initial)
+            self.assertEqual(initial['seed']['requested'], 37)
+            self.assertEqual(initial['seed']['applied_to'], ['python', 'prolog'])
+            self.assertEqual(initial['seed']['python_hash'], '37')
+            self.assertEqual(initial['motivation'][1][2], 0.25)
+            self.assertEqual(initial['motivation'][2][1], 0.2)
+            self.assertIn(['self-metric', 'energy', 0.6], initial['self_model'])
+            self.assertEqual((initial['frame_mode'], initial['priority'], initial['posture']), ('Slow', 0.7, 'Rumination'))
+            accounts = initial['host_snapshot'][4][1]
+            self.assertEqual([account[2] for account in accounts], [4, 4])
+            trajectory = [json.loads(line) for line in (directory / 'output/trajectory.jsonl').read_text().splitlines()]
+            self.assertEqual(len(trajectory), 4)
+            self.assertEqual([ref['cycle_ref'] for ref in result['trace_references']],
+                             [row['cycle_ref'] for row in trajectory])
+            self.assertIn('first observation', trajectory[0]['dispatch_result'])
+            self.assertIn('later observation', trajectory[2]['dispatch_result'])
+            self.assertIn('FollowUp', trajectory[2]['admission'])
+            self.assertIn('danger', trajectory[0]['factual_signals'])
+            self.assertIn('execution-request', trajectory[3]['factual_signals'])
+            self.assertIn('SessionObservationRef', trajectory[0]['factual_signals'])
+            self.assertTrue(result['runtime_configuration']['observed_source_versions']['v1'])
+        for key in ('motivation', 'self_model', 'seed', 'task'):
+            self.assertEqual(initials[0][key], initials[1][key])
+
+    def test_exhausted_budget_does_not_reuse_a_previous_callback(self):
+        self.scenario['initial_state'].update(budgets={'global': 1, 'frame': 1}, operations=['read-file'])
+        result, directory = runner.run_matrix(self.scenario,
+            [runner.matrix.builtin_variants(self.scenario)[0]], output=self.root)[0]
+        self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+        rows = [json.loads(line) for line in (directory / 'output/trajectory.jsonl').read_text().splitlines()]
+        self.assertIn('Executed Feasible', rows[0]['dispatch_result'])
+        self.assertIn('BudgetExhausted', rows[1]['cycle_trace'])
+        self.assertNotEqual(rows[1]['outcome'], rows[0]['outcome'])
+        self.assertIn('DispatchUnavailable MissingDecision', rows[1]['outcome'])
+        self.assertNotIn('observed local file content', rows[1]['outcome'])
+        self.assertNotEqual(rows[0]['dispatch_result'], rows[1]['dispatch_result'])
+
+    def test_separate_operation_paths_retain_their_own_outcomes(self):
+        variants = [runner.matrix.builtin_variants(self.scenario)[0]]
+        first, directory_a = runner.run_matrix(self.scenario, variants, output=self.root)[0]
+        self.scenario['initial_state']['operations'] = ['show-current-frame']
+        second, directory_b = runner.run_matrix(self.scenario, variants, output=self.root)[0]
+        self.assertEqual((first['status'], second['status']), ('completed', 'completed'))
+        a = [json.loads(row) for row in (directory_a / 'output/trajectory.jsonl').read_text().splitlines()]
+        b = [json.loads(row) for row in (directory_b / 'output/trajectory.jsonl').read_text().splitlines()]
+        self.assertNotEqual(a[0]['selection'], b[0]['selection'])
+        self.assertNotEqual(a[0]['dispatch_result'], b[0]['dispatch_result'])
+        self.assertEqual(second['runtime_configuration']['dispatch_result'], b[0]['dispatch_result'])
+        self.assertNotIn('observed local file content', b[0]['dispatch_result'])
 
 
 if __name__ == '__main__':

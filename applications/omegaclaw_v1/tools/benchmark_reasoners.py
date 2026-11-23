@@ -88,6 +88,8 @@ def run_comparison(scenario, entry=None, *, output=None, workspace=REPO.parent):
         output.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='reasoner-' + uuid4().hex + '-', dir=output)).resolve()
     environment = _environment(directory)
+    if scenario['configuration']['seed'] is not None:
+        environment['PYTHONHASHSEED'] = str(scenario['configuration']['seed'])
     _write_json(directory / 'scenario.json', scenario)
     generated = entry is None
     try:
@@ -113,7 +115,7 @@ def run_comparison(scenario, entry=None, *, output=None, workspace=REPO.parent):
         status=status, error=error, elapsed_ms=int((time.monotonic() - started) * 1000),
         trace_references=[], measurements={}))
     if generated:
-        _retain_runtime_report(result, directory)
+        _retain_runtime_report(result, directory, workspace)
         validate_result(result)
     _write_json(directory / 'execution.json', dict(command=command, returncode=code,
         runtime_dir=str(directory / 'runtime'), memory_dir=environment['OMEGACLAW_BENCHMARK_MEMORY'],
@@ -123,7 +125,7 @@ def run_comparison(scenario, entry=None, *, output=None, workspace=REPO.parent):
 
 
 # Example: timeout-truncated reports remain failures with their original logs, not harness crashes.
-def _retain_runtime_report(result, directory):
+def _retain_runtime_report(result, directory, workspace=REPO.parent):
     report = directory / 'output/runtime-configuration.json'
     try:
         audit = json.loads(report.read_text()) if report.is_file() else {}
@@ -138,11 +140,41 @@ def _retain_runtime_report(result, directory):
                                   for source in sources if Path(source).is_file()}
     except (OSError, ValueError, KeyError, TypeError) as error:
         audit['source_report_error'] = str(error)
+    audit['observed_source_versions'] = _source_versions(Path(workspace))
     result['runtime_configuration'] = audit
+    _retain_trajectory_references(result, directory)
     if result['status'] == 'completed' and not _configuration_matches(result['scenario'], audit):
         result.update(status='failed', error='Runtime did not confirm the requested configuration and completed episode; see logs')
         if result['scenario']['configuration']['influence_cap'] > 0:
             result['error'] += '; positive influence requires retained predictive evidence'
+
+
+# Example: partial failed runs retain complete cycle identities before a truncated final row.
+def _retain_trajectory_references(result, directory):
+    trajectory = directory / 'output/trajectory.jsonl'
+    if not trajectory.is_file():
+        return
+    with trajectory.open() as stream:
+        for line in stream:
+            try:
+                row = json.loads(line)
+                result['trace_references'].append(dict(artifact='output/trajectory.jsonl',
+                    stage='Selection', identity=row['cycle_ref'], cycle_ref=row['cycle_ref']))
+            except (ValueError, KeyError, TypeError):
+                break
+
+
+# Example: record actual checkout revisions alongside declared versions and loaded-file hashes.
+def _source_versions(workspace):
+    versions = {}
+    for name, path in (('v1', REPO), ('core', workspace / 'repos/OmegaClaw-Core'), ('petta', workspace)):
+        try:
+            process = subprocess.run(['git', '-C', str(path), 'rev-parse', 'HEAD'],
+                capture_output=True, text=True, timeout=5)
+            versions[name] = process.stdout.strip() if process.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired):
+            versions[name] = None
+    return versions
 
 
 # Example: a rejected configuration cannot be reported as an advisory comparison.
