@@ -1,10 +1,10 @@
 """Launch isolated comparisons through the common launcher; retain every run.
 
-The trusted MeTTa entry consumes OMEGACLAW_BENCHMARK_SCENARIO and uses normal
-runtime APIs. Adapter matrix execution and task/prediction measurement are separate.
+Trusted MeTTa scenarios use normal runtime APIs; task/prediction grading remains separate.
 """
 import argparse
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +16,7 @@ import time
 from uuid import uuid4
 
 from reasoner_benchmark_formats import validate_scenario, validate_result
+import reasoner_benchmark_matrix as matrix
 
 APP = Path(__file__).resolve().parents[1]
 REPO = APP.parents[1]
@@ -80,7 +81,7 @@ def _execute(command, directory, environment, timeout):
 
 
 # Example: run_comparison(scenario, trusted_entry) allocates a fresh process and paths each time.
-def run_comparison(scenario, entry, *, output=None, workspace=REPO.parent):
+def run_comparison(scenario, entry=None, *, output=None, workspace=REPO.parent):
     scenario = copy.deepcopy(validate_scenario(scenario))
     if output is not None:
         output = Path(output).resolve()
@@ -88,15 +89,32 @@ def run_comparison(scenario, entry, *, output=None, workspace=REPO.parent):
     directory = Path(tempfile.mkdtemp(prefix='reasoner-' + uuid4().hex + '-', dir=output)).resolve()
     environment = _environment(directory)
     _write_json(directory / 'scenario.json', scenario)
-    command = [sys.executable, str(LAUNCHER), str(Path(entry).resolve()),
+    generated = entry is None
+    try:
+        if generated:
+            entry = matrix.write_entry(scenario, directory)
+        setup_error = None
+    except (OSError, ValueError) as error:
+        setup_error = str(error)
+    command = [sys.executable, str(LAUNCHER), str(Path(entry).resolve()) if entry else '',
                '--workspace', str(Path(workspace).resolve()), '--runtime-dir', str(directory / 'runtime'),
                '--report', str(directory / 'imports.json')]
+    if generated:
+        command.append('reasoner=' + scenario['adapter']['id'])
     started = time.monotonic()
-    status, error, code = _execute(command, directory, environment,
-                                  scenario['resource_limits']['max_elapsed_ms'] / 1000)
+    if setup_error:
+        status, error, code = 'unavailable', setup_error, None
+        (directory / 'stdout.log').touch()
+        (directory / 'stderr.log').write_text(setup_error)
+    else:
+        status, error, code = _execute(command, directory, environment,
+                                      scenario['resource_limits']['max_elapsed_ms'] / 1000)
     result = validate_result(dict(schema_version=1, run_id=directory.name, scenario=scenario,
         status=status, error=error, elapsed_ms=int((time.monotonic() - started) * 1000),
         trace_references=[], measurements={}))
+    if generated:
+        _retain_runtime_report(result, directory)
+        validate_result(result)
     _write_json(directory / 'execution.json', dict(command=command, returncode=code,
         runtime_dir=str(directory / 'runtime'), memory_dir=environment['OMEGACLAW_BENCHMARK_MEMORY'],
         output_dir=environment['OMEGACLAW_BENCHMARK_OUTPUT']))
@@ -104,14 +122,70 @@ def run_comparison(scenario, entry, *, output=None, workspace=REPO.parent):
     return result, directory
 
 
+# Example: timeout-truncated reports remain failures with their original logs, not harness crashes.
+def _retain_runtime_report(result, directory):
+    report = directory / 'output/runtime-configuration.json'
+    try:
+        audit = json.loads(report.read_text()) if report.is_file() else {}
+    except (OSError, ValueError):
+        audit = {}
+    if not isinstance(audit, dict):
+        audit = {}
+    try:
+        imports = directory / 'imports.json'
+        sources = {row['resolved'] for row in json.loads(imports.read_text())} if imports.is_file() else set()
+        audit['source_sha256'] = {source: hashlib.sha256(Path(source).read_bytes()).hexdigest()
+                                  for source in sources if Path(source).is_file()}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        audit['source_report_error'] = str(error)
+    result['runtime_configuration'] = audit
+    if result['status'] == 'completed' and not _configuration_matches(result['scenario'], audit):
+        result.update(status='failed', error='Runtime did not confirm the requested configuration and completed episode; see logs')
+        if result['scenario']['configuration']['influence_cap'] > 0:
+            result['error'] += '; positive influence requires retained predictive evidence'
+
+
+# Example: a rejected configuration cannot be reported as an advisory comparison.
+def _configuration_matches(scenario, audit):
+    controls = {key: scenario['configuration'][key] for key in ('collection', 'influence', 'assessment', 'learning')}
+    setting = audit.get('influence_setting', [])
+    cap_matches = not controls['influence'] or (len(setting) == 4 and setting[2]
+        and setting[2][3] == scenario['configuration']['influence_cap'])
+    return (audit.get('complete') is True and audit.get('selection') == scenario['adapter']['id']
+            and cap_matches
+            and (not controls['collection'] or audit.get('intake_cycles', 0) > 0)
+            and audit.get('effective_controls') == controls
+            and audit.get('engine_version') == scenario['adapter']['engine_version']
+            and (scenario['adapter']['id'] == 'disabled' or
+                 audit.get('configuration_version') == scenario['adapter']['configuration_version']))
+
+
+# Example: all variants retain identical task inputs, policies and resource allowances.
+def run_matrix(scenario, variants=None, *, output=None, workspace=REPO.parent):
+    variants = matrix.builtin_variants(scenario) if variants is None else variants
+    comparisons = []
+    if not isinstance(variants, list) or not variants:
+        raise ValueError('matrix must be a nonempty list of adapter/configuration variants')
+    for variant in variants:
+        if not isinstance(variant, dict) or set(variant) != {'adapter', 'configuration'}:
+            raise ValueError('each matrix variant must contain adapter and configuration')
+        comparison = copy.deepcopy(scenario)
+        comparison.update(adapter=copy.deepcopy(variant['adapter']), configuration=copy.deepcopy(variant['configuration']))
+        comparisons.append(validate_scenario(comparison))
+    return [run_comparison(comparison, output=output, workspace=workspace) for comparison in comparisons]
+
+
 # Example: repeated scenario paths still produce independent runs and separate failure records.
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('scenarios', nargs='+', type=Path)
-    parser.add_argument('--entry', required=True, type=Path, help='Trusted executable MeTTa scenario driver')
+    parser.add_argument('--entry', type=Path, help='Trusted executable driver; omit for the matched runtime matrix')
+    parser.add_argument('--matrix', type=Path, help='JSON list of adapter/configuration variants, including optional registration modules')
     parser.add_argument('--workspace', type=Path, default=REPO.parent)
     parser.add_argument('--output', type=Path, help='Parent for retained temporary run directories')
     args = parser.parse_args(argv)
+    if args.entry and args.matrix:
+        parser.error('--entry smoke runs cannot also select --matrix')
     args.output = (args.output.resolve() if args.output else
                    Path(tempfile.mkdtemp(prefix='reasoner-comparisons-')).resolve())
     args.output.mkdir(parents=True, exist_ok=True)
@@ -127,9 +201,21 @@ def main(argv=None):
             _write_json(input_errors, rejected)
             failed = True
             continue
-        result, directory = run_comparison(scenario, args.entry, output=args.output, workspace=args.workspace)
-        print(f'{result["status"]}: {directory / "result.json"}', flush=True)
-        failed = failed or result['status'] != 'completed'
+        try:
+            if args.entry:
+                runs = [run_comparison(scenario, args.entry, output=args.output, workspace=args.workspace)]
+            else:
+                variants = json.loads(args.matrix.read_text()) if args.matrix else None
+                runs = run_matrix(scenario, variants, output=args.output, workspace=args.workspace)
+        except (OSError, ValueError, TypeError) as error:
+            print(f'{path}: invalid matrix: {error}', file=sys.stderr)
+            rejected.append(dict(input=str(path.resolve()), error=str(error)))
+            _write_json(input_errors, rejected)
+            failed = True
+            continue
+        for result, directory in runs:
+            print(f'{result["status"]}: {directory / "result.json"}', flush=True)
+            failed = failed or result['status'] != 'completed'
     return int(failed)
 
 

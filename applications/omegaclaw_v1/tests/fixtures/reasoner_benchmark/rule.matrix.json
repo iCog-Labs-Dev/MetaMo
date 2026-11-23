@@ -1,0 +1,19 @@
+[
+  {
+    "adapter": {
+      "id": "benchmark-rule",
+      "adapter_version": "fixture-1",
+      "engine_version": "rule-fixture-1",
+      "configuration_version": "rule-config-1",
+      "registration": "tests/fixtures/reasoner_benchmark/rule_adapter.metta"
+    },
+    "configuration": {
+      "collection": true,
+      "influence": false,
+      "assessment": false,
+      "learning": true,
+      "influence_cap": 0,
+      "seed": null
+    }
+  }
+]

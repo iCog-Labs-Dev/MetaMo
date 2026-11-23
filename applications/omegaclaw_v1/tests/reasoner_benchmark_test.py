@@ -200,5 +200,105 @@ def run():
         self.assertEqual(rejected[0]['input'], str(invalid.resolve()))
 
 
+class BenchmarkMatrixTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='benchmark-matrix-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.scenario = json.loads((APP / 'tests/fixtures/reasoner_benchmark/read.scenario.json').read_text())
+
+    def test_native_nars_pln_matched_modes_and_learning_controls(self):
+        original = copy.deepcopy(self.scenario)
+        runs = runner.run_matrix(self.scenario, output=self.root)
+        self.assertEqual(len(runs), 9)
+        self.assertEqual(self.scenario, original)
+        initials = []
+        combinations = set()
+        baseline_result = runs[0][0]['runtime_configuration']['dispatch_result']
+        for result, directory in runs:
+            with self.subTest(directory=directory):
+                self.assertEqual(result['status'], 'completed',
+                    (directory / 'stdout.log').read_text()[-2000:] + (directory / 'stderr.log').read_text())
+                audit = result['runtime_configuration']
+                initials.append(json.loads((directory / 'output/initial-state.json').read_text()))
+                combinations.add((audit['selection'], audit['mode'], audit['effective_controls']['learning']))
+                self.assertEqual(result['scenario']['initial_state'], original['initial_state'])
+                self.assertEqual(result['scenario']['resource_limits'], original['resource_limits'])
+                self.assertEqual(audit['dispatch_result'], baseline_result)
+                self.assertEqual(result['measurements'], {})
+                self.assertTrue(audit['source_sha256'])
+                self.assertEqual(audit['capabilities']['feedback'], [])
+                if audit['selection'] == 'disabled':
+                    self.assertEqual(audit['intake_cycles'], 0)
+                    self.assertFalse(any(path.endswith(('lib_nars.metta', 'lib_pln.metta'))
+                                         for path in audit['source_sha256']))
+                else:
+                    self.assertIn('Proposals', audit['intake_statuses'])
+                    self.assertGreater(audit['retained_proposals'], 0)
+                    self.assertGreater(audit['observed_outcomes'], 0)
+                    self.assertIn('propose-candidate', audit['capabilities']['proposal-kinds'])
+                    if audit['mode'] == 'advisory':
+                        self.assertEqual(audit['influence_setting'][2][3], 0)
+        self.assertTrue(all(initial == initials[0] for initial in initials))
+        self.assertEqual(len(combinations), 9)
+
+    def test_additional_registered_adapter_reports_actual_capabilities(self):
+        variants = json.loads((APP / 'tests/fixtures/reasoner_benchmark/rule.matrix.json').read_text())
+        result, directory = runner.run_matrix(self.scenario, variants, output=self.root)[0]
+        self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+        audit = result['runtime_configuration']
+        self.assertEqual(audit['selection'], 'benchmark-rule')
+        self.assertEqual(audit['capabilities']['feedback'], ['Decision', 'Observation'])
+        self.assertEqual(audit['capabilities']['candidates'], ['respond'])
+        self.assertTrue(audit['effective_controls']['learning'])
+        self.assertGreater(audit['retained_proposals'], 0)
+        self.assertFalse(audit['assessment_feedback_supported'])
+
+    def test_uncalibrated_positive_influence_fails_and_next_variant_runs(self):
+        variants = runner.matrix.builtin_variants(self.scenario)
+        advisory = copy.deepcopy(variants[3])
+        advisory['configuration']['influence_cap'] = 0.05
+        runs = runner.run_matrix(self.scenario, [advisory, variants[0]], output=self.root)
+        self.assertEqual([result['status'] for result, _ in runs], ['failed', 'completed'])
+        result, directory = runs[0]
+        self.assertIn('predictive evidence', result['error'])
+        self.assertFalse(result['runtime_configuration']['complete'])
+        self.assertIn('propose-candidate', result['runtime_configuration']['capabilities']['proposal-kinds'])
+
+    def test_missing_registration_remains_an_unavailable_comparison(self):
+        variant = json.loads((APP / 'tests/fixtures/reasoner_benchmark/rule.matrix.json').read_text())[0]
+        variant['adapter']['registration'] = 'missing-adapter.metta'
+        result, directory = runner.run_matrix(self.scenario, [variant], output=self.root)[0]
+        self.assertEqual(result['status'], 'unavailable')
+        self.assertTrue((directory / 'result.json').is_file())
+
+    def test_engine_version_mismatch_is_not_a_successful_comparison(self):
+        variant = json.loads((APP / 'tests/fixtures/reasoner_benchmark/rule.matrix.json').read_text())[0]
+        variant['adapter']['engine_version'] = 'another-engine-version'
+        result, _ = runner.run_matrix(self.scenario, [variant], output=self.root)[0]
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['runtime_configuration']['engine_version'], 'rule-fixture-1')
+
+    def test_timeout_truncated_audits_do_not_discard_the_result(self):
+        (self.root / 'output').mkdir()
+        (self.root / 'output/runtime-configuration.json').write_text('{partial')
+        (self.root / 'imports.json').write_text('[partial')
+        result = dict(schema_version=1, run_id='interrupted-run', scenario=self.scenario,
+            status='timed_out', error='deadline expired', elapsed_ms=1,
+            trace_references=[], measurements={})
+        runner._retain_runtime_report(result, self.root)
+        self.assertEqual(result['status'], 'timed_out')
+        self.assertEqual(result['error'], 'deadline expired')
+        self.assertIn('source_report_error', result['runtime_configuration'])
+        formats.validate_result(result)
+
+    def test_unsupported_scenario_and_invalid_matrix_are_not_silently_ignored(self):
+        self.scenario['configuration']['seed'] = 7
+        result, _ = runner.run_matrix(self.scenario, [runner.matrix.builtin_variants(self.scenario)[0]], output=self.root)[0]
+        self.assertEqual(result['status'], 'unavailable')
+        with self.assertRaises(ValueError):
+            runner.run_matrix(self.scenario, [{'adapter': {}}], output=self.root)
+
+
 if __name__ == '__main__':
     unittest.main()

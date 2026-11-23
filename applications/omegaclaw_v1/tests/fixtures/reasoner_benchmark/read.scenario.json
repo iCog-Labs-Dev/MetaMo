@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "scenario_id": "bounded-read-v1",
+  "description": "Offline single-read episode through native selection, dispatch and feedback; provider/memory are doubles.",
+  "source_versions": {
+    "v1": "e8d7b646fb6a3fb8dd08c53a3127c4a4b01e6e12",
+    "core": "8cabe49da4010dd981150dec1b6b3f25b3153035"
+  },
+  "adapter": {
+    "id": "disabled",
+    "adapter_version": null,
+    "engine_version": null,
+    "configuration_version": "native-example-v1"
+  },
+  "configuration": {
+    "collection": false,
+    "influence": false,
+    "assessment": false,
+    "learning": false,
+    "influence_cap": 0,
+    "seed": null
+  },
+  "initial_state": {
+    "fixture": "tests/fixtures/reasoner_benchmark/read_fixture.metta",
+    "reset": "benchmarkSetup",
+    "policy": "allowed",
+    "motivation": "registry-defaults",
+    "memory": "fresh",
+    "inputs": [
+      "Explain the project documentation"
+    ],
+    "observations": []
+  },
+  "resource_limits": {
+    "max_cycles": 4,
+    "max_elapsed_ms": 20000,
+    "intake_limits": "(ReasonerIntakeLimits (max-facts 128) (max-payload-nodes 4096) (max-proposals 16) (max-session-records 128) (max-engine-steps 100) (max-engine-queue 40) (max-provider-calls 0) (provider-cost (ReasonerProviderCostLimit (unit \"USD\") (amount 0))) (timeout-ms 1000))"
+  }
+}

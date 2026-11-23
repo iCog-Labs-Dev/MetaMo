@@ -3,8 +3,9 @@ import json
 
 
 # Example: reject a misspelled control instead of silently running a different comparison.
-def _fields(value, names):
-    if not isinstance(value, dict) or set(value) != set(names.split()):
+def _fields(value, names, optional=()):
+    required = set(names.split())
+    if not isinstance(value, dict) or not required <= value.keys() or value.keys() - required - set(optional):
         raise ValueError('expected fields: ' + names)
 
 
@@ -22,9 +23,11 @@ def _count(value, minimum=0):
 
 # Example: disabled has no engine; registered adapter IDs are not limited to NARS/PLN.
 def _adapter(value):
-    _fields(value, 'id adapter_version engine_version configuration_version')
+    _fields(value, 'id adapter_version engine_version configuration_version', ('registration',))
     _text(value['id'])
     _text(value['configuration_version'])
+    if 'registration' in value:
+        _text(value['registration'])
     for name in ('adapter_version', 'engine_version'):
         if value['id'] == 'disabled':
             if value[name] is not None:
@@ -91,7 +94,8 @@ def validate_scenario(value):
 
 # Example: a failed adapter run can retain partial traces without claiming task success.
 def validate_result(value):
-    _fields(value, 'schema_version run_id scenario status error elapsed_ms trace_references measurements')
+    _fields(value, 'schema_version run_id scenario status error elapsed_ms trace_references measurements',
+            ('runtime_configuration',))
     if type(value['schema_version']) is not int or value['schema_version'] != 1:
         raise ValueError('unsupported result schema version')
     _text(value['run_id'])
@@ -112,5 +116,7 @@ def validate_result(value):
             _text(item)
     if not isinstance(value['measurements'], dict):
         raise ValueError('measurements must be an object; absent metrics are omitted')
+    if 'runtime_configuration' in value and not isinstance(value['runtime_configuration'], dict):
+        raise ValueError('runtime_configuration must be an object')
     json.dumps(value, allow_nan=False)
     return value

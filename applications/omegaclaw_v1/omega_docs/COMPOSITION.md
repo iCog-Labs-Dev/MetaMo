@@ -286,7 +286,7 @@ the example result explicitly reports that no runner is connected.
 | --- | --- |
 | `schema_version`, `scenario_id`, `description` | Format version and versioned scenario identity. |
 | `source_versions` | Exact v1/Core revisions, plus any other relevant source revisions. Replace example placeholders with resolved revisions. |
-| `adapter` | Registered adapter ID, adapter version, engine version and configuration version. `disabled` uses null adapter/engine versions. |
+| `adapter` | Registered adapter ID, adapter version, engine version and configuration version. `disabled` uses null adapter/engine versions. An optional `registration` path names trusted MeTTa registration code relative to v1. |
 | `configuration` | Independent collection, influence, assessment and learning flags; influence cap in 0..1; seed or null when unsupported. |
 | `initial_state` | Existing fixture path relative to v1, reset entry point, policy profile, motivational initialization, memory initialization, ordered inputs and serialized exogenous observations. Fixture/profile meanings are pinned by the source revisions. |
 | `resource_limits` | Positive cycle/time bounds and a serialized existing `ReasonerIntakeLimits` record for fact, proposal, engine, provider and retained-record bounds. |
@@ -297,6 +297,10 @@ A result retains the full scenario, a unique `run_id`, status (`completed`,
 not that its task succeeded or its predictions were correct. Failed runs can
 retain partial traces. Omit unmeasured metrics instead of recording zero; a
 missing grade must not become a failed prediction or a reliability update.
+Matched runs also retain `runtime_configuration`: observed capabilities, effective
+controls, contract/configuration/engine versions, influence settings, intake status,
+actual dispatch result and hashes of resolved source files. Adapter version labels
+are declarations; source hashes identify the code actually loaded.
 
 Each trace reference contains `artifact`, `stage`, `identity` and `cycle_ref`.
 The last two retain exact native serialized trace keys, such as
@@ -307,8 +311,9 @@ must happen before volatile history eviction when the runner is connected.
 
 ### Isolated comparison launching
 
-`tools/benchmark_reasoners.py` accepts one or more scenario JSON paths and a
-trusted executable MeTTa driver through `--entry`. Each comparison starts the
+`tools/benchmark_reasoners.py` accepts one or more scenario JSON paths. An optional
+trusted executable MeTTa driver through `--entry` selects process-only smoke tests;
+without it the runner executes the matched configuration matrix below. Each comparison starts the
 common `scripts/run-omegaclaw.py` launcher in a fresh process group. The optional
 launcher `--runtime-dir` changes runtime cwd without changing compiler/package
 resolution; ordinary invocations keep the workspace cwd.
@@ -340,19 +345,71 @@ are retained separately in uniquely named `input-errors-*.json` files, since the
 cannot form a valid scenario/result record. The CLI exits unsuccessfully if any
 run or input fails.
 
-The runner passes the declared scenario unchanged; a trusted driver must consume
-it and apply initialization, adapter configuration and cycle limits through normal
-runtime APIs. Automatic adapter-matrix execution is not yet connected. The smoke
-check above verifies process execution, not performance of its example scenario.
-`completed` reports clean process completion only. No task scores, grades or causal
-trace references are invented from console output; measurements/references stay
-empty until their actual collection is connected.
+The explicit-entry smoke path passes the declared scenario unchanged; its trusted
+driver must consume and apply it. The smoke check above verifies process execution,
+not performance of its format example. No task scores, grades or causal trace
+references are invented from console output; measurements/references stay empty
+until their actual collection is connected.
+
+### Matched runtime comparisons
+
+One deterministic `bounded-read-v1` episode is connected. It admits one user task,
+installs the same policy profile, runs native selection and dispatch, then runs a
+second cycle to apply observed feedback. Provider/memory services are doubles;
+Core admission, file reading, budgets, callbacks and NARS/PLN inference are real.
+The engines receive equivalent native implications from the admitted user-waiting
+signal to a recommendation; the fixture does not fabricate inference results.
+
+```bash
+python3 applications/omegaclaw_v1/tools/benchmark_reasoners.py \
+  applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/read.scenario.json \
+  --output /tmp/reasoner-matched
+```
+
+The default matrix has nine fresh-process runs: native with no reasoner, and NARS
+and PLN in shadow/advisory modes with learning independently off/on. Assessment
+retains the scenario's flag. Advisory runs explicitly configure a zero influence
+cap: they exercise the advisory route while preserving native selection. Positive
+caps still require native predictive-evidence checks; the harness does not invent
+calibration grades to pass them. Rejected requests remain failed comparisons.
+
+Additional adapters use `--matrix PATH`, a JSON list of objects containing the
+existing `adapter` and `configuration` records. The optional adapter `registration`
+module calls normal registration/runtime APIs before selection. The supplied
+`rule.matrix.json` and `rule_adapter.metta` demonstrate this with a labelled rule
+adapter double, not another native engine or a production learning implementation:
+
+```bash
+python3 applications/omegaclaw_v1/tools/benchmark_reasoners.py \
+  applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/read.scenario.json \
+  --matrix applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/rule.matrix.json \
+  --output /tmp/reasoner-registered
+```
+
+Capabilities come from the actual selected registration, not an engine-name table.
+Learning enabled is a requested/effective control, not proof of native learning:
+the current built-ins declare no feedback capability. Reports retain supported
+feedback stages separately and make no claim that a flag trained an engine.
+
+The generated driver uses fixture hooks `RESET(INPUT, POLICY)` and
+`benchmarkConfigureAdapter(ID)`, then existing cycle/dispatch calls. The supplied
+fixture implements these as `benchmarkSetup` and bounded engine-rule setup. Other
+registered adapters need registration/configuration changes, not a new selector
+or dispatcher. Initial state observations are retained in `output/initial-state.json`.
+Only one input, fresh memory, registry initialization and two cycles are currently
+supported. Unsupported seeds, exogenous observations, carried memory or insufficient
+cycle bounds produce unavailable results rather than silently changing the scenario.
+
+A matched result is completed only after the driver confirms episode completion,
+selected adapter, effective controls, engine/configuration versions and cap. Enabled
+collection must actually produce runtime intake. This is still not a task-success
+or prediction-quality grade, nor evidence that positive influence improves outcomes.
 
 This format validation checks JSON structure and basic configuration consistency.
 Existing runtime validators remain authoritative for native intake limits,
 observations, permissions and causal ownership. The records do not authorize
-fixture execution or certify trace artifacts. Adapter-matrix execution,
-measurement and aggregate reporting are separate implementation steps.
+fixture execution or certify trace artifacts. Larger scenario datasets,
+measurement and aggregate reporting remain separate implementation steps.
 
 ## Checking imports and initialization
 
