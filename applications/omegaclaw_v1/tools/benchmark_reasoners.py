@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from reasoner_benchmark_formats import validate_scenario, validate_result
 import reasoner_benchmark_matrix as matrix
+import reasoner_benchmark_metrics as metrics
 
 APP = Path(__file__).resolve().parents[1]
 REPO = APP.parents[1]
@@ -124,15 +125,28 @@ def run_comparison(scenario, entry=None, *, output=None, workspace=REPO.parent):
     return result, directory
 
 
-# Example: timeout-truncated reports remain failures with their original logs, not harness crashes.
+# Example: timeout-truncated reports retain failure status and any complete observed evidence.
 def _retain_runtime_report(result, directory, workspace=REPO.parent):
+    audit = _read_runtime_report(directory)
+    _retain_source_audit(audit, directory, workspace)
+    result['runtime_configuration'] = audit
+    _retain_trajectory_references(result, directory)
+    _check_runtime_configuration(result, audit)
+    result['measurements'] = metrics.measure(result, directory)
+
+
+# Example: an interrupted JSON write is an incomplete report, never a completed episode.
+def _read_runtime_report(directory):
     report = directory / 'output/runtime-configuration.json'
     try:
         audit = json.loads(report.read_text()) if report.is_file() else {}
+        return audit if isinstance(audit, dict) else {}
     except (OSError, ValueError):
-        audit = {}
-    if not isinstance(audit, dict):
-        audit = {}
+        return {}
+
+
+# Example: retain actual loaded-file hashes even when another runtime report is incomplete.
+def _retain_source_audit(audit, directory, workspace):
     try:
         imports = directory / 'imports.json'
         sources = {row['resolved'] for row in json.loads(imports.read_text())} if imports.is_file() else set()
@@ -141,12 +155,16 @@ def _retain_runtime_report(result, directory, workspace=REPO.parent):
     except (OSError, ValueError, KeyError, TypeError) as error:
         audit['source_report_error'] = str(error)
     audit['observed_source_versions'] = _source_versions(Path(workspace))
-    result['runtime_configuration'] = audit
-    _retain_trajectory_references(result, directory)
-    if result['status'] == 'completed' and not _configuration_matches(result['scenario'], audit):
-        result.update(status='failed', error='Runtime did not confirm the requested configuration and completed episode; see logs')
-        if result['scenario']['configuration']['influence_cap'] > 0:
-            result['error'] += '; positive influence requires retained predictive evidence'
+
+
+# Example: metrics cannot turn a rejected influence configuration into a successful run.
+def _check_runtime_configuration(result, audit):
+    if result['status'] != 'completed' or _configuration_matches(result['scenario'], audit):
+        return
+    error = 'Runtime did not confirm the requested configuration and completed episode; see logs'
+    if result['scenario']['configuration']['influence_cap'] > 0:
+        error += '; positive influence requires retained predictive evidence'
+    result.update(status='failed', error=error)
 
 
 # Example: partial failed runs retain complete cycle identities before a truncated final row.

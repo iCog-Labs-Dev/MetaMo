@@ -290,7 +290,7 @@ the example result explicitly reports that no runner is connected.
 | `configuration` | Independent collection, influence, assessment and learning flags; influence cap in 0..1; seed or null when unsupported. |
 | `initial_state` | Existing fixture path relative to v1, reset entry point, policy profile, motivational initialization, memory initialization, ordered inputs and serialized exogenous observations. Fixture/profile meanings are pinned by the source revisions. |
 | `episodes` (optional) | Episode cycle counts, explicit carry state and optional matching `roles` (`calibration` then `evaluation`). Defaults to one evaluation episode with no incoming state. |
-| `evaluation` (optional) | Declared task checks, each with a run cycle and a supported versioned oracle. Scoring is connected separately from format validation. |
+| `evaluation` (optional) | Independently scored task checks, each with a run cycle and a supported versioned oracle. Missing checks leave task outcomes unmeasured. |
 | `resource_limits` | Positive cycle/time bounds and a serialized existing `ReasonerIntakeLimits` record for fact, proposal, engine, provider and retained-record bounds. |
 
 A result retains the full scenario, a unique `run_id`, status (`completed`,
@@ -451,14 +451,68 @@ state isolation and continuity, not a calibrated learning rule or engine improve
 
 A matched result is completed only after the driver confirms episode completion,
 selected adapter, effective controls, engine/configuration versions and cap. Enabled
-collection must actually produce runtime intake. This is still not a task-success
-or prediction-quality grade, nor evidence that positive influence improves outcomes.
+collection must actually produce runtime intake. Completion itself is not a task-success or prediction-quality grade, nor evidence
+that positive influence improves outcomes. Those measurements have separate
+retained evidence and coverage below.
 
 This format validation checks JSON structure and basic configuration consistency.
 Existing runtime validators remain authoritative for native intake limits,
 observations, permissions and causal ownership. The records do not authorize
 fixture execution or certify trace artifacts. Larger scenario datasets,
-measurement and aggregate reporting remain separate implementation steps.
+additional task oracles, external resource instrumentation and broader performance
+validation remain separate implementation steps.
+
+## Benchmark measurements
+
+Normal matrix runs populate `result.json.measurements`. Legacy `--entry` smoke
+runs remain unmeasured.
+
+`read.scenario.json` declares an `evaluation.checks` entry with `cycle: 1` and
+`oracle: "read-file-content-v1"`. This checks a real read task: the run-owned file
+is independently read before selection, and its contents are compared with the
+exact retained command, callback and ticket. A response claiming success is not
+sufficient. Other task types need their own independently verifiable oracle;
+finishing a benchmark process does not complete an arbitrary natural-language task.
+
+Post-run prediction scoring supports the declared `ExpectedOperationResult`
+schema with the versioned built-in exact-result semantics. It uses only immutable
+receipts for the exact retained primary proposal. Unsupported/custom comparator
+routes, uncertain outcomes, identity conflicts and unobserved alternatives stay
+ungraded. Duplicate identities count once. The receipt itself remains ungraded;
+benchmark comparisons live separately in measurements and never call assessment,
+feedback or reliability-update APIs. This remains true when runtime assessment
+and learning are disabled. Prediction agreement does not establish causal influence.
+
+Each role retains raw task, prediction and policy records plus counts and rates.
+`coverage_percent` uses all eligible checks/proposals; `positive_percent` uses
+verified checks only (task success, prediction confirmation or policy compliance).
+`negative_percent` gives the corresponding failure/refutation/violation rate.
+`ungraded_percent` and ungraded reasons expose missing coverage. An empty
+denominator produces null, not a fabricated zero or perfect result. Prediction
+confidence mean squared error is reported only for verified binary outcomes.
+Policy auditing independently checks supported executed read/frame operations
+against their pre-selection bindings, ownership, permissions, constraints and
+remaining budgets. Blocked attempts are not violations; unsupported audits remain
+ungraded.
+
+Latency includes observed cycle/dispatch wall time, with nearest-rank p50/p95;
+full child-process elapsed time separately includes startup and compilation.
+Resource reports distinguish actual native engine-step reservations, engine
+reservation calls, reasoner-provider call reservations and offline classifier
+calls. Resource totals describe observed usage, with cycle coverage;
+a timeout may leave a partially observed run. Counters are differenced before role grouping to avoid counting calibration
+usage again in evaluation. Reserved steps are not internal instruction counts.
+Provider tokens/cost and engine instruction counts remain unavailable (null) where
+instrumentation does not expose them. Limits are never substituted for measured use.
+Native metering is opt-in, process-local and enabled only by the benchmark fixture.
+
+`controlled.scenario.json` uses calibration followed by evaluation episodes. Roles
+must match declared episode counts and cannot return to calibration after evaluation.
+Scoring occurs after the process exits and cannot change its influence or learning
+configuration. Measurements never promote an influence cap. Positive influence still
+requires explicit configuration and native validation of retained predictive evidence;
+these offline fixture results are not a claim of general reasoner improvement.
+The exact-result adapter is a deterministic comparison double, not a trained engine.
 
 ## Checking imports and initialization
 

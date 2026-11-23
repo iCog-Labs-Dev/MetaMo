@@ -257,7 +257,7 @@ class BenchmarkMatrixTests(unittest.TestCase):
                 self.assertEqual(result['scenario']['initial_state'], original['initial_state'])
                 self.assertEqual(result['scenario']['resource_limits'], original['resource_limits'])
                 self.assertEqual(audit['dispatch_result'], baseline_result)
-                self.assertEqual(result['measurements'], {})
+                self.assertEqual(result['measurements']['version'], runner.metrics.SCORER_VERSION)
                 self.assertTrue(audit['source_sha256'])
                 self.assertEqual(audit['capabilities']['feedback'], [])
                 if audit['selection'] == 'disabled':
@@ -336,6 +336,97 @@ class BenchmarkMatrixTests(unittest.TestCase):
             self.assertEqual(rows[-1]['memory'], rows[-1]['value'])
         else:
             self.assertTrue(all(row['value'] == 0 and row['memory'] is None for row in rows))
+
+    # Example: calibration and evaluation keep separate task/resource denominators.
+    def test_measured_native_and_shadow_runs_have_separate_role_totals(self):
+        self.scenario['episodes'] = dict(cycles=[2, 2], carry=list(formats.CARRIED_STATE), roles=['calibration', 'evaluation'])
+        self.scenario['evaluation']['checks'].append(dict(cycle=3, oracle='read-file-content-v1'))
+        runs = runner.run_matrix(self.scenario, runner.matrix.builtin_variants(self.scenario)[:2], output=self.root)
+        for index, (result, directory) in enumerate(runs):
+            self.check_measured_run(result, index != 0)
+            self.check_independent_policy_audit(directory)
+
+    # Example: unknown engine instructions and provider tokens are never replaced by configured limits.
+    def check_measured_run(self, result, engine):
+        self.assertEqual(result['status'], 'completed')
+        for role in ('calibration', 'evaluation'):
+            sample = result['measurements']['by_split'][role]
+            self.assertEqual(sample['task_outcomes']['positive_percent'], 100)
+            self.assertEqual(sample['policy_compliance']['negative_percent'], 0)
+            self.assertGreater(sample['latency']['mean_ms'], 0)
+            self.assertIsNone(sample['resources']['engine_instructions'])
+            self.assertEqual(sample['resources']['reasoner_provider_calls_reserved'], 0)
+            if engine:
+                self.assertGreater(sample['resources']['engine_steps_reserved'], 0)
+                expected_coverage = 0 if sample['prediction_quality']['total'] else None
+                self.assertEqual(sample['prediction_quality']['coverage_percent'], expected_coverage)
+                self.assertIsNone(sample['prediction_quality']['positive_percent'])
+
+    # Example: tampered authorization is detected independently, while blocked execution is not a violation.
+    def check_independent_policy_audit(self, directory):
+        rows = runner.metrics.read_trajectory(directory)
+        sample = copy.deepcopy(rows[0])
+        self.assertEqual(runner.metrics.check_policy(sample)['status'], 'passed')
+        sample['observation'][4][4][1][0][3] = sample['observation'][4][4][1][0][2] + 1
+        self.assertEqual(runner.metrics.check_policy(sample)['reason'], 'BudgetOverrun')
+        sample = copy.deepcopy(rows[0])
+        sample['host_before'][1][3][1] = []
+        self.assertEqual(runner.metrics.check_policy(sample)['status'], 'failed')
+        sample['observation'][2][1] = 'Blocked'
+        self.assertEqual(runner.metrics.check_policy(sample)['status'], 'ungraded')
+        sample['observation'][3] = []
+        self.assertEqual(runner.metrics.check_task(sample, dict(cycle=1, oracle='read-file-content-v1'))['status'], 'ungraded')
+
+    # Example: selected exact predictions can be confirmed/refuted; unobserved alternatives stay ungraded.
+    def test_prediction_grades_coverage_and_scoring_are_read_only(self):
+        variant = self.exact_variant()
+        for content, expected in (('observed local file content', 100), ('changed world', 0)):
+            self.scenario['initial_state']['file_content'] = content
+            result, directory = runner.run_matrix(self.scenario, [variant], output=self.root)[0]
+            self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+            sample = result['measurements']['by_split']['evaluation']
+            self.assertEqual(sample['task_outcomes']['positive_percent'], 100)
+            self.assertEqual(sample['prediction_quality']['positive_percent'], expected)
+            self.assertGreater(sample['prediction_quality']['ungraded'], 0)
+            self.assertGreater(sample['prediction_quality']['verified'], 0)
+            self.check_scoring_is_read_only(result, directory)
+
+    # Example: this adapter is a deterministic prediction double, not an engine quality benchmark.
+    def exact_variant(self):
+        variant = self.learning_variant(False)
+        variant['adapter'].update(id='benchmark-exact', engine_version='exact-fixture-1',
+            configuration_version='exact-config-1', registration='tests/fixtures/reasoner_benchmark/exact_result_adapter.metta')
+        return variant
+
+    # Example: rescoring immutable artifacts must not change output, runtime or provider observations.
+    def check_scoring_is_read_only(self, result, directory):
+        paths = list((directory / 'output').glob('*'))
+        before = {path: path.read_bytes() for path in paths}
+        measured = runner.metrics.measure(result, directory)
+        self.assertEqual(measured, result['measurements'])
+        self.assertEqual(before, {path: path.read_bytes() for path in paths})
+        self.check_ungraded_prediction_cases(json.loads((directory / 'output/reasoner-evidence.json').read_text()))
+        evidence = json.loads((directory / 'output/reasoner-evidence.json').read_text())
+        first = next(iter(runner.metrics.unique_proposals(evidence)[0].values()))
+        changed = copy.deepcopy(first)
+        changed[4][1][10] = ['ExpectedCandidateOutcome', 'respond']
+        self.assertEqual(runner.metrics.compare_prediction(changed, None)['status'], 'ungraded')
+
+    # Example: missing, uncertain, conflicting and custom-comparator evidence must not produce a grade.
+    def check_ungraded_prediction_cases(self, evidence):
+        proposals, _ = runner.metrics.unique_proposals(evidence)
+        key, envelope = next((key, value) for key, value in proposals.items()
+                             if runner.metrics.matching_receipt(value, evidence['receipts']))
+        self.assertEqual(runner.metrics.compare_prediction(envelope, None)['status'], 'ungraded')
+        self.assertEqual(runner.metrics.score_proposal(key, envelope, {key}, evidence)['status'], 'ungraded')
+        receipt = copy.deepcopy(runner.metrics.matching_receipt(envelope, evidence['receipts']))
+        receipt[3][3] = 'Uncertain'
+        self.assertEqual(runner.metrics.compare_prediction(envelope, receipt)['status'], 'ungraded')
+        invocation = runner.metrics.fields(runner.metrics.fields(envelope)['invocation'])
+        route = ['HostReasonerComparator', ['adapter', invocation['adapter']],
+                 ['configuration-version', invocation['configuration-version']], ['schema', 'ExpectedOperationResult'],
+                 ['version', 'custom-1'], ['function', 'customComparator']]
+        self.assertFalse(runner.metrics.comparator_supported(envelope, [route]))
 
     def test_uncalibrated_positive_influence_fails_and_next_variant_runs(self):
         variants = runner.matrix.builtin_variants(self.scenario)
