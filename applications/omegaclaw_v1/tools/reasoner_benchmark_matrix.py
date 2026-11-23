@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import re
 
+from reasoner_benchmark_formats import episode_policy
+
 APP = Path(__file__).resolve().parents[1]
 
 
@@ -46,6 +48,25 @@ def record_initial(motivation, self_model, task, frame_mode, host, status, prior
     return 1
 
 
+# Example: cycle three starts episode two when the declared lengths are [2, 2].
+def episode_position(cycle, scenario):
+    remaining = cycle
+    for number, count in enumerate(episode_policy(scenario)['cycles'], 1):
+        if remaining <= count:
+            return dict(episode=number, episode_cycle=remaining)
+        remaining -= count
+    raise ValueError('cycle exceeds declared episodes')
+
+
+# Example: each child reports its actual process and private resource locations.
+def isolation_record(scenario):
+    return dict(comparison='fresh-process', pid=os.getpid(),
+        run_id=os.environ['OMEGACLAW_BENCHMARK_RUN_ID'],
+        memory=os.environ['OMEGACLAW_BENCHMARK_MEMORY'],
+        runtime=os.getcwd(), episodes=episode_policy(scenario),
+        boundary='continuous-session' if len(episode_policy(scenario)['cycles']) > 1 else 'single-episode')
+
+
 # Example: each cycle retains its own selected operation and observed result, never another run's.
 def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cycle_ref, motivation, admission):
     scenario = _scenario()
@@ -55,6 +76,7 @@ def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cy
         exogenous=[row for row in scenario['initial_state']['observations'] if row['cycle'] == cycle],
         selection=selection, dispatch_result=result, outcome=outcome, feedback=feedback,
         factual_signals=signals, cycle_trace=trace, cycle_ref=cycle_ref, motivation=motivation)
+    event.update(episode_position(cycle, scenario))
     path = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT']) / 'trajectory.jsonl'
     with path.open('a') as stream:
         stream.write(json.dumps(event) + '\n')
@@ -74,7 +96,8 @@ def record_configuration(selection, registration, runtime, controls, influence):
         'proposal-kinds': [], 'candidates': [], 'prediction-schemas': [], 'feedback': []}
     effective = {name: value in (True, 'True', 'true') for name, value in controls[1:]} if controls else {
         'collection': False, 'influence': False, 'assessment': False, 'learning': False}
-    report = dict(complete=False, selection=selection, mode=mode(scenario['configuration']),
+    report = dict(complete=False, isolation=isolation_record(scenario),
+        selection=selection, mode=mode(scenario['configuration']),
         requested=scenario['configuration'], effective_controls=effective, capabilities=capabilities,
         contract_version=fields.get('contract-version'), configuration_version=fields.get('configuration-version'),
         engine_version=runtime[1] if runtime else None, intake_limits=fields.get('limits'), influence_setting=influence,

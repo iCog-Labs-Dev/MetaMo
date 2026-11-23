@@ -131,9 +131,43 @@ def _host_options(initial):
         raise ValueError('initial file_content must be text')
 
 
+# Explicit continuous episodes retain all run-owned state, never state from another comparison.
+CARRIED_STATE = ('engine_state', 'memory', 'reliability_weights', 'learned_parameters',
+                 'budgets', 'pending_evidence', 'host_state', 'motivational_state', 'rng_state')
+
+
+# Example: an old single-episode scenario requires no carry declaration.
+def episode_policy(scenario):
+    return scenario.get('episodes', dict(cycles=[scenario['resource_limits']['max_cycles']], carry=[]))
+
+
+# Example: two continuous episodes explicitly retain every state family for that run.
+def _validate_episodes(scenario):
+    policy = episode_policy(scenario)
+    _fields(policy, 'cycles carry')
+    cycles = policy['cycles']
+    if not isinstance(cycles, list) or not cycles:
+        raise ValueError('episode cycles must be a nonempty list')
+    for count in cycles:
+        _count(count, 1)
+    if sum(cycles) != scenario['resource_limits']['max_cycles']:
+        raise ValueError('episode cycles must sum to max_cycles')
+    _validate_carry(policy['carry'], len(cycles))
+
+
+# Example: selective resets are rejected until their native reset paths are validated.
+def _validate_carry(carry, episodes):
+    if not isinstance(carry, list) or any(not isinstance(name, str) for name in carry):
+        raise ValueError('episode carry must list state family names')
+    expected = set(CARRIED_STATE) if episodes > 1 else set()
+    if set(carry) != expected or len(carry) != len(expected):
+        raise ValueError('continuous episodes must explicitly carry all run-owned state; selective reset is unsupported')
+
+
 # Example: a shadow run collects proposals while influence and learning remain off.
 def validate_scenario(value):
-    _fields(value, 'schema_version scenario_id description source_versions adapter configuration initial_state resource_limits')
+    _fields(value, 'schema_version scenario_id description source_versions adapter configuration initial_state resource_limits',
+            ('episodes',))
     if type(value['schema_version']) is not int or value['schema_version'] != 1:
         raise ValueError('unsupported scenario schema version')
     _text(value['scenario_id'])
@@ -153,6 +187,7 @@ def validate_scenario(value):
     _count(limits['max_elapsed_ms'], 1)
     # Reuse the serialized ReasonerIntakeLimits contract; the runtime validates it.
     _text(limits['intake_limits'])
+    _validate_episodes(value)
     json.dumps(value, allow_nan=False)
     return value
 

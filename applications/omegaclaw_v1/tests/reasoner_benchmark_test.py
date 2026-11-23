@@ -69,6 +69,18 @@ class BenchmarkFormatTests(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 formats.validate_scenario(broken)
 
+    def test_episode_carry_requires_explicit_supported_state(self):
+        maximum = self.scenario['resource_limits']['max_cycles']
+        self.scenario['episodes'] = dict(cycles=[1, maximum - 1], carry=list(formats.CARRIED_STATE))
+        formats.validate_scenario(self.scenario)
+        for policy in (dict(cycles=[maximum], carry=['engine_state']),
+                       dict(cycles=[1, maximum - 1], carry=[]),
+                       dict(cycles=[0, maximum], carry=list(formats.CARRIED_STATE)),
+                       dict(cycles=[maximum + 1], carry=[])):
+            broken = dict(self.scenario, episodes=policy)
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                formats.validate_scenario(broken)
+
     def test_failed_and_ungraded_results_remain_representable(self):
         for status in ('failed', 'timed_out', 'unavailable', 'completed'):
             self.result.update(status=status, error=None if status == 'completed' else 'observed run failure')
@@ -266,6 +278,55 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.assertTrue(audit['effective_controls']['learning'])
         self.assertGreater(audit['retained_proposals'], 0)
         self.assertFalse(audit['assessment_feedback_supported'])
+
+    # Example: synthetic adapter edits survive continuous episodes, never another configuration.
+    def test_continuous_learning_is_retained_only_within_its_run(self):
+        self.scenario['episodes'] = dict(cycles=[2, 2], carry=list(formats.CARRIED_STATE))
+        variants = [self.learning_variant(enabled) for enabled in (True, False, True)]
+        runs = runner.run_matrix(self.scenario, variants, output=self.root)
+        for (result, directory), enabled in zip(runs, (True, False, True)):
+            self.check_learning_run(result, directory, enabled)
+        records = [result['runtime_configuration']['isolation'] for result, _ in runs]
+        for key in ('pid', 'run_id', 'memory', 'runtime'):
+            self.assertEqual(len({record[key] for record in records}), 3)
+
+    # Example: the probe declares its own engine/version and a normal supported feedback path.
+    def learning_variant(self, enabled):
+        variant = json.loads((APP / 'tests/fixtures/reasoner_benchmark/rule.matrix.json').read_text())[0]
+        variant['adapter'].update(id='benchmark-learning-probe', engine_version='learning-probe-1',
+            configuration_version='learning-probe-config-1',
+            registration='tests/fixtures/reasoner_benchmark/learning_probe.metta')
+        variant['configuration']['learning'] = enabled
+        return variant
+
+    # Example: initial stores are clean, while episode two sees the same run's earlier effects.
+    def check_learning_run(self, result, directory, enabled):
+        self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+        rows = [json.loads(line) for line in (directory / 'output/learning-probe.jsonl').read_text().splitlines()]
+        self.assertEqual((rows[0]['value'], rows[0]['reliability'], rows[0]['memory']), (0, 0.75, None))
+        self.assertEqual(rows[0]['pending'], [])
+        self.assertEqual(rows[0]['parameters'][0][-1], 0.175)
+        self.assertEqual(len({row['context'][1] for row in rows}), 1)
+        boundary = next(row for row in rows if row['context'][2] == 3)
+        self.check_learning_continuity([rows[0], boundary], enabled)
+        trajectory = [json.loads(line) for line in (directory / 'output/trajectory.jsonl').read_text().splitlines()]
+        self.assertEqual([row['episode'] for row in trajectory], [1, 1, 2, 2])
+        self.assertEqual([row['episode_cycle'] for row in trajectory], [1, 2, 1, 2])
+        self.assertEqual(result['runtime_configuration']['isolation']['episodes'], self.scenario['episodes'])
+
+    # Example: budgets and evidence continue; disabled learning leaves adaptive stores untouched.
+    def check_learning_continuity(self, rows, enabled):
+        self.assertTrue(rows[-1]['pending'])
+        before = rows[0]['host'][4][1]
+        after = rows[-1]['host'][4][1]
+        self.assertNotEqual(before, after)
+        if enabled:
+            self.assertGreater(rows[-1]['value'], 0)
+            self.assertEqual(rows[-1]['reliability'], 0.42)
+            self.assertEqual(rows[-1]['parameters'][0][-1], 0.2)
+            self.assertEqual(rows[-1]['memory'], rows[-1]['value'])
+        else:
+            self.assertTrue(all(row['value'] == 0 and row['memory'] is None for row in rows))
 
     def test_uncalibrated_positive_influence_fails_and_next_variant_runs(self):
         variants = runner.matrix.builtin_variants(self.scenario)

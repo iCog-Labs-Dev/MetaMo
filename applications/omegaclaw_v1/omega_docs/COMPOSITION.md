@@ -289,6 +289,7 @@ the example result explicitly reports that no runner is connected.
 | `adapter` | Registered adapter ID, adapter version, engine version and configuration version. `disabled` uses null adapter/engine versions. An optional `registration` path names trusted MeTTa registration code relative to v1. |
 | `configuration` | Independent collection, influence, assessment and learning flags; influence cap in 0..1; seed or null when unsupported. |
 | `initial_state` | Existing fixture path relative to v1, reset entry point, policy profile, motivational initialization, memory initialization, ordered inputs and serialized exogenous observations. Fixture/profile meanings are pinned by the source revisions. |
+| `episodes` (optional) | Episode cycle counts and an explicit carry declaration for continuous experiments. Defaults to one episode with no incoming state. |
 | `resource_limits` | Positive cycle/time bounds and a serialized existing `ReasonerIntakeLimits` record for fact, proposal, engine, provider and retained-record bounds. |
 
 A result retains the full scenario, a unique `run_id`, status (`completed`,
@@ -418,8 +419,34 @@ The final callback may still await next-cycle consumption when the cycle bound e
 Optional seeds control Python, Python hashing and Prolog RNG. Engine seeding is
 reported unsupported rather than implied. Results retain observed Git revisions,
 loaded source hashes, effective native inference limits and initial host policies,
-bindings and budget accounts. Fresh memory is required; carried memory, opaque
-observation strings and unsupported fixture controls produce unavailable results.
+bindings and budget accounts. Fresh initial memory is required; importing another
+comparison's memory, opaque observation strings and unsupported fixture controls
+produce unavailable results.
+
+Independent comparisons start in fresh processes with fresh sessions and private
+memory/runtime directories. In-process engine state, reliability weights, mutable
+registry parameters, budgets and pending evidence therefore belong to one run.
+`runtime_configuration.isolation` records the child's PID, run identity, private
+paths and episode policy. External services or adapter-owned storage outside those
+paths require their own isolation; these offline fixtures do not certify that state.
+
+Continuous experiments can declare `episodes.cycles: [2, 2]`. Counts must sum to
+`max_cycles`; inputs and observations still use absolute run cycle numbers.
+Multiple episodes require an explicit `carry` list containing `engine_state`,
+`memory`, `reliability_weights`, `learned_parameters`, `budgets`, `pending_evidence`,
+`host_state`, `motivational_state` and `rng_state`. The controlled scenario shows
+this declaration. Episode boundaries label the trajectory (`episode`,
+`episode_cycle`); they do not reload adapters, replenish budgets, drop pending
+feedback, reinitialize motivation or reseed RNGs. Native authority/freshness checks
+continue to apply to carried evidence. Separate runs give independent episodes;
+selective carry/reset policies are rejected until those reset paths are validated.
+Learning remains independently configured and is never inferred from episode count.
+
+The learning probe adapter is a test double: its supported observation callback
+makes fixed synthetic edits to its own value/private memory and real reliability
+and parameter stores. Tests check that episode two retains them, learning disabled
+leaves them untouched, and the next configuration starts clean. This demonstrates
+state isolation and continuity, not a calibrated learning rule or engine improvement.
 
 A matched result is completed only after the driver confirms episode completion,
 selected adapter, effective controls, engine/configuration versions and cap. Enabled

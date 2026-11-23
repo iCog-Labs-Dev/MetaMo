@@ -79,5 +79,22 @@
     "max_cycles": 4,
     "max_elapsed_ms": 20000,
     "intake_limits": "(ReasonerIntakeLimits (max-facts 128) (max-payload-nodes 4096) (max-proposals 16) (max-session-records 128) (max-engine-steps 100) (max-engine-queue 40) (max-provider-calls 0) (provider-cost (ReasonerProviderCostLimit (unit \"USD\") (amount 0))) (timeout-ms 1000))"
+  },
+  "episodes": {
+    "cycles": [
+      2,
+      2
+    ],
+    "carry": [
+      "engine_state",
+      "memory",
+      "reliability_weights",
+      "learned_parameters",
+      "budgets",
+      "pending_evidence",
+      "host_state",
+      "motivational_state",
+      "rng_state"
+    ]
   }
 }
