@@ -554,6 +554,37 @@ automatic input admission, native scheduling, dispatch, outcome recording and
 feedback routing remain the production mechanisms. Deferred/unsupported assessments
 leave assessment/learning stores empty and application reliability unchanged.
 
+### Small deterministic native/NARS/PLN comparison
+
+`deterministic.scenario.json` and `deterministic.matrix.json` provide a three-way,
+two-cycle comparison using the existing normal driver. Initial state, file contents,
+seed, operations and two-unit budgets are explicit. Run the retained comparison:
+
+```bash
+python3 applications/omegaclaw_v1/tools/benchmark_reasoners.py \
+  applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/deterministic.scenario.json \
+  --matrix applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/deterministic.matrix.json \
+  --output /tmp/deterministic-reasoners
+```
+
+Run its acceptance assertions without a separate reasoning path:
+
+```bash
+python3 applications/omegaclaw_v1/tests/reasoner_benchmark_test.py \
+  BenchmarkMatrixTests.test_small_deterministic_comparison_repeats_without_leakage
+```
+
+The regression repeats the three configurations in reverse order. Semantic initial
+state, concrete outcomes and motivational updates must repeat; original frame/ticket
+identities and timings remain run-specific. Both engines must retain a positive
+native derivation with the configured implication and admitted signal as premises,
+no pre-supplied conclusion, negative evidence intact and session-owned references.
+The real dispatch callback is consumed automatically in cycle two and updates the
+coordinator's exact outcome records. Current NARS/PLN adapters declare no native
+learning callbacks; this check does not fabricate engine training. Fresh paths/PIDs,
+unspent starting budgets, exact settlement and per-run provenance check isolation.
+Providers and memory remain offline doubles; inference, selection and reads are real.
+
 ## Checking imports and initialization
 
 `tests/trace_support_test.py` checks readable retained output and runs the bridge,

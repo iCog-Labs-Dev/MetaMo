@@ -272,6 +272,99 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.scenario = json.loads((APP / 'tests/fixtures/reasoner_benchmark/read.scenario.json').read_text())
 
+    # Example: repeat native/NARS/PLN in reverse order through the same normal loop.
+    def test_small_deterministic_comparison_repeats_without_leakage(self):
+        fixtures = APP / 'tests/fixtures/reasoner_benchmark'
+        scenario = json.loads((fixtures / 'deterministic.scenario.json').read_text())
+        variants = json.loads((fixtures / 'deterministic.matrix.json').read_text())
+        reference, isolated = None, []
+        for order in (variants, list(reversed(variants))):
+            runs = runner.run_matrix(scenario, order, output=self.root)
+            for result, directory in runs:
+                observed = self.check_deterministic_run(result, directory)
+                reference = observed if reference is None else reference
+                self.assertEqual(observed, reference)
+                isolated.append(result['runtime_configuration']['isolation'])
+        for key in ('run_id', 'pid', 'memory', 'runtime'):
+            self.assertEqual(len({item[key] for item in isolated}), 6)
+
+    # Example: only volatile identities differ; semantic initial state and actual results repeat exactly.
+    def check_deterministic_run(self, result, directory):
+        self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+        initial = json.loads((directory / 'output/initial-state.json').read_text())
+        rows = runner.metrics.read_trajectory(directory)
+        self.check_native_sequence(result, directory, self.read_selection_sequence(directory))
+        self.check_deterministic_feedback(result, directory, rows)
+        self.check_deterministic_budgets(initial, rows)
+        self.assertEqual(initial['seed']['requested'], 37)
+        self.assertEqual(len(rows), 2)
+        return dict(initial={key: value for key, value in initial.items() if key != 'host_snapshot'},
+                    selections=self.read_selection_sequence(directory), states=[row['motivation'] for row in rows])
+
+    # Example: each fresh session starts unspent and finishes with exactly two settled reads.
+    def check_deterministic_budgets(self, initial, rows):
+        accounts = initial['host_snapshot'][4][1]
+        self.assertEqual([account[2:6] for account in accounts], [[2, 0, 0, 'Open']] * 2)
+        settled = rows[-1]['observation'][4][4][1]
+        self.assertEqual([account[2:5] for account in settled], [[2, 2, 0]] * 2)
+        self.assertEqual(rows[0]['feedback'], '(OperationFeedback NoOutcome 0)')
+        self.assertEqual(rows[1]['feedback'], '(OperationFeedback Success 0)')
+
+    # Example: normal dispatch callbacks populate coordinator outcomes without manual observer calls.
+    def check_deterministic_feedback(self, result, directory, rows):
+        evidence = json.loads((directory / 'output/reasoner-evidence.json').read_text())
+        engine = result['scenario']['adapter']['id']
+        if engine == 'disabled':
+            self.assertTrue(all(value == [] for value in evidence.values()))
+            return
+        self.assertEqual(result['runtime_configuration']['capabilities']['feedback'], [])
+        self.assertEqual(len(evidence['receipts']), 2)
+        by_cycle = {cycle[1][2]: cycle for cycle in evidence['cycles']}
+        self.assertEqual({number: runner.metrics.fields(cycle[3])['status'] for number, cycle in by_cycle.items()},
+                         {1: 'Proposals', 2: 'NoConclusion'})
+        for row in rows:
+            self.assertEqual(by_cycle[row['cycle']][5:7], [row['observation'][1], row['observation'][3]])
+            self.assertEqual(row['reliability_before'], 0.8)
+        self.check_native_derivation(engine, evidence, rows[0]['observation'][1][1])
+
+    # Example: the query is absent from premises; positive native truth requires the configured implication.
+    def check_native_derivation(self, engine, evidence, context):
+        proposals = [runner.metrics.fields(item[1])['proposal'] for batch in evidence['admissions'] for item in batch[3]]
+        self.assertEqual(len(proposals), 1)
+        proposal = proposals[0]
+        query = ['Recommend', context[3], 'respond']
+        self.assertEqual(proposal[6], ['InferredConclusion', engine, query])
+        support = proposal[7]
+        self.assertEqual(support[:2], ['InferenceSupport', engine])
+        self.assertEqual(support[3][:2], ['InferenceTruth', engine])
+        self.assertGreater(support[3][2][1], 0.5)
+        self.assertGreater(support[3][2][2], 0)
+        self.check_derivation_premises(engine, proposal, context, query)
+        self.check_derivation_ownership(evidence, context)
+
+    # Example: retained support includes positive input, negative evidence and the rule, not a supplied answer.
+    def check_derivation_premises(self, engine, proposal, context, query):
+        facts = proposal[7][2]
+        premises = [fact[1][0] for fact in facts]
+        condition = ['SignalHolds', context[3], 'user-waiting']
+        self.assertNotIn(query, premises)
+        self.assertIn(condition, premises)
+        self.assertIn(['==>' if engine == 'nars' else 'Implication', condition, query], premises)
+        self.assertTrue(any(fact[1][1][1] == 0 for fact in facts))
+        references = proposal[9][1]
+        self.assertIn(['ObservationRef', 'benchmark-rule-v1', 'respond'], references)
+        sessions = [ref[1] for ref in references if ref[0] == 'SessionObservationRef']
+        self.assertEqual(set(sessions), {context[1]})
+
+    # Example: no retained invocation or callback can refer to another comparison's session/frame.
+    def check_derivation_ownership(self, evidence, context):
+        for cycle in evidence['cycles']:
+            invocation = runner.metrics.fields(cycle[2])
+            self.assertEqual((invocation['session'], invocation['frame']), (context[1], context[3]))
+        for receipt in evidence['receipts']:
+            self.assertEqual(receipt[1][1], context[1])
+            self.assertEqual(receipt[2][3], receipt[3][1])
+
     def test_native_nars_pln_matched_modes_and_learning_controls(self):
         original = copy.deepcopy(self.scenario)
         runs = runner.run_matrix(self.scenario, output=self.root)

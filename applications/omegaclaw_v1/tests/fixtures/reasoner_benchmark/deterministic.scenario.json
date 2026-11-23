@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "scenario_id": "deterministic-three-way-v1",
+  "description": "Two-cycle offline comparison of native, NARS and PLN: real derivation, read dispatch and automatic host/coordinator feedback; providers and memory are doubles.",
+  "source_versions": {
+    "v1": "61041178a6cf3630b527ce4f58e04970c80824a0",
+    "core": "8cabe49da4010dd981150dec1b6b3f25b3153035"
+  },
+  "adapter": {
+    "id": "disabled",
+    "adapter_version": null,
+    "engine_version": null,
+    "configuration_version": "native-example-v1"
+  },
+  "configuration": {
+    "collection": false,
+    "influence": false,
+    "assessment": false,
+    "learning": false,
+    "influence_cap": 0,
+    "seed": 37
+  },
+  "initial_state": {
+    "fixture": "tests/fixtures/reasoner_benchmark/read_fixture.metta",
+    "reset": "benchmarkSetup",
+    "policy": "allowed",
+    "motivation": "registry-defaults",
+    "memory": "fresh",
+    "inputs": [
+      "Explain the project documentation",
+      null
+    ],
+    "observations": [],
+    "host": {
+      "root_mode": "Fast",
+      "frame_mode": "Fast",
+      "status": "Active",
+      "priority": 1.0,
+      "posture": "Engaged"
+    },
+    "budgets": {
+      "global": 2,
+      "frame": 2
+    },
+    "operations": [
+      "read-file"
+    ],
+    "file_content": "deterministic documentation excerpt"
+  },
+  "resource_limits": {
+    "max_cycles": 2,
+    "max_elapsed_ms": 20000,
+    "intake_limits": "(ReasonerIntakeLimits (max-facts 128) (max-payload-nodes 4096) (max-proposals 16) (max-session-records 128) (max-engine-steps 100) (max-engine-queue 40) (max-provider-calls 0) (provider-cost (ReasonerProviderCostLimit (unit \"USD\") (amount 0))) (timeout-ms 1000))"
+  },
+  "evaluation": {
+    "checks": [
+      {
+        "cycle": 1,
+        "oracle": "read-file-content-v1"
+      },
+      {
+        "cycle": 2,
+        "oracle": "read-file-content-v1"
+      }
+    ]
+  }
+}

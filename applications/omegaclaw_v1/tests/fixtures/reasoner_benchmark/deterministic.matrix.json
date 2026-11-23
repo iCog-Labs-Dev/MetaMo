@@ -1,0 +1,50 @@
+[
+  {
+    "adapter": {
+      "id": "disabled",
+      "adapter_version": null,
+      "engine_version": null,
+      "configuration_version": "native-1"
+    },
+    "configuration": {
+      "collection": false,
+      "influence": false,
+      "assessment": false,
+      "learning": false,
+      "influence_cap": 0,
+      "seed": 37
+    }
+  },
+  {
+    "adapter": {
+      "id": "nars",
+      "adapter_version": "builtin-1",
+      "engine_version": "local-libraries",
+      "configuration_version": "builtin-1"
+    },
+    "configuration": {
+      "collection": true,
+      "influence": false,
+      "assessment": false,
+      "learning": false,
+      "influence_cap": 0,
+      "seed": 37
+    }
+  },
+  {
+    "adapter": {
+      "id": "pln",
+      "adapter_version": "builtin-1",
+      "engine_version": "local-libraries",
+      "configuration_version": "builtin-1"
+    },
+    "configuration": {
+      "collection": true,
+      "influence": false,
+      "assessment": false,
+      "learning": false,
+      "influence_cap": 0,
+      "seed": 37
+    }
+  }
+]
