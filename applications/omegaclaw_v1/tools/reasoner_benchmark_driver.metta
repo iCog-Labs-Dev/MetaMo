@@ -6,6 +6,11 @@
 (: BenchmarkScenarioType Type)
 (: BenchmarkScenario (-> Atom String String Atom Number String Expression Number BenchmarkHostType BenchmarkScenarioType))
 
+(: BenchmarkObservationType Type)
+(: BenchmarkObservation (-> Expression Expression Expression Expression Expression BenchmarkObservationType))
+(: BenchmarkUsageType Type)
+(: BenchmarkUsage (-> Number Number Number BenchmarkUsageType))
+
 ;; Example: native Boolean results become explicit numeric setup checks.
 (= (benchmarkRequire $value)
     (if (== $value True) 1 (progn (println! (repr $value)) 0)))
@@ -79,26 +84,66 @@
             (1 (benchmarkRequire (configureHostReasonerControls $id $controls))))
             1)))
 
-;; Example: later cycles use this run's own prior callback and scheduled external inputs.
-(= (benchmarkSteps $step $maximum)
+
+;; Example: capture independent world/policy inputs before selection reserves any budget.
+(= (benchmarkBeginCycle)
+    (let $host (benchmarkInitialHost)
+        (py-call (reasoner_benchmark_matrix.begin_cycle (quote $host)))))
+
+;; Example: structured callback evidence is retained alongside readable trace text.
+(= (benchmarkObserve $decision $result $outcome)
+    (let* (($host (benchmarkInitialHost)) ($usage (benchmarkUsage)))
+        (quote (BenchmarkObservation $decision $result $outcome $host $usage))))
+
+
+;; Example: execute the declared cycle bound without grading inside the native loop.
+(= (benchmarkSteps $step $maximum $id)
     (if (> $step $maximum) 1
         (let* (
             (1 (benchmarkBeforeCycle $step))
+            (1 (benchmarkBeginCycle))
             (1 (boundaryCycle benchmark))
-            ($chosen (get-state &selected-operation-decision))
-            ($result (repr (fullLoopDispatch benchmark (coreLoopDispatchBegin) (selectedHostCommand))))
-            ($ownOutcome (case (get-state &last-operation-outcome) (
-                ((OperationOutcome $origin $_ $_ $_)
-                    (if (== $origin $chosen) (get-state &last-operation-outcome) ()))
-                ($_ ()))))
-            ($signals (repr (lastFactualSignals)))
-            ($trace (repr (lastCycleTrace)))
-            ($ref (repr (index-atom (lastCycleTrace) 2)))
-            ($motivation (motivosToMetamoState))
-            (1 (py-call (reasoner_benchmark_matrix.record_cycle $step (repr $chosen) $result
-                (repr $ownOutcome) (repr (get-state &operation-feedback)) $signals $trace $ref
-                (quote $motivation) (repr (get-state &last-host-input))))))
-            (benchmarkSteps (+ $step 1) $maximum))))
+            (1 (benchmarkDispatch $step))
+            (1 (benchmarkRetainEvidence $id)))
+            (benchmarkSteps (+ $step 1) $maximum $id))))
+
+;; Example: keep the exact selected operation and callback before the next cycle replaces them.
+(= (benchmarkDispatch $step)
+    (let* (
+        ($chosen (get-state &selected-operation-decision))
+        ($result (fullLoopDispatch benchmark (coreLoopDispatchBegin) (selectedHostCommand)))
+        ($outcome (benchmarkOwnOutcome $chosen))
+        ($observed (benchmarkObserve $chosen $result $outcome)))
+        (benchmarkRecordCycle $step $chosen $result $outcome $observed)))
+
+;; Example: a stale callback cannot become the current decision's evidence.
+(= (benchmarkOwnOutcome $chosen)
+    (case (get-state &last-operation-outcome) (
+        ((OperationOutcome $origin $_ $_ $_)
+            (if (== $origin $chosen) (get-state &last-operation-outcome) ()))
+        ($_ ()))))
+
+;; Example: readable trace text and structured evidence share the retained cycle identity.
+(= (benchmarkRecordCycle $step $chosen $result $outcome $observed)
+    (let* (
+        ($signals (repr (lastFactualSignals)))
+        ($trace (repr (lastCycleTrace)))
+        ($ref (repr (index-atom (lastCycleTrace) 2)))
+        ($motivation (motivosToMetamoState)))
+        (py-call (reasoner_benchmark_matrix.record_cycle $step (repr $chosen) (repr $result)
+            (repr $outcome) (repr (get-state &operation-feedback)) $signals $trace $ref
+            (quote $motivation) (repr (get-state &last-host-input)) (quote $observed)))))
+
+;; Example: partial runs preserve their bounded proposal and receipt audit after every callback.
+(= (benchmarkRetainEvidence $id)
+    (let* (
+        ($cycles (if (== $id "disabled") () (hostReasonerCycles)))
+        ($admissions (if (== $id "disabled") () (hostReasonerAdmissions)))
+        ($receipts (if (== $id "disabled") () (hostReasonerReceipts)))
+        ($selections (if (== $id "disabled") () (hostReasonerSelections)))
+        ($routes (benchmarkComparatorRoutes)))
+        (py-call (reasoner_benchmark_matrix.write_evidence
+            (quote $cycles) (quote $admissions) (quote $receipts) (quote $selections) (quote $routes)))))
 
 ;; Example: completion requires the declared episode, not merely a clean interpreter exit.
 (= (benchmarkFinish $id)
@@ -123,7 +168,7 @@
         (1 (benchmarkReport $id))
         (1 (benchmarkApplyControls $id $controls $cap))
         (1 (benchmarkReport $id))
-        (1 (benchmarkSteps 1 $maximum)))
+        (1 (benchmarkSteps 1 $maximum $id)))
         (benchmarkFinish $id)))
 
 ;; Example: load this process's scenario as data before entering the native driver.

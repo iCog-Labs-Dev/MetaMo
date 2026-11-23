@@ -68,7 +68,21 @@ reasoner_runtime_spend(Index,Amount) :-
     nb_getval(omega_reasoner_allowance,I), nth0(12,I,[limits,L]), nth0(Index,L,[Key,Available]),
     (number(Amount),Amount>=0,Amount=<Available -> true ; throw(reasoner_limit)),
     Left is Available-Amount, nth0(Index,L,_,Rest), nth0(Index,Next,[Key,Left],Rest),
-    nth0(12,I,_,Outer), nth0(12,Updated,[limits,Next],Outer), nb_setval(omega_reasoner_allowance,Updated).
+    nth0(12,I,_,Outer), nth0(12,Updated,[limits,Next],Outer), nb_setval(omega_reasoner_allowance,Updated),
+    reasoner_runtime_meter(Index,Amount).
+
+% Optional process-local metering observes reservations without changing allowance semantics.
+% Example: no omega_reasoner_usage variable means production calls retain no extra audit.
+reasoner_runtime_meter(Index,Amount) :-
+    (nb_current(omega_reasoner_usage,[Steps,Calls,Reservations])
+        -> reasoner_runtime_usage(Index,Amount,Steps,Calls,Reservations,Next),
+           nb_setval(omega_reasoner_usage,Next)
+        ; true).
+% Example: reasoner_runtime_usage(5,8,0,0,0,[8,0,1]) records one eight-step reservation.
+reasoner_runtime_usage(5,Amount,Steps,Calls,Reservations,[Next,Calls,Count]) :-
+    Next is Steps+Amount, Count is Reservations+1.
+reasoner_runtime_usage(7,Amount,Steps,Calls,Reservations,[Steps,Next,Reservations]) :-
+    Next is Calls+Amount.
 
 % Provider adapters use this gateway; trusted callbacks are not an arbitrary-code sandbox.
 % Example: zero provider allowance prevents the provider callback from being invoked.

@@ -73,3 +73,10 @@ def before_cycle(cycle, message_summary):
         if 'confirmation' in event:
             lib_llm_ext.confirmation_response(message_summary, event['confirmation'])
     return 1
+
+
+# Example: read the run-owned file independently before the handler is invoked.
+def inspect_file():
+    import host_config_fixture
+    path = Path(host_config_fixture._config['allowed_files'][0])
+    return dict(path=str(path), exists=path.is_file(), content=path.read_text() if path.is_file() else None)

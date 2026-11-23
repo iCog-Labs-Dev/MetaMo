@@ -4,7 +4,7 @@
 !(import! &self benchmark_world.py)
 !(import_prolog_functions_from_file
    (library MetaMo applications/omegaclaw_v1/tests/fixtures/reasoner_benchmark/controls.pl)
-   (benchmarkSeed benchmarkInitialHost))
+   (benchmarkSeed benchmarkInitialHost benchmarkMeterStart benchmarkUsage benchmarkComparatorRoutes))
 (: BenchmarkInitialHostType Type)
 (: BenchmarkInitialHost (-> Expression Expression Expression Expression BenchmarkInitialHostType))
 
@@ -15,6 +15,7 @@
       (commitmentFixtureReset)
       (initContextFrame)
       (fullLoopStartSession)
+      (benchmarkMeterStart)
       (change-state! &last-host-input (sread (py-call (host_ingress.ingest $input))))
       (cfv2-load-frame (get-state &cfv2-last-admitted-frame-id))
       (change-state! &prevmsg $input)

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 
 from reasoner_benchmark_formats import episode_policy
 
@@ -67,8 +68,29 @@ def isolation_record(scenario):
         boundary='continuous-session' if len(episode_policy(scenario)['cycles']) > 1 else 'single-episode')
 
 
+_cycle_start = None
+
+
+# Example: start timing and capture the world before normal selection and dispatch.
+def begin_cycle(host):
+    global _cycle_start
+    import benchmark_world
+    _cycle_start = dict(started=time.perf_counter(), host=host, world=benchmark_world.inspect_file())
+    return 1
+
+
+# Example: latency includes normal cycle/dispatch, while oracle inputs precede execution.
+def cycle_measurements(observation):
+    import lib_llm_ext
+    initial = _cycle_start or {}
+    calls = {kind: lib_llm_ext.call_count(kind) for kind in ('confirmation', 'semantics')}
+    return dict(observation=observation, offline_classifier_calls=calls, host_before=initial.get('host'),
+                world_before=initial.get('world'),
+                latency_ms=(time.perf_counter() - initial['started']) * 1000 if initial else None)
+
+
 # Example: each cycle retains its own selected operation and observed result, never another run's.
-def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cycle_ref, motivation, admission):
+def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cycle_ref, motivation, admission, observation):
     scenario = _scenario()
     inputs = scenario['initial_state']['inputs']
     message = inputs[cycle - 1] if cycle <= len(inputs) else None
@@ -77,6 +99,7 @@ def record_cycle(cycle, selection, result, outcome, feedback, signals, trace, cy
         selection=selection, dispatch_result=result, outcome=outcome, feedback=feedback,
         factual_signals=signals, cycle_trace=trace, cycle_ref=cycle_ref, motivation=motivation)
     event.update(episode_position(cycle, scenario))
+    event.update(cycle_measurements(observation))
     path = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT']) / 'trajectory.jsonl'
     with path.open('a') as stream:
         stream.write(json.dumps(event) + '\n')
@@ -121,6 +144,14 @@ def finish(cycles, admissions, influence):
                   observed_outcomes=sum(bool(row[6]) for row in cycles),
                   influence_setting=influence)
     path.write_text(json.dumps(report, indent=2))
+    return 1
+
+
+# Example: scoring reads retained proposal/receipt identities after execution, without invoking engines.
+def write_evidence(cycles, admissions, receipts, selections, routes):
+    output = Path(os.environ['OMEGACLAW_BENCHMARK_OUTPUT'])
+    evidence = dict(cycles=cycles, admissions=admissions, receipts=receipts, selections=selections, comparator_routes=routes)
+    (output / 'reasoner-evidence.json').write_text(json.dumps(evidence, indent=2))
     return 1
 
 
