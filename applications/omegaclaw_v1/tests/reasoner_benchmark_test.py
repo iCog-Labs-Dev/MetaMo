@@ -81,6 +81,15 @@ class BenchmarkFormatTests(unittest.TestCase):
             with self.subTest(policy=policy), self.assertRaises(ValueError):
                 formats.validate_scenario(broken)
 
+    def test_calibration_roles_and_task_oracles_are_explicit(self):
+        self.scenario['episodes'] = dict(cycles=[2, 2], carry=list(formats.CARRIED_STATE), roles=['evaluation', 'calibration'])
+        with self.assertRaises(ValueError):
+            formats.validate_scenario(self.scenario)
+        del self.scenario['episodes']
+        self.scenario['evaluation'] = dict(checks=[dict(cycle=1, oracle='model-says-success')])
+        with self.assertRaises(ValueError):
+            formats.validate_scenario(self.scenario)
+
     def test_failed_and_ungraded_results_remain_representable(self):
         for status in ('failed', 'timed_out', 'unavailable', 'completed'):
             self.result.update(status=status, error=None if status == 'completed' else 'observed run failure')

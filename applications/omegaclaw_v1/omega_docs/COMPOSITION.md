@@ -289,7 +289,8 @@ the example result explicitly reports that no runner is connected.
 | `adapter` | Registered adapter ID, adapter version, engine version and configuration version. `disabled` uses null adapter/engine versions. An optional `registration` path names trusted MeTTa registration code relative to v1. |
 | `configuration` | Independent collection, influence, assessment and learning flags; influence cap in 0..1; seed or null when unsupported. |
 | `initial_state` | Existing fixture path relative to v1, reset entry point, policy profile, motivational initialization, memory initialization, ordered inputs and serialized exogenous observations. Fixture/profile meanings are pinned by the source revisions. |
-| `episodes` (optional) | Episode cycle counts and an explicit carry declaration for continuous experiments. Defaults to one episode with no incoming state. |
+| `episodes` (optional) | Episode cycle counts, explicit carry state and optional matching `roles` (`calibration` then `evaluation`). Defaults to one evaluation episode with no incoming state. |
+| `evaluation` (optional) | Declared task checks, each with a run cycle and a supported versioned oracle. Scoring is connected separately from format validation. |
 | `resource_limits` | Positive cycle/time bounds and a serialized existing `ReasonerIntakeLimits` record for fact, proposal, engine, provider and retained-record bounds. |
 
 A result retains the full scenario, a unique `run_id`, status (`completed`,

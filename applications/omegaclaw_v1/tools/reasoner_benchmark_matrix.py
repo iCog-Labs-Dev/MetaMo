@@ -54,7 +54,8 @@ def episode_position(cycle, scenario):
     remaining = cycle
     for number, count in enumerate(episode_policy(scenario)['cycles'], 1):
         if remaining <= count:
-            return dict(episode=number, episode_cycle=remaining)
+            roles = episode_policy(scenario).get('roles', ['evaluation'] * len(episode_policy(scenario)['cycles']))
+            return dict(episode=number, episode_cycle=remaining, split=roles[number - 1])
         remaining -= count
     raise ValueError('cycle exceeds declared episodes')
 

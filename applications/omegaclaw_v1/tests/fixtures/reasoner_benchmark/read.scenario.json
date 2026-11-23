@@ -35,5 +35,13 @@
     "max_cycles": 4,
     "max_elapsed_ms": 20000,
     "intake_limits": "(ReasonerIntakeLimits (max-facts 128) (max-payload-nodes 4096) (max-proposals 16) (max-session-records 128) (max-engine-steps 100) (max-engine-queue 40) (max-provider-calls 0) (provider-cost (ReasonerProviderCostLimit (unit \"USD\") (amount 0))) (timeout-ms 1000))"
+  },
+  "evaluation": {
+    "checks": [
+      {
+        "cycle": 1,
+        "oracle": "read-file-content-v1"
+      }
+    ]
   }
 }

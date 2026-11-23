@@ -95,6 +95,22 @@
       "host_state",
       "motivational_state",
       "rng_state"
+    ],
+    "roles": [
+      "calibration",
+      "evaluation"
+    ]
+  },
+  "evaluation": {
+    "checks": [
+      {
+        "cycle": 1,
+        "oracle": "read-file-content-v1"
+      },
+      {
+        "cycle": 3,
+        "oracle": "read-file-content-v1"
+      }
     ]
   }
 }

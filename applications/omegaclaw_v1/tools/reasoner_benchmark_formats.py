@@ -144,7 +144,7 @@ def episode_policy(scenario):
 # Example: two continuous episodes explicitly retain every state family for that run.
 def _validate_episodes(scenario):
     policy = episode_policy(scenario)
-    _fields(policy, 'cycles carry')
+    _fields(policy, 'cycles carry', ('roles',))
     cycles = policy['cycles']
     if not isinstance(cycles, list) or not cycles:
         raise ValueError('episode cycles must be a nonempty list')
@@ -153,6 +153,7 @@ def _validate_episodes(scenario):
     if sum(cycles) != scenario['resource_limits']['max_cycles']:
         raise ValueError('episode cycles must sum to max_cycles')
     _validate_carry(policy['carry'], len(cycles))
+    _validate_roles(policy.get('roles', ['evaluation'] * len(cycles)), len(cycles))
 
 
 # Example: selective resets are rejected until their native reset paths are validated.
@@ -164,10 +165,37 @@ def _validate_carry(carry, episodes):
         raise ValueError('continuous episodes must explicitly carry all run-owned state; selective reset is unsupported')
 
 
+# Example: evaluation episodes cannot feed a later calibration episode in the same run.
+def _validate_roles(roles, count):
+    if not isinstance(roles, list) or len(roles) != count:
+        raise ValueError('episode roles must match episode cycle counts')
+    if any(role not in ('calibration', 'evaluation') for role in roles):
+        raise ValueError('episode roles must be calibration or evaluation')
+    if roles != sorted(roles):
+        raise ValueError('calibration must precede evaluation')
+
+
+# Example: read-file-content checks a retained receipt against an independent world snapshot.
+def _validate_evaluation(scenario):
+    value = scenario.get('evaluation', {'checks': []})
+    _fields(value, 'checks')
+    if not isinstance(value['checks'], list):
+        raise ValueError('evaluation checks must be a list')
+    for check in value['checks']:
+        _fields(check, 'cycle oracle')
+        _count(check['cycle'], 1)
+        if check['cycle'] > scenario['resource_limits']['max_cycles']:
+            raise ValueError('evaluation check exceeds max_cycles')
+        if check['oracle'] != 'read-file-content-v1':
+            raise ValueError('unsupported independent task oracle')
+    if len({check['cycle'] for check in value['checks']}) != len(value['checks']):
+        raise ValueError('only one task check per cycle is supported')
+
+
 # Example: a shadow run collects proposals while influence and learning remain off.
 def validate_scenario(value):
     _fields(value, 'schema_version scenario_id description source_versions adapter configuration initial_state resource_limits',
-            ('episodes',))
+            ('episodes', 'evaluation'))
     if type(value['schema_version']) is not int or value['schema_version'] != 1:
         raise ValueError('unsupported scenario schema version')
     _text(value['scenario_id'])
@@ -188,6 +216,7 @@ def validate_scenario(value):
     # Reuse the serialized ReasonerIntakeLimits contract; the runtime validates it.
     _text(limits['intake_limits'])
     _validate_episodes(value)
+    _validate_evaluation(value)
     json.dumps(value, allow_nan=False)
     return value
 
