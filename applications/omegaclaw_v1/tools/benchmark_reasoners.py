@@ -222,7 +222,9 @@ def run_matrix(scenario, variants=None, *, output=None, workspace=REPO.parent):
         comparison = copy.deepcopy(scenario)
         comparison.update(adapter=copy.deepcopy(variant['adapter']), configuration=copy.deepcopy(variant['configuration']))
         comparisons.append(validate_scenario(comparison))
-    return [run_comparison(comparison, output=output, workspace=workspace) for comparison in comparisons]
+    runs = [run_comparison(comparison, output=output, workspace=workspace) for comparison in comparisons]
+    metrics.write_report([result for result, _ in runs], output or runs[0][1])
+    return runs
 
 
 # Example: repeated scenario paths still produce independent runs and separate failure records.
@@ -266,6 +268,8 @@ def main(argv=None):
         for result, directory in runs:
             print(f'{result["status"]}: {directory / "result.json"}', flush=True)
             failed = failed or result['status'] != 'completed'
+    metrics.summarize_directory(args.output)
+    print(f'Summary: {args.output / "summary.json"}', flush=True)
     return int(failed)
 
 

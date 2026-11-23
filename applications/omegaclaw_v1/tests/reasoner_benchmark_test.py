@@ -116,6 +116,39 @@ class BenchmarkFormatTests(unittest.TestCase):
                 formats.validate_result(broken)
 
 
+class BenchmarkMeasurementTests(unittest.TestCase):
+    def setUp(self):
+        self.result = json.loads((APP / 'tests/fixtures/reasoner_benchmark/result.example.json').read_text())
+
+    # Example: pooled success is 4/5, not the mean of 75% and 100%; failures remain listed.
+    def test_aggregate_uses_counts_and_keeps_failed_runs(self):
+        first = self.measured_result('first', ['passed', 'passed', 'passed', 'failed'])
+        second = self.measured_result('second', ['passed'])
+        second.update(status='timed_out', error='deadline expired')
+        group = runner.metrics.aggregate([first, second])[0]
+        self.assertEqual(group['task_outcomes']['positive_percent'], 80)
+        self.assertEqual(group['run_statuses'], {'completed': 1, 'timed_out': 1})
+        self.assertEqual(group['task_outcomes']['verified'], 5)
+
+    # Example: unknown or reset telemetry cannot become an observed zero.
+    def test_empty_coverage_and_reset_counters_remain_unavailable(self):
+        self.assertIsNone(runner.metrics.outcome_counts([], 'passed', 'failed')['positive_percent'])
+        delta = runner.metrics.counter_delta({'engine_steps_reserved': 0}, {'engine_steps_reserved': 2})
+        self.assertEqual(delta['status'], 'unavailable')
+        summary = runner.metrics.resource_summary([delta])
+        self.assertIsNone(summary['engine_steps_reserved'])
+        self.assertEqual(summary['unavailable_cycles'], 1)
+
+    # Example: retained outcome samples can exist in a run that later times out.
+    def measured_result(self, identity, statuses):
+        result = copy.deepcopy(self.result)
+        result.update(run_id=identity, status='completed', error=None)
+        tasks = [dict(status=status, split='evaluation') for status in statuses]
+        sample = runner.metrics.score_split('evaluation', [], tasks, [], [])
+        result['measurements'] = dict(scorer_sha256='test-method', by_split={'evaluation': sample})
+        return result
+
+
 class BenchmarkRunnerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='benchmark-process-test-')
@@ -345,6 +378,10 @@ class BenchmarkMatrixTests(unittest.TestCase):
         for index, (result, directory) in enumerate(runs):
             self.check_measured_run(result, index != 0)
             self.check_independent_policy_audit(directory)
+        groups = json.loads((self.root / 'summary.json').read_text())['groups']
+        self.assertEqual({(row['mode'], row['split']) for row in groups},
+                         {('native', 'calibration'), ('native', 'evaluation'), ('shadow', 'calibration'), ('shadow', 'evaluation')})
+        self.assertTrue(all(row['configuration']['influence_cap'] == 0 for row in groups))
 
     # Example: unknown engine instructions and provider tokens are never replaced by configured limits.
     def check_measured_run(self, result, engine):
@@ -436,6 +473,10 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.assertEqual([result['status'] for result, _ in runs], ['failed', 'completed'])
         result, directory = runs[0]
         self.assertIn('predictive evidence', result['error'])
+        groups = json.loads((self.root / 'summary.json').read_text())['groups']
+        failed = next(group for group in groups if group['mode'] == 'advisory')
+        self.assertEqual(failed['run_statuses'], {'failed': 1})
+        self.assertIsNone(failed['task_outcomes']['positive_percent'])
         self.assertFalse(result['runtime_configuration']['complete'])
         self.assertIn('propose-candidate', result['runtime_configuration']['capabilities']['proposal-kinds'])
 

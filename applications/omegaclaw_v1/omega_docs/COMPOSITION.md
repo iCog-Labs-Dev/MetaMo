@@ -462,10 +462,17 @@ fixture execution or certify trace artifacts. Larger scenario datasets,
 additional task oracles, external resource instrumentation and broader performance
 validation remain separate implementation steps.
 
-## Benchmark measurements
+## Benchmark measurements and comparison reports
 
-Normal matrix runs populate `result.json.measurements`. Legacy `--entry` smoke
-runs remain unmeasured.
+Normal matrix runs populate `result.json.measurements`. The CLI also prints the
+path to `summary.json`; programmatic `run_matrix` writes a summary for its batch.
+The CLI summary covers retained run results in its output folder. Native, shadow
+and advisory configurations stay in separate groups, as do learning/assessment
+flags, caps, versions, source fingerprints and calibration/evaluation roles.
+Repeated seeds aggregate within otherwise matching groups; run identities and
+seeds remain listed. Failures retain their status and unobserved checks, rather
+than disappearing or being represented as successful task executions. Legacy
+`--entry` smoke runs remain unmeasured.
 
 `read.scenario.json` declares an `evaluation.checks` entry with `cycle: 1` and
 `oracle: "read-file-content-v1"`. This checks a real read task: the run-owned file
@@ -493,13 +500,13 @@ confidence mean squared error is reported only for verified binary outcomes.
 Policy auditing independently checks supported executed read/frame operations
 against their pre-selection bindings, ownership, permissions, constraints and
 remaining budgets. Blocked attempts are not violations; unsupported audits remain
-ungraded.
+ungraded. Aggregate rates are recomputed from counts, not averaged percentages.
 
 Latency includes observed cycle/dispatch wall time, with nearest-rank p50/p95;
 full child-process elapsed time separately includes startup and compilation.
 Resource reports distinguish actual native engine-step reservations, engine
 reservation calls, reasoner-provider call reservations and offline classifier
-calls. Resource totals describe observed usage, with cycle coverage;
+calls. Aggregate resource totals describe observed usage, with measured-run/cycle coverage;
 a timeout may leave a partially observed run. Counters are differenced before role grouping to avoid counting calibration
 usage again in evaluation. Reserved steps are not internal instruction counts.
 Provider tokens/cost and engine instruction counts remain unavailable (null) where
@@ -509,7 +516,7 @@ Native metering is opt-in, process-local and enabled only by the benchmark fixtu
 `controlled.scenario.json` uses calibration followed by evaluation episodes. Roles
 must match declared episode counts and cannot return to calibration after evaluation.
 Scoring occurs after the process exits and cannot change its influence or learning
-configuration. Measurements never promote an influence cap. Positive influence still
+configuration. Reports never promote an influence cap. Positive influence still
 requires explicit configuration and native validation of retained predictive evidence;
 these offline fixture results are not a claim of general reasoner improvement.
 The exact-result adapter is a deterministic comparison double, not a trained engine.

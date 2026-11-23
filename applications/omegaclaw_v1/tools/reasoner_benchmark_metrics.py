@@ -1,5 +1,5 @@
 """Post-run scoring of retained evidence; never invokes a reasoner or updates learning."""
-from collections import Counter
+from collections import Counter, defaultdict
 import hashlib
 import json
 import math
@@ -238,3 +238,71 @@ def measure(result, directory):
     return dict(version=SCORER_VERSION, scorer_sha256=scorer_fingerprint(),
                 run_elapsed_ms=result['elapsed_ms'], by_split={role: score_split(role, rows, tasks, predictions, resources)
                                                             for role in sorted(roles)})
+
+
+# Example: run-specific entry paths do not hide a changed imported implementation.
+def source_fingerprint(result):
+    sources = result.get('runtime_configuration', {}).get('source_sha256', {})
+    hashes = sorted(value for path, value in sources.items() if result['run_id'] not in path)
+    return hashlib.sha256(json.dumps(hashes).encode()).hexdigest() if hashes else None
+
+
+# Example: grouping retains scenario/adapter/configuration identity while aggregating repeated seeds.
+def group_identity(result, role):
+    scenario = result['scenario']
+    config = {key: value for key, value in scenario['configuration'].items() if key != 'seed'}
+    identity = dict(scenario={key: value for key, value in scenario.items() if key not in ('configuration',)},
+                    configuration=config, split=role, sources=result.get('runtime_configuration', {}).get('observed_source_versions'),
+                    source_fingerprint=source_fingerprint(result), scorer=result.get('measurements', {}).get('scorer_sha256'))
+    return json.dumps(identity, sort_keys=True)
+
+
+# Example: each resource reports how many runs actually measured it, including partial failures.
+def aggregate_resources(samples):
+    names = ('engine_steps_reserved', 'reasoner_provider_calls_reserved', 'engine_reservations', 'offline_classifier_calls')
+    return {name: dict(observed_total=sum(sample['resources'][name] or 0 for sample in samples)
+                      if any(sample['resources'][name] is not None for sample in samples) else None,
+                      measured_runs=sum(sample['resources'][name] is not None for sample in samples),
+                      observed_cycles=sum(sample['resources']['observed_cycles'] for sample in samples),
+                      unavailable_cycles=sum(sample['resources']['unavailable_cycles'] for sample in samples)) for name in names}
+
+
+# Example: percentages are recomputed from raw counts, never averaged across runs.
+def aggregate_group(entries):
+    samples = [sample for _, sample in entries]
+    result = entries[0][0]
+    config = result['scenario']['configuration']
+    mode = 'advisory' if config['influence'] else 'shadow' if config['collection'] else 'native'
+    return dict(scenario_id=result['scenario']['scenario_id'], adapter=result['scenario']['adapter'], mode=mode,
+                configuration={key: value for key, value in config.items() if key != 'seed'}, runs=len(entries),
+                source_fingerprint=source_fingerprint(result), scorer_sha256=result['measurements']['scorer_sha256'],
+                source_versions=result.get('runtime_configuration', {}).get('observed_source_versions'),
+                run_ids=[row['run_id'] for row, _ in entries], seeds=[row['scenario']['configuration']['seed'] for row, _ in entries],
+                run_statuses=dict(Counter(row['status'] for row, _ in entries)), resources=aggregate_resources(samples),
+                task_outcomes=outcome_counts([item for sample in samples for item in sample['tasks']], 'passed', 'failed'),
+                prediction_quality=prediction_summary([item for sample in samples for item in sample['predictions']]),
+                policy_compliance=outcome_counts([item for sample in samples for item in sample['policies']], 'passed', 'failed'),
+                latency=latency_summary([value for sample in samples for value in sample['latencies_ms']]))
+
+
+# Example: failed configurations remain counted in their own mode and calibration/evaluation group.
+def aggregate(results):
+    groups = defaultdict(list)
+    for result in results:
+        for role, sample in result.get('measurements', {}).get('by_split', {}).items():
+            groups[group_identity(result, role)].append((result, sample))
+    return [dict(aggregate_group(entries), split=json.loads(key)['split']) for key, entries in sorted(groups.items())]
+
+
+# Example: summary.json compares native, shadow and advisory groups without promoting influence.
+def write_report(results, output):
+    output = Path(output)
+    report = dict(version=SCORER_VERSION, reporter_sha256=scorer_fingerprint(), groups=aggregate(results),
+                  note='Prediction agreement does not establish selection causation. No influence configuration is changed.')
+    (output / 'summary.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
+
+
+# Example: CLI reports include every retained result in its output folder, including failures.
+def summarize_directory(output):
+    results = [json.loads(path.read_text()) for path in sorted(output.glob('*/result.json'))]
+    write_report(results, output)
