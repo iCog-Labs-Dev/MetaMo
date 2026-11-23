@@ -331,6 +331,126 @@ class BenchmarkMatrixTests(unittest.TestCase):
             if result['scenario']['adapter']['id'] != 'disabled':
                 self.assertIn(type(row['reliability_before']), (int, float))
 
+    # Example: fault identities use the same adapter/version/configuration contract as real engines.
+    def fault_variant(self, case, learning=True, influence=False):
+        variant = self.learning_variant(learning)
+        variant['adapter'].update(id='benchmark-' + case, engine_version='fault-fixture-1',
+            configuration_version='fault-config-1', registration='tests/fixtures/reasoner_benchmark/fault_adapter.metta')
+        variant['configuration'].update(assessment=True, influence=influence)
+        return variant
+
+    # Example: absent, late and stale advice must leave the entire native read sequence intact.
+    def test_fault_adapters_preserve_native_dispatch_and_ungraded_weights(self):
+        self.scenario['resource_limits']['intake_limits'] = self.scenario['resource_limits']['intake_limits'].replace('(timeout-ms 1000)', '(timeout-ms 100)')
+        variants = [runner.matrix.builtin_variants(self.scenario)[0]]
+        variants += [self.fault_variant(case) for case in ('empty', 'timeout', 'stale', 'duplicate')]
+        variants.append(self.fault_variant('duplicate', influence=True))
+        runs = runner.run_matrix(self.scenario, variants, output=self.root)
+        baseline = self.read_selection_sequence(runs[0][1])
+        for result, directory in runs:
+            self.check_native_sequence(result, directory, baseline)
+            if result['scenario']['adapter']['id'] != 'disabled':
+                self.check_fault_intake(result, directory)
+
+    # Example: stale references are rejected on every later publication, not rescued with a new ticket.
+    def check_fault_intake(self, result, directory):
+        case = result['scenario']['adapter']['id']
+        statuses = result['runtime_configuration']['intake_statuses']
+        expected = {'benchmark-empty': 'NoConclusion', 'benchmark-timeout': 'Timeout', 'benchmark-duplicate': 'Proposals'}
+        if case == 'benchmark-stale':
+            self.assertEqual(statuses.count('Proposals'), 1)
+            self.assertEqual(statuses.count('InvalidOutput'), 3)
+            evidence = json.loads((directory / 'output/reasoner-evidence.json').read_text())
+            self.assertTrue(all(row[4] == [] for row in evidence['selections'] if row[1][2] > 1))
+        else:
+            self.assertEqual(set(statuses), {expected[case]})
+        logs = self.fault_logs(directory)
+        self.check_fault_feedback(directory, logs, enabled=True)
+        if case == 'benchmark-duplicate':
+            self.check_duplicate_delivery(logs)
+
+    # Example: all configured notifications retain their native invocation and remain ungraded.
+    def fault_logs(self, directory):
+        logs = [json.loads(line) for line in (directory / 'output/fault-audit.jsonl').read_text().splitlines()]
+        self.assertTrue(logs)
+        self.assertTrue(all(row['reliability'] == 0.75 and row['assessments'] == [] and row['learning'] == [] for row in logs))
+        first = next(row for row in logs if row['stage'] == 'Collect')
+        view = runner.metrics.fields(first['payload'][0])
+        self.assertEqual(view['invocation'], first['invocation'])
+        self.assertIn('user-waiting', [signal[1][1] for signal in view['signals']])
+        return logs
+
+    # Example: receipts survive even when learning disables adapter notifications.
+    def check_fault_feedback(self, directory, logs, enabled):
+        evidence = json.loads((directory / 'output/reasoner-evidence.json').read_text())
+        observed = [row for row in logs if row['stage'] == 'Observation']
+        decisions = [row for row in logs if row['stage'] == 'Decision']
+        self.assertEqual(len(observed), len(evidence['receipts']) if enabled else 0)
+        self.assertEqual(len(decisions), len(evidence['cycles']) if enabled else 0)
+        for row in decisions:
+            cycle = next(item for item in evidence['cycles'] if item[2] == row['invocation'])
+            self.assertEqual(cycle[5], row['payload'])
+        for row in observed:
+            receipt = next(item for item in row['receipts'] if item[3] == row['payload'])
+            self.assertEqual(receipt[2][2], runner.metrics.fields(row['invocation'])['invocation-id'])
+            self.assertEqual(receipt[2][3], row['payload'][1])
+
+    # Example: replay retains the original receipt, selection and budget state without another feedback call.
+    def check_duplicate_delivery(self, logs):
+        observations = [row for row in logs if row['stage'] == 'Observation']
+        self.assertEqual(len(observations), 4)
+        self.assertEqual(max(row['effects'] for row in logs), 4)
+        for original in observations:
+            related = [row for row in logs if row['invocation'] == original['invocation']]
+            duplicate = next(row for row in related if row['stage'] == 'Duplicate')
+            cached = next(row for row in related if row['stage'] == 'Redispatch')
+            self.assertEqual(duplicate['payload'], 'OutcomeDuplicate')
+            self.assertEqual(cached['payload'], original['payload'][4])
+            for key in ('receipts', 'selections', 'budgets', 'effects'):
+                self.assertEqual(original[key], duplicate[key])
+                self.assertEqual(original[key], cached[key])
+
+    # Example: a permission denial remains a denial with any selected engine or registered adapter.
+    def test_policy_denial_is_preserved_across_registered_adapters(self):
+        self.scenario['initial_state']['policy'] = 'permission-denied'
+        builtins = runner.matrix.builtin_variants(self.scenario)
+        runs = runner.run_matrix(self.scenario, [builtins[0], builtins[1], builtins[5], self.fault_variant('duplicate')], output=self.root)
+        baseline = self.read_selection_sequence(runs[0][1])
+        for result, directory in runs:
+            self.check_native_sequence(result, directory, baseline)
+            rows = runner.metrics.read_trajectory(directory)
+            self.assertTrue(all(row['observation'][1][2] == 'none' for row in rows))
+            self.assertTrue(all('PermissionDenied' in row['cycle_trace'] for row in rows))
+        logs = self.fault_logs(runs[-1][1])
+        self.assertFalse(any(row['stage'] == 'Observation' for row in logs))
+
+    # Example: capability declarations alone do not enable feedback when learning is disabled.
+    def test_disabled_feedback_still_retains_real_dispatch_receipts(self):
+        result, directory = runner.run_matrix(self.scenario, [self.fault_variant('duplicate', learning=False)], output=self.root)[0]
+        self.assertEqual(result['status'], 'completed')
+        logs = self.fault_logs(directory)
+        self.assertEqual({row['stage'] for row in logs}, {'Collect'})
+        self.check_fault_feedback(directory, logs, enabled=False)
+        evidence = json.loads((directory / 'output/reasoner-evidence.json').read_text())
+        self.assertEqual(len(evidence['receipts']), 4)
+
+    # Example: a visible effect with a lost service response stays uncertain on its original ticket.
+    def test_uncertain_dispatch_preserves_receipt_budget_and_ungraded_reliability(self):
+        result, directory = runner.run_matrix(self.scenario, [self.fault_variant('uncertain')], output=self.root)[0]
+        self.assertEqual(result['status'], 'completed', (directory / 'stderr.log').read_text())
+        rows = runner.metrics.read_trajectory(directory)
+        self.assertEqual(rows[0]['observation'][2][1:3], ['Unobserved', 'ExecutionUncertain'])
+        self.assertTrue(all(row['reliability_before'] == row['reliability_after'] == 0.75 for row in rows))
+        logs = self.fault_logs(directory)
+        self.assertEqual(max(row['effects'] for row in logs), 1)
+        self.check_fault_feedback(directory, logs, enabled=True)
+        observation = next(row for row in logs if row['stage'] == 'Observation')
+        self.assertTrue(any(account[4] > 0 for account in observation['budgets'][4][1]))
+        self.assertIn(['ReasonerAssessmentDeferred', 'InsufficientEvidence'], [row['payload'] for row in logs if row['stage'] == 'Assessment'])
+        sample = result['measurements']['by_split']['evaluation']
+        self.assertEqual(sample['prediction_quality']['verified'], 0)
+        self.assertEqual(sample['task_outcomes']['ungraded'], 1)
+
     def test_additional_registered_adapter_reports_actual_capabilities(self):
         variants = json.loads((APP / 'tests/fixtures/reasoner_benchmark/rule.matrix.json').read_text())
         result, directory = runner.run_matrix(self.scenario, variants, output=self.root)[0]

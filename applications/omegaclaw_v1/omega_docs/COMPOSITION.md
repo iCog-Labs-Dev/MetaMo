@@ -530,6 +530,30 @@ frame and ticket identities. Every observed callback must match its exact retain
 operation. `reliability_before` and `reliability_after` retain the selected source's
 actual weight; disabled runs have no enabled source (`[]`), not a zero weight.
 
+The additional fault adapters use the same registered contract and normal benchmark
+driver. Their admitted input views, intake, retained decisions, receipts and configured
+feedback are captured in `output/fault-audit.jsonl`.
+
+| Case | Verified behavior |
+| --- | --- |
+| Empty intake | `NoConclusion` preserves native dispatch and ungraded feedback. |
+| Timeout | A delayed collector exceeds its deadline; late advice does not affect native operations. |
+| Stale evidence | Reusing an earlier publication's references rejects later intake and leaves no primary attribution. |
+| Policy denial | Native, NARS, PLN and a registered adapter all retain the denial; advice creates no dispatch authority. |
+| Duplicate delivery | The same outcome returns `OutcomeDuplicate`; redispatch returns the cached result. The original receipt, selection, budgets and actual handler-call count stay unchanged. |
+| Uncertain execution | A visible test effect followed by a lost response produces a real `Unobserved/ExecutionUncertain` receipt, holds its budget and defers assessment. |
+| Feedback disabled | Real receipts remain retained, but no adapter Decision/Observation callback is delivered. |
+
+Fault injection is confined to test fixtures. Empty, delayed and stale collectors
+are reasoner doubles; the uncertainty fixture replaces only the service executor
+after native selection has retained its ticket. The duplicate fixture counts calls
+while delegating the real read handler. Both restore the executor in the actual
+observation callback. These are deterministic failure probes, not failures induced
+in a real robot, network service or inference engine. Policy/ownership checks,
+automatic input admission, native scheduling, dispatch, outcome recording and
+feedback routing remain the production mechanisms. Deferred/unsupported assessments
+leave assessment/learning stores empty and application reliability unchanged.
+
 ## Checking imports and initialization
 
 `tests/trace_support_test.py` checks readable retained output and runs the bridge,
