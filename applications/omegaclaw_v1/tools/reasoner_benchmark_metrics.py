@@ -7,25 +7,9 @@ from pathlib import Path
 
 from reasoner_benchmark_formats import episode_policy
 from reasoner_benchmark_policy import check_policy, fields
+from reasoner_benchmark_export import read_trajectory, evidence_status, discover_runs, run_index, write_archive
 
 SCORER_VERSION = 'retained-evidence-v1'
-
-
-# Example: failed runs keep every complete trajectory row before a truncated final write.
-def read_trajectory(directory):
-    path = directory / 'output/trajectory.jsonl'
-    if not path.is_file():
-        return []
-    rows = []
-    for line in path.read_text().splitlines():
-        try:
-            row = json.loads(line)
-            if not isinstance(row, dict) or 'cycle' not in row or 'split' not in row:
-                break
-            rows.append(row)
-        except ValueError:
-            break
-    return rows
 
 
 # Example: a phase is assigned by declared episode bounds, never by observed success.
@@ -140,6 +124,8 @@ def outcome_counts(rows, positive, negative):
     counts = Counter(row['status'] for row in rows)
     verified = counts[positive] + counts[negative]
     return dict(total=len(rows), verified=verified, positive=counts[positive], negative=counts[negative],
+                status_counts={name: counts[name] for name in (positive, negative, 'ungraded')},
+                denominators=dict(coverage_percent=len(rows), positive_percent=verified, negative_percent=verified, ungraded_percent=len(rows)),
                 ungraded=counts['ungraded'], coverage_percent=percent(verified, len(rows)),
                 positive_percent=percent(counts[positive], verified), negative_percent=percent(counts[negative], verified),
                 ungraded_percent=percent(counts['ungraded'], len(rows)),
@@ -151,6 +137,10 @@ def prediction_summary(rows):
     result = outcome_counts(rows, 'confirmed', 'refuted')
     errors = [row['squared_error'] for row in rows if 'squared_error' in row]
     result['mean_squared_error'] = sum(errors) / len(errors) if errors else None
+    grades = [row['grade'] for row in rows if 'grade' in row]
+    result.update(mean_grade=sum(grades) / len(grades) if grades else None,
+                  grade_distribution=dict(Counter(str(grade) for grade in grades)))
+    result['denominators'].update(mean_grade=len(grades), mean_squared_error=len(errors))
     return result
 
 
@@ -221,7 +211,7 @@ def score_split(role, rows, tasks, predictions, resources):
 # Example: changing the independent policy auditor also changes the recorded scoring version hash.
 def scorer_fingerprint():
     root = Path(__file__).parent
-    names = ('reasoner_benchmark_metrics.py', 'reasoner_benchmark_policy.py', 'reasoner_benchmark_formats.py')
+    names = ('reasoner_benchmark_metrics.py', 'reasoner_benchmark_policy.py', 'reasoner_benchmark_formats.py', 'reasoner_benchmark_export.py')
     return hashlib.sha256(b''.join((root / name).read_bytes() for name in names)).hexdigest()
 
 
@@ -236,7 +226,7 @@ def measure(result, directory):
     resources = resource_deltas(rows)
     roles = set(episode_policy(scenario).get('roles', ['evaluation']))
     return dict(version=SCORER_VERSION, scorer_sha256=scorer_fingerprint(),
-                run_elapsed_ms=result['elapsed_ms'], by_split={role: score_split(role, rows, tasks, predictions, resources)
+                run_elapsed_ms=result['elapsed_ms'], evidence=evidence_status(result, directory), by_split={role: score_split(role, rows, tasks, predictions, resources)
                                                             for role in sorted(roles)})
 
 
@@ -267,6 +257,14 @@ def aggregate_resources(samples):
                       unavailable_cycles=sum(sample['resources']['unavailable_cycles'] for sample in samples)) for name in names}
 
 
+# Example: unavailable evidence remains visible even when no proposal could be counted.
+def aggregate_evidence(entries):
+    evidence = [result.get('measurements', {}).get('evidence', {}) for result, _ in entries]
+    return dict(trajectory=dict(Counter(item.get('trajectory', {}).get('state', 'unavailable') for item in evidence)),
+                reasoner=dict(Counter(item.get('reasoner', 'unavailable') for item in evidence)),
+                export_window=dict(Counter('complete' if item.get('export_window_complete') else 'incomplete' for item in evidence)))
+
+
 # Example: percentages are recomputed from raw counts, never averaged across runs.
 def aggregate_group(entries):
     samples = [sample for _, sample in entries]
@@ -278,7 +276,8 @@ def aggregate_group(entries):
                 source_fingerprint=source_fingerprint(result), scorer_sha256=result['measurements']['scorer_sha256'],
                 source_versions=result.get('runtime_configuration', {}).get('observed_source_versions'),
                 run_ids=[row['run_id'] for row, _ in entries], seeds=[row['scenario']['configuration']['seed'] for row, _ in entries],
-                run_statuses=dict(Counter(row['status'] for row, _ in entries)), resources=aggregate_resources(samples),
+                run_statuses=dict(Counter(row['status'] for row, _ in entries)), evidence_at_scoring=aggregate_evidence(entries),
+                resources=aggregate_resources(samples),
                 task_outcomes=outcome_counts([item for sample in samples for item in sample['tasks']], 'passed', 'failed'),
                 prediction_quality=prediction_summary([item for sample in samples for item in sample['predictions']]),
                 policy_compliance=outcome_counts([item for sample in samples for item in sample['policies']], 'passed', 'failed'),
@@ -294,15 +293,30 @@ def aggregate(results):
     return [dict(aggregate_group(entries), split=json.loads(key)['split']) for key, entries in sorted(groups.items())]
 
 
-# Example: summary.json compares native, shadow and advisory groups without promoting influence.
-def write_report(results, output):
+# Report definitions apply to each group and per-run measurement; counts remain alongside rates.
+DENOMINATORS = {
+    'task_success': 'task_outcomes.positive / task_outcomes.verified; declared checks with conclusive independent evidence',
+    'prediction_coverage': 'prediction_quality.verified / prediction_quality.total; unique retained invocation/proposal identities',
+    'prediction_accuracy': 'prediction_quality.positive / prediction_quality.verified; observed confirmed/refuted predictions only',
+    'ungraded_coverage': 'ungraded / total; missing, uncertain and unsupported cases remain ungraded',
+    'mean_grade': 'sum of numerical grades / denominators.mean_grade',
+    'mean_squared_error': 'sum of graded confidence errors / denominators.mean_squared_error',
+    'empty_population': 'A zero denominator yields null. Missing artifacts leave population completeness unknown.'}
+
+
+# Example: summary.json and its portable archive reference each run's original trace.
+def write_report(results, output, directories=None):
     output = Path(output)
+    directories = discover_runs(output)[1] if directories is None else directories
     report = dict(version=SCORER_VERSION, reporter_sha256=scorer_fingerprint(), groups=aggregate(results),
-                  note='Prediction agreement does not establish selection causation. No influence configuration is changed.')
+                  runs=run_index(results, directories), denominators=DENOMINATORS,
+                  rejected_input_reports=[path.name for path in sorted(output.glob('input-errors-*.json'))],
+                  note='Each run retains its own decisions and outcomes; missing rows are never backfilled. Prediction agreement is not selection causation.')
     (output / 'summary.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
+    write_archive(output, directories)
 
 
-# Example: CLI reports include every retained result in its output folder, including failures.
+# Example: CLI exports retain unreadable/missing results in the run index, outside numerical scoring.
 def summarize_directory(output):
-    results = [json.loads(path.read_text()) for path in sorted(output.glob('*/result.json'))]
-    write_report(results, output)
+    results, directories = discover_runs(output)
+    write_report(results, output, directories)

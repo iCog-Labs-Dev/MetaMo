@@ -521,6 +521,41 @@ requires explicit configuration and native validation of retained predictive evi
 these offline fixture results are not a claim of general reasoner improvement.
 The exact-result adapter is a deterministic comparison double, not a trained engine.
 
+### Portable benchmark exports and denominators
+
+Every normal comparison writes `summary.json` and `benchmark-export.zip` in the
+comparison's parent folder. Programmatic comparisons without an output directory
+also allocate one shared report folder, with separate private run directories.
+The archive includes the summary, per-run scenario/result/import/launcher records,
+stdout/stderr, structured traces, receipts and additional JSON diagnostics. It
+copies original bytes; frame, invocation, ticket and outcome identities remain intact.
+It does not rerun selection, providers, handlers or assessment to fill missing data.
+
+`summary.json.runs` indexes each run's artifact paths and original cycle references,
+including failures and interrupted runs with unreadable/missing result metadata.
+Such metadata is marked unavailable rather than assigned an invented run outcome.
+`evidence_at_export` reports the observed/expected trace cycles, missing cycles,
+truncated-row errors and reasoner-artifact availability. `export_window_complete`
+requires the declared trace window and a readable reasoner snapshot; it is not a
+task-success claim. Scored result artifacts retain `measurements.evidence` from
+scoring time, while grouped `evidence_at_scoring` keeps that coverage separate from
+later artifact loss. A valid empty reasoner snapshot differs from a missing one.
+
+Root `denominators` explains the population for task success, prediction coverage,
+accuracy and numerical grades. Each outcome summary also declares its numerical
+`denominators` and named `status_counts`. A grade of zero remains a numerical grade:
+`refuted` counts as a wrong observed prediction, while absent receipts, uncertainty
+and unsupported predictions remain `ungraded` with their original reasons. Mean
+grade, confidence error and grade distributions include numerical grades only;
+zero denominators produce null. Prediction denominators cover unique retained
+admission envelopes, not hypothetical unobserved engine answers. Partial evidence
+therefore exposes an incomplete export window rather than an asserted full population.
+
+Calibration/evaluation, native/shadow/advisory and configuration groups remain
+separate. Runs retain their own observed decision/outcome divergence even when
+that yields different traces or missing suffixes. No run borrows another run's
+outcomes. Rejected scenario inputs remain in archived `input-errors-*.json` reports.
+
 ## Adapter interchangeability coverage
 
 The benchmark tests compare all cycles of the native/NARS/PLN matrix, including

@@ -211,7 +211,7 @@ def _configuration_matches(scenario, audit):
 
 
 # Example: all variants retain identical task inputs, policies and resource allowances.
-def run_matrix(scenario, variants=None, *, output=None, workspace=REPO.parent):
+def _matrix_scenarios(scenario, variants):
     variants = matrix.builtin_variants(scenario) if variants is None else variants
     comparisons = []
     if not isinstance(variants, list) or not variants:
@@ -222,9 +222,25 @@ def run_matrix(scenario, variants=None, *, output=None, workspace=REPO.parent):
         comparison = copy.deepcopy(scenario)
         comparison.update(adapter=copy.deepcopy(variant['adapter']), configuration=copy.deepcopy(variant['configuration']))
         comparisons.append(validate_scenario(comparison))
-    runs = [run_comparison(comparison, output=output, workspace=workspace) for comparison in comparisons]
-    metrics.write_report([result for result, _ in runs], output or runs[0][1])
+    return comparisons
+
+
+# Example: even a default-output comparison has one portable parent and private per-run directories.
+def run_matrix(scenario, variants=None, *, output=None, workspace=REPO.parent):
+    comparisons = _matrix_scenarios(scenario, variants)
+    target = Path(output).resolve() if output is not None else Path(tempfile.mkdtemp(prefix='reasoner-matrix-'))
+    target.mkdir(parents=True, exist_ok=True)
+    runs = [run_comparison(comparison, output=target, workspace=workspace) for comparison in comparisons]
+    metrics.write_report([result for result, _ in runs], target, {result['run_id']: directory for result, directory in runs})
     return runs
+
+
+# Example: the CLI names both inspectable JSON and the portable archive before returning its status.
+def _finish_exports(output, failed):
+    metrics.summarize_directory(output)
+    print(f'Summary: {output / "summary.json"}', flush=True)
+    print(f'Export: {output / "benchmark-export.zip"}', flush=True)
+    return int(failed)
 
 
 # Example: repeated scenario paths still produce independent runs and separate failure records.
@@ -268,9 +284,7 @@ def main(argv=None):
         for result, directory in runs:
             print(f'{result["status"]}: {directory / "result.json"}', flush=True)
             failed = failed or result['status'] != 'completed'
-    metrics.summarize_directory(args.output)
-    print(f'Summary: {args.output / "summary.json"}', flush=True)
-    return int(failed)
+    return _finish_exports(args.output, failed)
 
 
 if __name__ == '__main__':

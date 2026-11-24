@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from zipfile import ZipFile
 
 APP = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('benchmark_formats', APP / 'tools/reasoner_benchmark_formats.py')
@@ -119,6 +120,9 @@ class BenchmarkFormatTests(unittest.TestCase):
 class BenchmarkMeasurementTests(unittest.TestCase):
     def setUp(self):
         self.result = json.loads((APP / 'tests/fixtures/reasoner_benchmark/result.example.json').read_text())
+        temp = tempfile.TemporaryDirectory(prefix='benchmark-export-test-')
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
 
     # Example: pooled success is 4/5, not the mean of 75% and 100%; failures remain listed.
     def test_aggregate_uses_counts_and_keeps_failed_runs(self):
@@ -138,6 +142,63 @@ class BenchmarkMeasurementTests(unittest.TestCase):
         summary = runner.metrics.resource_summary([delta])
         self.assertIsNone(summary['engine_steps_reserved'])
         self.assertEqual(summary['unavailable_cycles'], 1)
+
+    # Example: missing evidence and a wrong observed prediction have different counts and denominators.
+    def test_prediction_denominators_and_numerical_grades_are_explicit(self):
+        rows = [dict(status='confirmed', grade=1, squared_error=0.04),
+                dict(status='refuted', grade=0, squared_error=0.64),
+                dict(status='ungraded', reason='NoObservedAlternative'),
+                dict(status='ungraded', reason='UncertainExecution')]
+        counts = runner.metrics.prediction_summary(rows)
+        self.assertEqual(counts['status_counts'], {'confirmed': 1, 'refuted': 1, 'ungraded': 2})
+        self.assertEqual(counts['denominators']['coverage_percent'], 4)
+        self.assertEqual(counts['denominators']['positive_percent'], 2)
+        self.assertEqual(counts['denominators']['mean_grade'], 2)
+        self.assertEqual(counts['mean_grade'], 0.5)
+        self.assertEqual(counts['grade_distribution'], {'1': 1, '0': 1})
+        self.assertEqual(counts['positive_percent'], 50)
+        self.assertEqual(counts['coverage_percent'], 50)
+
+    # Example: malformed final trace data stays byte-identical in export and is marked partial.
+    def test_partial_and_missing_artifacts_are_exported_without_backfill(self):
+        result = self.measured_result('partial-run', ['passed'])
+        directory = self.root / result['run_id']
+        (directory / 'output').mkdir(parents=True)
+        (directory / 'result.json').write_text(json.dumps(result))
+        original = b'{"cycle":1,"split":"evaluation","cycle_ref":"original-cycle"}\n{"partial"'
+        (directory / 'output/trajectory.jsonl').write_bytes(original)
+        runner.metrics.write_report([result], self.root, {result['run_id']: directory})
+        self.check_partial_export(directory, original)
+        runner.metrics.summarize_directory(self.root)
+        self.assertEqual((directory / 'output/trajectory.jsonl').read_bytes(), original)
+
+    # Example: archive trace references point to the valid prefix, not a different run's outcome.
+    def check_partial_export(self, directory, original):
+        with ZipFile(self.root / 'benchmark-export.zip') as archive:
+            report = json.loads(archive.read('summary.json'))
+            run = report['runs'][0]
+            self.assertEqual(archive.read(run['trace']), original)
+        evidence = run['evidence_at_export']
+        self.assertEqual(evidence['trajectory']['state'], 'partial')
+        self.assertEqual(evidence['trajectory']['cycle_references'], ['original-cycle'])
+        self.assertEqual(evidence['trajectory']['missing_cycles'], [2, 3, 4])
+        self.assertEqual(evidence['reasoner'], 'missing')
+        self.assertFalse(evidence['export_window_complete'])
+        self.assertIn('prediction_accuracy', report['denominators'])
+
+    # Example: a parent interrupted before writing valid metadata is retained outside numerical scoring.
+    def test_unreadable_result_is_indexed_with_its_original_artifacts(self):
+        directory = self.root / 'interrupted-run'
+        directory.mkdir()
+        (directory / 'scenario.json').write_text(json.dumps(self.result['scenario']))
+        (directory / 'result.json').write_bytes(b'{"unfinished"')
+        runner.metrics.summarize_directory(self.root)
+        with ZipFile(self.root / 'benchmark-export.zip') as archive:
+            report = json.loads(archive.read('summary.json'))
+            self.assertEqual(report['groups'], [])
+            self.assertIsNone(report['runs'][0]['status'])
+            self.assertIn('UnreadableResult', report['runs'][0]['metadata_error'])
+            self.assertEqual(archive.read('interrupted-run/result.json'), b'{"unfinished"')
 
     # Example: retained outcome samples can exist in a run that later times out.
     def measured_result(self, identity, statuses):
@@ -271,6 +332,18 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.scenario = json.loads((APP / 'tests/fixtures/reasoner_benchmark/read.scenario.json').read_text())
+
+    # Example: a programmatic comparison without --output still has one portable result root.
+    def test_default_output_exports_all_runs_in_one_cohort(self):
+        runs = runner.run_matrix(self.scenario, runner.matrix.builtin_variants(self.scenario)[:2])
+        output = runs[0][1].parent
+        self.addCleanup(shutil.rmtree, output)
+        self.assertTrue(all(directory.parent == output for _, directory in runs))
+        with ZipFile(output / 'benchmark-export.zip') as archive:
+            report = json.loads(archive.read('summary.json'))
+            self.assertEqual({row['run_id'] for row in report['runs']}, {result['run_id'] for result, _ in runs})
+            self.assertTrue(all(archive.read(row['result']) for row in report['runs']))
+            self.assertTrue(all(row['evidence_at_export']['trajectory']['state'] == 'complete' for row in report['runs']))
 
     # Example: repeat native/NARS/PLN in reverse order through the same normal loop.
     def test_small_deterministic_comparison_repeats_without_leakage(self):
@@ -663,6 +736,8 @@ class BenchmarkMatrixTests(unittest.TestCase):
             self.assertEqual(sample['prediction_quality']['positive_percent'], expected)
             self.assertGreater(sample['prediction_quality']['ungraded'], 0)
             self.assertGreater(sample['prediction_quality']['verified'], 0)
+            self.assertEqual(sample['prediction_quality']['mean_grade'], expected / 100)
+            self.assertEqual(sample['prediction_quality']['denominators']['positive_percent'], sample['prediction_quality']['verified'])
             self.check_scoring_is_read_only(result, directory)
 
     # Example: this adapter is a deterministic prediction double, not an engine quality benchmark.
@@ -819,6 +894,18 @@ class BenchmarkMatrixTests(unittest.TestCase):
         self.assertNotEqual(a[0]['dispatch_result'], b[0]['dispatch_result'])
         self.assertEqual(second['runtime_configuration']['dispatch_result'], b[0]['dispatch_result'])
         self.assertNotIn('observed local file content', b[0]['dispatch_result'])
+
+        self.check_exported_divergence({first['run_id'], second['run_id']}, (directory_a, directory_b))
+
+    # Example: differing actual operations/results retain their own original bytes in one archive.
+    def check_exported_divergence(self, identities, directories):
+        runner.metrics.summarize_directory(self.root)
+        with ZipFile(self.root / 'benchmark-export.zip') as archive:
+            exported = json.loads(archive.read('summary.json'))
+            self.assertEqual({run['run_id'] for run in exported['runs']}, identities)
+            for directory in directories:
+                name = directory.name + '/output/trajectory.jsonl'
+                self.assertEqual(archive.read(name), (directory / 'output/trajectory.jsonl').read_bytes())
 
 
 if __name__ == '__main__':
