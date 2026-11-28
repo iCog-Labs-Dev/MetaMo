@@ -74,6 +74,47 @@
                  (inferenceBestAssessmentFrom $current $rest)
                  (inferenceBestAssessmentFrom $best $rest)))))
 
+(= (INFERENCE_ACCEPTANCE_BONUS) 0.05)
+
+;; Premise confidence guides selection; derived confidence decides acceptance.
+(= (inferenceThresholdScore $assessment $query $minimumConfidence)
+   (+ (inferenceAssessmentScore $assessment)
+      (let $annotation (inferenceAssessmentAnnotation $assessment)
+           (if (and (== (inferenceAnnotationTerm $annotation) $query)
+                    (>= (featureMapGet
+                          (inferenceAnnotationFeatures $annotation)
+                          premise_confidence 0.0)
+                        $minimumConfidence))
+               (INFERENCE_ACCEPTANCE_BONUS)
+               0.0))))
+
+(= (inferenceBestThresholdAssessmentFrom
+      $query $minimumConfidence $best $remaining)
+   (if (== $remaining ())
+       $best
+       (let* (($current (car-atom $remaining))
+              ($rest (cdr-atom $remaining)))
+             (if (> (inferenceThresholdScore $current $query $minimumConfidence)
+                    (inferenceThresholdScore $best $query $minimumConfidence))
+                 (inferenceBestThresholdAssessmentFrom
+                   $query $minimumConfidence $current $rest)
+                 (inferenceBestThresholdAssessmentFrom
+                   $query $minimumConfidence $best $rest)))))
+
+(= (inferenceSelectForThreshold $state $batch $query $minimumConfidence)
+   (case (inferenceAssessBatch $state $batch)
+     (((validationOk $assessments)
+       (if (== $assessments ())
+           (validationError empty-candidates inference_control)
+           (validationOk
+             (inferenceSelection
+               (inferenceBestThresholdAssessmentFrom
+                 $query $minimumConfidence
+                 (car-atom $assessments) (cdr-atom $assessments))
+               $assessments))))
+      ((validationError $code $details)
+       (validationError $code $details)))))
+
 (= (inferenceSelect $state $batch)
    (case (inferenceAssessBatch $state $batch)
      (((validationOk $assessments)

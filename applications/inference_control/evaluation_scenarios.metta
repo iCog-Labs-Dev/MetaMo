@@ -3,7 +3,8 @@
 
 (= (INFERENCE_EVALUATION_SCENARIOS)
    (competingPaths irrelevantBeliefs uncertainPremises revision unreachable
-    deductionChain overlappingEvidence initialAnswer induction abduction))
+    deductionChain overlappingEvidence initialAnswer induction abduction
+    mixedRules feedbackTradeoff))
 
 
 (= (inferenceEvaluationScenario $name)
@@ -58,6 +59,24 @@
          (inferenceRequest (Inheritance EvalA EvalB)
            ((Sentence ((Inheritance EvalA EvalC) (stv 0.8 0.9)) (91))
             (Sentence ((Inheritance EvalB EvalC) (stv 0.7 0.8)) (92))) 0) 1))
+      (mixedRules
+       (inferenceScenario mixedRules
+         (inferenceRequest (Inheritance EvalB EvalD)
+           ((Sentence ((Inheritance EvalA EvalB) (stv 0.8 0.9)) (101))
+            (Sentence ((Inheritance EvalA EvalC) (stv 0.7 0.8)) (102))
+            (Sentence ((Inheritance EvalD EvalB) (stv 0.7 0.9)) (103))
+            (Sentence ((Inheritance EvalC EvalD) (stv 0.6 0.9)) (104))
+            (Sentence (Distractor (stv 0.9 0.99)) (105))
+            (Sentence ((Implication Distractor Noise) (stv 0.8 0.99)) (106))) 0) 2))
+      (feedbackTradeoff
+       (inferenceScenario feedbackTradeoff
+         (inferenceRequest (Inheritance EvalB EvalD)
+           ((Sentence ((Inheritance EvalA EvalB) (stv 0.8 0.9)) (111))
+            (Sentence ((Inheritance EvalA EvalC) (stv 0.7 0.8)) (112))
+            (Sentence ((Inheritance EvalC EvalD) (stv 0.6 0.65)) (113))
+            (Sentence ((Inheritance EvalD EvalC) (stv 0.7 0.9)) (114))
+            (Sentence (Distractor (stv 0.9 0.99)) (115))
+            (Sentence ((Implication Distractor Noise) (stv 0.8 0.99)) (116))) 0) 2))
       (initialAnswer
        (inferenceScenario initialAnswer
          (inferenceRequest Goal ((Sentence (Goal (stv 0.7 0.6)) (71))) 0) 0)))))
@@ -66,5 +85,8 @@
       (inferenceScenario $name $request $budget))
    (case $policy
      ((metamo (inferenceEvaluateControlled (inferenceControlDefaultState) $request $budget))
+      (fixedState (inferenceEvaluateFixedState (inferenceControlDefaultState) $request $budget))
+      (thresholdAware (inferenceEvaluateThresholdAware
+                        (inferenceControlDefaultState) $request $budget))
       (confidenceFirst (inferenceEvaluateConfidence $request $budget))
       (queryRelevance (inferenceEvaluateRelevance $request $budget)))))

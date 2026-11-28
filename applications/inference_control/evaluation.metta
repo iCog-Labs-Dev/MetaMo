@@ -35,6 +35,17 @@
                  (inferenceOutcomeState $outcome))
                (inferenceOutcomeTrace (cdr-atom $history))))))
 
+(= (inferenceFixedStateTrace $state $history)
+   (if (== $history ())
+       ()
+       (let $execution (inferenceOutcomeExecution (car-atom $history))
+            (cons-atom
+              (inferenceTraceStep
+                (inferenceExecutionProposal $execution)
+                (inferenceExecutionDerived $execution)
+                $state)
+              (inferenceFixedStateTrace $state (cdr-atom $history))))))
+
 (= (inferenceEvaluateControlled $state $request $budget $minimumConfidence)
    (case (inferenceControlRun $state $request $budget $minimumConfidence)
      (((validationOk (inferenceRun $status $steps $finalRequest $answer $finalState $history))
@@ -47,6 +58,107 @@
 (= (inferenceEvaluateControlled $state $request $budget)
    (inferenceEvaluateControlled $state $request $budget
                                 (INFERENCE_CONTROL_MIN_CONFIDENCE)))
+
+(= (inferenceEvaluateFixedStateFrom
+      $state $request $steps $budget $history $attempted $minimumConfidence)
+   (let $answer (plnAnswer
+                  (inferenceRequestBeliefs $request)
+                  (inferenceRequestQuery $request))
+        (if (inferenceAnswerAccepted $answer $minimumConfidence)
+            (inferenceEvaluateFixedStateResult $state answered $answer $history)
+            (if (>= $steps $budget)
+                (inferenceEvaluateFixedStateResult $state budgetExhausted $answer $history)
+                (case (inferenceControlTransition $state $request $attempted)
+                  (((validationOk $outcome)
+                    (inferenceEvaluateFixedStateFrom
+                      $state
+                      (inferenceOutcomeNextRequest $outcome)
+                      (+ $steps 1) $budget
+                      (append $history ($outcome))
+                      (append $attempted
+                        ((inferenceExecutionProposal
+                            (inferenceOutcomeExecution $outcome))))
+                      $minimumConfidence))
+                   ((validationError empty-candidates $details)
+                    (inferenceEvaluateFixedStateResult $state noCandidates $answer $history))
+                   ((validationError $code $details)
+                    (validationError $code $details))))))))
+
+(= (inferenceEvaluateFixedStateResult $state $status $answer $history)
+   (let $trace (inferenceFixedStateTrace $state $history)
+        (validationOk
+          (inferenceEvaluation fixedState $status $answer
+                               (length $trace) (inferenceTraceCost $trace) $trace))))
+
+(= (inferenceEvaluateFixedState $state $request $budget $minimumConfidence)
+   (if (< $budget 0)
+       (validationError invalid-step-budget $budget)
+       (if (inferenceValidMinimumConfidence $minimumConfidence)
+           (inferenceEvaluateFixedStateFrom
+             $state $request 0 $budget () () $minimumConfidence)
+           (validationError invalid-minimum-confidence $minimumConfidence))))
+
+(= (inferenceEvaluateFixedState $state $request $budget)
+   (inferenceEvaluateFixedState
+     $state $request $budget (INFERENCE_CONTROL_MIN_CONFIDENCE)))
+
+(= (inferenceThresholdTransition $state $request $attempted $minimumConfidence)
+   (let $batch (inferenceControlBuildBatch $request $attempted)
+        (case (inferenceSelectForThreshold
+                $state $batch (inferenceRequestQuery $request) $minimumConfidence)
+          (((validationOk $selection)
+            (case (inferenceControlExecute
+                    (inferencePreparation $request $batch $selection))
+              (((validationOk $execution)
+                (inferenceControlUpdate $state $execution))
+               ((validationError $code $details)
+                (validationError $code $details)))))
+           ((validationError $code $details)
+            (validationError $code $details))))))
+
+(= (inferenceEvaluateThresholdAwareFrom
+      $state $request $steps $budget $history $attempted $minimumConfidence)
+   (let $answer (plnAnswer
+                  (inferenceRequestBeliefs $request)
+                  (inferenceRequestQuery $request))
+        (if (inferenceAnswerAccepted $answer $minimumConfidence)
+            (inferenceThresholdResult answered $answer $history)
+            (if (>= $steps $budget)
+                (inferenceThresholdResult budgetExhausted $answer $history)
+                (case (inferenceThresholdTransition
+                        $state $request $attempted $minimumConfidence)
+                  (((validationOk $outcome)
+                    (inferenceEvaluateThresholdAwareFrom
+                      (inferenceOutcomeState $outcome)
+                      (inferenceOutcomeNextRequest $outcome)
+                      (+ $steps 1) $budget
+                      (append $history ($outcome))
+                      (append $attempted
+                        ((inferenceExecutionProposal
+                            (inferenceOutcomeExecution $outcome))))
+                      $minimumConfidence))
+                   ((validationError empty-candidates $details)
+                    (inferenceThresholdResult noCandidates $answer $history))
+                   ((validationError $code $details)
+                    (validationError $code $details))))))))
+
+(= (inferenceThresholdResult $status $answer $history)
+   (let $trace (inferenceOutcomeTrace $history)
+        (validationOk
+          (inferenceEvaluation thresholdAware $status $answer
+                               (length $trace) (inferenceTraceCost $trace) $trace))))
+
+(= (inferenceEvaluateThresholdAware $state $request $budget $minimumConfidence)
+   (if (< $budget 0)
+       (validationError invalid-step-budget $budget)
+       (if (inferenceValidMinimumConfidence $minimumConfidence)
+           (inferenceEvaluateThresholdAwareFrom
+             $state $request 0 $budget () () $minimumConfidence)
+           (validationError invalid-minimum-confidence $minimumConfidence))))
+
+(= (inferenceEvaluateThresholdAware $state $request $budget)
+   (inferenceEvaluateThresholdAware
+     $state $request $budget (INFERENCE_CONTROL_MIN_CONFIDENCE)))
 
 ;; Minimum premise confidence; one rule application per step.
 (= (inferenceConfidenceBest $best $remaining)
